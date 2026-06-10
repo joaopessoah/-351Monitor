@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { QRCodeSVG } from "qrcode.react";
 import { Copy } from "lucide-react";
 import { api } from "@/lib/api";
 import { mfaErrorMessage, genericErrorMessage } from "@/lib/messages";
@@ -119,24 +120,31 @@ export function MfaSetupPanel({ mfaToken, onSuccess }: MfaSetupPanelProps) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Seu papel exige verificação em duas etapas (MFA). Adicione a conta em um aplicativo
-        autenticador (Google Authenticator, Microsoft Authenticator, Authy…) usando o endereço
-        abaixo ou digitando a chave manualmente. Depois, confirme com o código de 6 dígitos.
+        Seu papel exige verificação em duas etapas (MFA). Abra um aplicativo autenticador no
+        celular (Google Authenticator, Microsoft Authenticator, Authy…), toque em adicionar
+        conta e <strong>escaneie o QR code abaixo</strong>. Depois, confirme com o código de
+        6 dígitos que o aplicativo mostrar.
       </p>
-      <div className="space-y-2">
-        <Label htmlFor="otpauth-uri">Endereço para o aplicativo autenticador</Label>
-        <div className="flex gap-2">
-          <Input id="otpauth-uri" readOnly value={otpauth_uri} className="font-mono text-xs" />
-          <CopyButton value={otpauth_uri} label="Copiar endereço" />
-        </div>
+      <div className="flex justify-center rounded-lg border bg-white p-4">
+        <QRCodeSVG value={otpauth_uri} size={192} marginSize={1} aria-label="QR code para o aplicativo autenticador" />
       </div>
-      <div className="space-y-2">
-        <Label htmlFor="otp-secret">Chave para digitação manual</Label>
-        <div className="flex gap-2">
-          <Input id="otp-secret" readOnly value={secret} className="font-mono tracking-widest" />
-          <CopyButton value={secret} label="Copiar chave" />
+      <details className="space-y-2 text-sm">
+        <summary className="cursor-pointer text-muted-foreground">
+          Não consegue escanear? Adicione manualmente
+        </summary>
+        <div className="space-y-2 pt-2">
+          <Label htmlFor="otp-secret">Chave para digitação manual</Label>
+          <div className="flex gap-2">
+            <Input id="otp-secret" readOnly value={secret} className="font-mono tracking-widest" />
+            <CopyButton value={secret} label="Copiar chave" />
+          </div>
+          <Label htmlFor="otpauth-uri">Endereço completo (otpauth)</Label>
+          <div className="flex gap-2">
+            <Input id="otpauth-uri" readOnly value={otpauth_uri} className="font-mono text-xs" />
+            <CopyButton value={otpauth_uri} label="Copiar endereço" />
+          </div>
         </div>
-      </div>
+      </details>
       <MfaVerifyForm mfaToken={mfaToken} onSuccess={onSuccess} submitLabel="Ativar e entrar" />
     </div>
   );
