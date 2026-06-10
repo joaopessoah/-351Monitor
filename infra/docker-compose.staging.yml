@@ -94,7 +94,10 @@ services:
         condition: service_started
 
   seq:
-    image: datalust/seq:latest
+    # Fixado por digest: um deploy puxou um "latest" novo que exigia senha de
+    # admin e derrubou o serviço. Atualizar Seq é decisão consciente, não efeito
+    # colateral de deploy. (Versão exige SEQ_FIRSTRUN_ADMINPASSWORDHASH definido.)
+    image: datalust/seq@sha256:868a12e93ec0b8c993767a7dd4cd6c8ebc441511c79e4cfac66c911f62d4db65
     restart: unless-stopped
     environment:
       ACCEPT_EULA: "Y"
