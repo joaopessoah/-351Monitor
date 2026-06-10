@@ -213,7 +213,9 @@ export function LinhaDoTempoPage() {
 
       {/* Controles: device, data (Hoje/Ontem/◀/▶ + teclas ← →), janela e visão */}
       <Card>
-        <CardContent className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+        {/* div com padding explícito: o p-6/pt-0 default do CardContent venceria o py-3
+            (cn() sem tailwind-merge — a ordem do stylesheet decide, não a da className) */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
           <select
             aria-label="Dispositivo"
             value={deviceId ?? ""}
@@ -352,7 +354,7 @@ export function LinhaDoTempoPage() {
               </>
             )}
           </Button>
-        </CardContent>
+        </div>
       </Card>
 
       {/* Aviso global de trechos incompletos (data_incomplete da resposta). */}
