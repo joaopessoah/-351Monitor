@@ -213,13 +213,13 @@ export function LinhaDoTempoPage() {
 
       {/* Controles: device, data (Hoje/Ontem/◀/▶ + teclas ← →), janela e visão */}
       <Card>
-        <CardContent className="flex flex-wrap items-center gap-3 p-4">
+        <CardContent className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
           <select
             aria-label="Dispositivo"
             value={deviceId ?? ""}
             onChange={(e) => selectDevice(e.target.value)}
             className={cn(
-              "h-10 min-w-[14rem] rounded-md border border-input bg-card px-3 text-sm",
+              "h-9 min-w-[14rem] rounded-md border border-input bg-card px-3 text-sm",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
             )}
           >
@@ -241,44 +241,47 @@ export function LinhaDoTempoPage() {
           )}
 
           <div className="flex items-center gap-1.5">
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Dia anterior (tecla ←)"
-              title="Dia anterior (tecla ←)"
-              disabled={dateStr === null}
-              onClick={() => {
-                if (dateStr !== null) goToDate(addDays(dateStr, -1));
-              }}
-            >
-              <ChevronLeft className="h-4 w-4" aria-hidden />
-            </Button>
-            <Input
-              type="date"
-              aria-label="Data"
-              className="w-40 tabular-nums"
-              value={dateStr ?? ""}
-              max={todayStr ?? undefined}
-              onChange={(e) => {
-                if (e.target.value !== "") goToDate(e.target.value);
-              }}
-            />
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Próximo dia (tecla →)"
-              title="Próximo dia (tecla →)"
-              disabled={dateStr === null || isToday}
-              onClick={() => {
-                if (dateStr !== null) goToDate(addDays(dateStr, 1));
-              }}
-            >
-              <ChevronRight className="h-4 w-4" aria-hidden />
-            </Button>
+            {/* ◀ data ▶ como controle segmentado único (mesma altura h-9 de todos os controles) */}
+            <div className="flex h-9 items-stretch overflow-hidden rounded-md border border-input bg-card">
+              <button
+                type="button"
+                aria-label="Dia anterior (tecla ←)"
+                title="Dia anterior (tecla ←)"
+                disabled={dateStr === null}
+                onClick={() => {
+                  if (dateStr !== null) goToDate(addDays(dateStr, -1));
+                }}
+                className="flex w-8 items-center justify-center border-r border-input text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-40"
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden />
+              </button>
+              <Input
+                type="date"
+                aria-label="Data"
+                className="h-full w-36 rounded-none border-0 tabular-nums focus-visible:ring-0 focus-visible:ring-offset-0"
+                value={dateStr ?? ""}
+                max={todayStr ?? undefined}
+                onChange={(e) => {
+                  if (e.target.value !== "") goToDate(e.target.value);
+                }}
+              />
+              <button
+                type="button"
+                aria-label="Próximo dia (tecla →)"
+                title="Próximo dia (tecla →)"
+                disabled={dateStr === null || isToday}
+                onClick={() => {
+                  if (dateStr !== null) goToDate(addDays(dateStr, 1));
+                }}
+                className="flex w-8 items-center justify-center border-l border-input text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-40"
+              >
+                <ChevronRight className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
             <Button
               variant="outline"
               size="sm"
-              className="h-10"
+              className="h-9"
               disabled={todayStr === null || isToday}
               onClick={() => setDateOverride(null)}
             >
@@ -287,7 +290,7 @@ export function LinhaDoTempoPage() {
             <Button
               variant="outline"
               size="sm"
-              className="h-10"
+              className="h-9"
               disabled={todayStr === null}
               onClick={() => {
                 if (todayStr !== null) setDateOverride(addDays(todayStr, -1));
@@ -300,14 +303,14 @@ export function LinhaDoTempoPage() {
           <div
             role="group"
             aria-label="Janela de horário"
-            className="inline-flex items-center rounded-md border p-0.5"
+            className="inline-flex h-9 items-stretch rounded-md border border-input bg-card p-0.5"
           >
             <button
               type="button"
               aria-pressed={windowMode === "work"}
               onClick={() => setWindowMode("work")}
               className={cn(
-                "rounded px-2.5 py-1.5 text-xs font-medium transition-colors",
+                "rounded-[5px] px-3 text-xs font-medium transition-colors",
                 windowMode === "work"
                   ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
@@ -320,7 +323,7 @@ export function LinhaDoTempoPage() {
               aria-pressed={windowMode === "full"}
               onClick={() => setWindowMode("full")}
               className={cn(
-                "rounded px-2.5 py-1.5 text-xs font-medium transition-colors",
+                "rounded-[5px] px-3 text-xs font-medium transition-colors",
                 windowMode === "full"
                   ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
@@ -334,7 +337,7 @@ export function LinhaDoTempoPage() {
           <Button
             variant="outline"
             size="sm"
-            className="ml-auto h-10"
+            className="ml-auto h-9"
             onClick={() => setView((v) => (v === "canvas" ? "table" : "canvas"))}
           >
             {view === "canvas" ? (
