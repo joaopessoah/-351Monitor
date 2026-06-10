@@ -1,0 +1,23 @@
+<Configuration>
+  <!-- Aceite F1 em Windows Sandbox (Win11 client, sessao interativa real).
+       Pre-requisito (uma vez, admin + reboot):
+         Enable-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClientVM -All
+       Antes de abrir: preencha sandbox\kit.config com a enroll key e o server URL.
+       Abrir: duplo clique neste arquivo (ou WindowsSandbox.exe f1-aceite.wsb). -->
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>C:\dev\351-monitor\agent\publish\win-x64</HostFolder>
+      <SandboxFolder>C:\kit\bin</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>C:\dev\351-monitor\tools\aceite-f1\sandbox</HostFolder>
+      <SandboxFolder>C:\kit\ctl</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>powershell.exe -ExecutionPolicy Bypass -NoProfile -File C:\kit\ctl\inside-vm.ps1</Command>
+  </LogonCommand>
+  <MemoryInMB>4096</MemoryInMB>
+</Configuration>

@@ -32,3 +32,6 @@ Thumbs.db
 # Artefatos de execucao do agente
 agent/console-run.log
 *.queue.db
+
+# Publish local do agente (aceite F1 / testes manuais)
+agent/publish/
