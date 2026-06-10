@@ -1,0 +1,5 @@
+config_version esperada: 2
+devices.config_version: 2
+log do agente contem 'Config v2 aplicada': True
+eventos POLICY_APPLIED:
+63|2026-06-10 14:06:44.977+00|{"config_version": 2}|2026-06-10 14:07:15.263657+00

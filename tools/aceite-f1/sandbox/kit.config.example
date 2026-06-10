@@ -1,0 +1,4 @@
+# Copie para kit.config e preencha (gere a key com o backoffice CLI no staging):
+#   docker exec m351-staging-api-1 dotnet M351.Api.dll create-enrollment-key --org-slug <slug> --label sandbox
+ENROLL_KEY=ek_xxxxxxxxxxxx
+SERVER_URL=https://painel.2-25-193-15.sslip.io

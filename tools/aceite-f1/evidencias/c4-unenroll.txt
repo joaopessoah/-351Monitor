@@ -1,0 +1,7 @@
+device_commands:
+UNENROLL|2026-06-10 14:07:21.794183+00|2026-06-10 14:07:45.57661+00
+fila local: events=0 dead_letter=0
+kv keys: boot_id, boot_time_utc, first_run_done, clean_shutdown, server_url, enrollment_key_enc, config_json, config_version, unenrolled
+kv.unenrolled: 1
+log do agente (UNENROLL): True
+max(received_at) t0=2026-06-10 14:07:45.57661+00 t0+90s=2026-06-10 14:07:45.57661+00 congelado=True

@@ -39,7 +39,14 @@ public sealed class AgentWindowsService : ServiceBase
         _cts = new CancellationTokenSource();
         _sessions = new SessionManager(_runtime, _log);
 
-        _runtime.AckProcessor.ConfigApplied += _ => _sessions.BroadcastConfig();
+        // Task.Run: o loop de envio do BatchSender nunca pode bloquear em IPC — um push
+        // sincrono de config ao helper (pipe) congelou a cadencia de 30 s no aceite F1
+        // quando o read-loop do helper estava preso no NoticeForm modal.
+        _runtime.AckProcessor.ConfigApplied += _ => Task.Run(() =>
+        {
+            try { _sessions?.BroadcastConfig(); }
+            catch (Exception ex) { _log?.Warn($"Falha no broadcast de config aos helpers: {ex.Message}"); }
+        });
         _runtime.AckProcessor.Unenrolled += () =>
         {
             _log.Warn("UNENROLL: parando helpers e coleta.");

@@ -56,10 +56,13 @@ public sealed class PipeServer : IDisposable
             NamedPipeServerStream? server = null;
             try
             {
+                // Quota de buffer > 0: com quota zero toda escrita servico→helper vira
+                // rendezvous (so completa quando o helper le) — um helper que pare de ler
+                // bloquearia o WriteLine de SendConfig para sempre.
                 server = NamedPipeServerStreamAcl.Create(
                     $"monitoragent.{_sessionId}",
                     PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous, 0, 0, BuildSecurity());
+                    PipeOptions.Asynchronous, 64 * 1024, 64 * 1024, BuildSecurity());
 
                 await server.WaitForConnectionAsync(ct);
                 _log.Info($"Helper conectado ao pipe da sessão {_sessionId}.");
