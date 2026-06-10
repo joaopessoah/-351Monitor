@@ -23,6 +23,9 @@ param(
     [string]$SshKeyPath = $env:F1_SSH_KEY_PATH,
     [string]$VpsHost    = $(if ($env:STAGING_SSH_HOST) { $env:STAGING_SSH_HOST } else { '2.25.193.15' }),
     [string]$VpsUser    = $(if ($env:STAGING_SSH_USER) { $env:STAGING_SSH_USER } else { 'root' }),
+    # porta 22 tem 'ufw limit' (6 conexoes/30s) e o IP NAT compartilhado do runner Azure
+    # vive saturado — o aceite usa o listener dedicado 2222 (ufw allow, sem rate limit)
+    [string]$SshPort    = $(if ($env:F1_SSH_PORT) { $env:F1_SSH_PORT } else { '22' }),
     [int]$OutageSeconds = 600
 )
 
@@ -98,9 +101,9 @@ done
 # no return: preserva o array quando ha 1 so linha.
 function Invoke-SshOnce([string]$remoteCmd, [string]$stdinText) {
     if ($null -ne $stdinText -and $stdinText.Length -gt 0) {
-        $raw = ($stdinText -replace "`r", '') | ssh -i $SshKeyPath -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 "$VpsUser@$VpsHost" $remoteCmd 2>&1
+        $raw = ($stdinText -replace "`r", '') | ssh -i $SshKeyPath -p $SshPort -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 "$VpsUser@$VpsHost" $remoteCmd 2>&1
     } else {
-        $raw = ssh -i $SshKeyPath -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 "$VpsUser@$VpsHost" $remoteCmd 2>&1
+        $raw = ssh -i $SshKeyPath -p $SshPort -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 "$VpsUser@$VpsHost" $remoteCmd 2>&1
     }
     $stdout = @($raw | Where-Object { $_ -is [string] })
     if ($LASTEXITCODE -ne 0) {
@@ -114,7 +117,7 @@ function Start-RemoteSession {
     for ($t = 1; $t -le 3; $t++) {
         $psi = [Diagnostics.ProcessStartInfo]::new()
         $psi.FileName = 'ssh'
-        foreach ($a in @('-i', $SshKeyPath, '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ServerAliveInterval=30', '-o', 'ConnectTimeout=15', "$VpsUser@$VpsHost", 'bash /tmp/f1-server.sh')) { $psi.ArgumentList.Add($a) }
+        foreach ($a in @('-i', $SshKeyPath, '-p', $SshPort, '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ServerAliveInterval=30', '-o', 'ConnectTimeout=15', "$VpsUser@$VpsHost", 'bash /tmp/f1-server.sh')) { $psi.ArgumentList.Add($a) }
         $psi.UseShellExecute = $false
         $psi.RedirectStandardInput = $true
         $psi.RedirectStandardOutput = $true

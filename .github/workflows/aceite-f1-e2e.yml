@@ -57,6 +57,9 @@ jobs:
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
           STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          # porta 22 tem ufw limit (6 conexoes/30s) que dropa o IP NAT do runner;
+          # 2222 e um listener dedicado com ufw allow (ver tools/aceite-f1/run.ps1)
+          F1_SSH_PORT: '2222'
         run: ./tools/aceite-f1/run.ps1
 
       - name: Evidencias como artifact
