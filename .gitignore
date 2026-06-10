@@ -1,0 +1,30 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+artifacts/
+TestResults/
+*.binlog
+
+# Node / portal
+node_modules/
+dist/
+.vite/
+*.local
+
+# Ambiente / segredos — JAMAIS commitar
+.env
+.env.*
+!.env.example
+appsettings.*.Local.json
+*.pfx
+*.snk
+
+# Dev
+.dev-mail/
+*.log
+.idea/
+.DS_Store
+Thumbs.db
