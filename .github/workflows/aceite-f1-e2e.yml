@@ -1,0 +1,85 @@
+# =============================================================================
+# +351 Monitor — Aceite F1 em VM limpa (E2E contra staging)
+# Runner Windows efemero = VM limpa. Instala o agente como servico real,
+# valida os 4 criterios de pronto da F1 e commita as evidencias na branch.
+# Disparo: push na branch test/f1-aceite-vm-limpa ou workflow_dispatch.
+# =============================================================================
+name: Aceite F1 - VM limpa
+
+on:
+  push:
+    branches: [test/f1-aceite-vm-limpa]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: aceite-f1
+  cancel-in-progress: false
+
+jobs:
+  aceite:
+    name: aceite F1 (runner Windows limpo -> staging)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publicar agente (self-contained win-x64)
+        shell: pwsh
+        run: |
+          dotnet publish agent/src/MonitorAgentService/MonitorAgentService.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishReadyToRun=true -o agent/publish/win-x64
+          dotnet publish agent/src/MonitorAgentSession/MonitorAgentSession.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishReadyToRun=true -o agent/publish/win-x64
+
+      - name: Preparar chave SSH do staging
+        shell: pwsh
+        env:
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          if (-not $env:STAGING_SSH_KEY) { Write-Host '::error::secret STAGING_SSH_KEY ausente'; exit 1 }
+          $dir = Join-Path $env:USERPROFILE '.ssh'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $key = Join-Path $dir 'staging_key'
+          $texto = $env:STAGING_SSH_KEY.Replace("`r`n", "`n").TrimEnd() + "`n"
+          [IO.File]::WriteAllText($key, $texto)
+          # OpenSSH no Windows exige ACL restrita na chave privada
+          icacls $key /inheritance:r /grant:r "$($env:USERNAME):R" | Out-Null
+          "F1_SSH_KEY_PATH=$key" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8NoBOM
+
+      - name: Executar aceite F1
+        shell: pwsh
+        env:
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+        run: ./tools/aceite-f1/run.ps1
+
+      - name: Evidencias como artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aceite-f1-evidencias-${{ github.run_id }}
+          path: tools/aceite-f1/evidencias
+          if-no-files-found: warn
+
+      # so publica na branch quando o run foi disparado a partir dela (evita
+      # non-fast-forward em workflow_dispatch a partir de outras refs)
+      - name: Publicar evidencias na branch
+        if: always() && github.ref == 'refs/heads/test/f1-aceite-vm-limpa'
+        shell: pwsh
+        run: |
+          git config user.name 'aceite-f1-bot'
+          git config user.email 'aceite-f1@noreply.local'
+          git add tools/aceite-f1/evidencias
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "test(f1): evidencias do aceite em VM limpa (run ${{ github.run_id }})"
+            git push origin "HEAD:refs/heads/test/f1-aceite-vm-limpa"
+          } else {
+            Write-Host 'sem evidencias novas para commitar'
+          }
