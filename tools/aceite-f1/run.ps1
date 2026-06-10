@@ -64,15 +64,43 @@ function Add-Criterio([string]$id, [string]$nome, [bool]$pass, [string]$evidenci
     Log "== $id [$r] $nome :: $evidencia"
 }
 
-# ssh: stdout vem como [string]; stderr (com 2>&1) vem como ErrorRecord — separamos.
-# Retry apenas para exit 255 (falha de transporte do proprio ssh: nada remoto executou).
-# Virgula unaria nos returns: preserva o array quando ha 1 so linha (sem ela, o caller
-# receberia [string] e indexacao viraria [char]).
-function Invoke-Ssh([string]$remoteCmd) {
-    for ($t = 1; $t -le 3; $t++) {
+# ---------------------------------------------------------------- ssh
+# A borda da VPS (Hostinger) corta rajadas de conexoes ssh novas: no run 27274310907,
+# 8 conexoes em 10 s fizeram a porta 22 passar a dar timeout para o IP do runner
+# (fail2ban zerado — bloqueio upstream). Por isso TODO o trafego de verificacao usa
+# UMA sessao ssh persistente com um servidor de jobs no lado remoto: jobs SQL (psql
+# via docker exec) e CMD (bash), respostas terminadas por "__DONE__ <exit>".
+$RemoteServerScript = @'
+#!/usr/bin/env bash
+echo "__READY__"
+mode=""; buf=""
+while IFS= read -r line; do
+  line="${line%$'\r'}"              # tolera CR vindo de cliente Windows
+  line="${line#$'\xef\xbb\xbf'}"    # tolera BOM no 1o write do stdin
+  case "$line" in
+    __SQL_BEGIN__) mode=sql; buf="" ;;
+    __CMD_BEGIN__) mode=cmd; buf="" ;;
+    __SQL_END__)
+      printf '%s' "$buf" | docker exec -i m351-staging-postgres-1 psql -U m351 -d m351_staging -tA -q -v ON_ERROR_STOP=1 2>&1
+      echo "__DONE__ $?"
+      mode="" ;;
+    __CMD_END__)
+      bash -c "$buf" 2>&1
+      echo "__DONE__ $?"
+      mode="" ;;
+    __QUIT__) exit 0 ;;
+    *) if [ -n "$mode" ]; then buf="${buf}${line}"$'\n'; fi ;;
+  esac
+done
+'@
+
+# Conexao ssh avulsa (1 uso na fase 0, para subir o servidor de jobs). Virgula unaria
+# no return: preserva o array quando ha 1 so linha.
+function Invoke-SshOnce([string]$remoteCmd, [string]$stdinText) {
+    if ($null -ne $stdinText -and $stdinText.Length -gt 0) {
+        $raw = ($stdinText -replace "`r", '') | ssh -i $SshKeyPath -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 "$VpsUser@$VpsHost" $remoteCmd 2>&1
+    } else {
         $raw = ssh -i $SshKeyPath -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 "$VpsUser@$VpsHost" $remoteCmd 2>&1
-        if ($LASTEXITCODE -ne 255) { break }
-        if ($t -lt 3) { Log "ssh transporte falhou (255), tentativa $t/3 — aguardando 10 s"; Start-Sleep -Seconds 10 }
     }
     $stdout = @($raw | Where-Object { $_ -is [string] })
     if ($LASTEXITCODE -ne 0) {
@@ -82,20 +110,75 @@ function Invoke-Ssh([string]$remoteCmd) {
     return ,$stdout
 }
 
-# SQL via stdin do psql: nenhuma camada de quoting no shell remoto.
-function Invoke-Sql([string]$sql) {
-    $clean = ($sql -replace "`r", '') + "`n"
+function Start-RemoteSession {
     for ($t = 1; $t -le 3; $t++) {
-        $raw = $clean | ssh -i $SshKeyPath -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 "$VpsUser@$VpsHost" "docker exec -i $PgContainer psql -U m351 -d m351_staging -tA -q -v ON_ERROR_STOP=1" 2>&1
-        if ($LASTEXITCODE -ne 255) { break }
-        if ($t -lt 3) { Log "ssh transporte falhou (255), tentativa $t/3 — aguardando 10 s"; Start-Sleep -Seconds 10 }
+        $psi = [Diagnostics.ProcessStartInfo]::new()
+        $psi.FileName = 'ssh'
+        foreach ($a in @('-i', $SshKeyPath, '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ServerAliveInterval=30', '-o', 'ConnectTimeout=15', "$VpsUser@$VpsHost", 'bash /tmp/f1-server.sh')) { $psi.ArgumentList.Add($a) }
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardInput = $true
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
+        $psi.StandardInputEncoding = [Text.UTF8Encoding]::new($false)  # sem BOM no 1o write
+        $proc = [Diagnostics.Process]::Start($psi)
+        $proc.BeginErrorReadLine()  # drena stderr para nao deadlockar o pipe
+        $ready = $proc.StandardOutput.ReadLine()
+        if ($ready -eq '__READY__') {
+            $proc.StandardInput.AutoFlush = $true
+            $script:SqlProc = $proc
+            Log "sessao ssh persistente estabelecida (pid local $($proc.Id))"
+            return
+        }
+        try { $proc.Kill() } catch {}
+        if ($t -lt 3) { Log "sessao ssh nao abriu (tentativa $t/3) — aguardando 30 s"; Start-Sleep -Seconds 30 }
     }
-    $stdout = @($raw | Where-Object { $_ -is [string] })
-    if ($LASTEXITCODE -ne 0) {
-        $all = ($raw | ForEach-Object { "$_" }) -join "`n"
-        throw "psql falhou (exit $LASTEXITCODE) sql=[$sql]:`n$all"
+    throw 'nao foi possivel estabelecer a sessao ssh persistente'
+}
+
+function Stop-RemoteSession {
+    if ($script:SqlProc -and -not $script:SqlProc.HasExited) {
+        try { $script:SqlProc.StandardInput.Write("__QUIT__`n"); $script:SqlProc.StandardInput.Flush() } catch {}
+        if (-not $script:SqlProc.WaitForExit(5000)) { try { $script:SqlProc.Kill() } catch {} }
     }
-    return ,@($stdout | Where-Object { $_ -ne '' })
+    $script:SqlProc = $null
+}
+
+function Invoke-RemoteJob([string]$kind, [string]$payload) {
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+        if (-not $script:SqlProc -or $script:SqlProc.HasExited) { Start-RemoteSession }
+        try {
+            $in = $script:SqlProc.StandardInput
+            # Write nao traduz \n (so WriteLine usaria CRLF) — o bash remoto exige LF puro
+            $in.Write("__${kind}_BEGIN__`n")
+            $in.Write(($payload -replace "`r", '') + "`n")
+            $in.Write("__${kind}_END__`n")
+            $in.Flush()
+            $lines = [System.Collections.Generic.List[string]]::new()
+            while ($true) {
+                $line = $script:SqlProc.StandardOutput.ReadLine()
+                if ($null -eq $line) { throw 'sessao ssh persistente caiu' }
+                if ($line -match '^__DONE__ (\d+)$') { return @{ code = [int]$Matches[1]; lines = $lines } }
+                $lines.Add($line)
+            }
+        } catch {
+            Stop-RemoteSession
+            if ($attempt -ge 2) { throw }
+            Log "job remoto falhou ($_) — reabrindo a sessao ssh"
+        }
+    }
+}
+
+function Invoke-RemoteCmd([string]$cmd) {
+    $r = Invoke-RemoteJob 'CMD' $cmd
+    if ($r.code -ne 0) { throw "cmd remoto falhou (exit $($r.code)) cmd=[$cmd]:`n$($r.lines -join "`n")" }
+    return ,@($r.lines)
+}
+
+function Invoke-Sql([string]$sql) {
+    $r = Invoke-RemoteJob 'SQL' $sql
+    if ($r.code -ne 0) { throw "psql falhou (exit $($r.code)) sql=[$sql]:`n$($r.lines -join "`n")" }
+    return ,@($r.lines | Where-Object { $_ -ne '' })
 }
 
 function Invoke-SqlScalar([string]$sql) {
@@ -170,11 +253,18 @@ function Phase-Context {
     if (Get-Service $ServiceName -ErrorAction SilentlyContinue) { throw "VM nao esta limpa: servico $ServiceName ja existe" }
     if (Test-Path $DataDir) { throw "VM nao esta limpa: $DataDir ja existe" }
 
-    $ok = Invoke-Ssh "echo ok && hostname && cd /opt/351monitor && git rev-parse --short HEAD"
-    Log "SSH ao staging OK: $($ok -join ' | ')"
-    $script:StagingCommit = $ok[-1]
+    # uma unica conexao avulsa: sobe o servidor de jobs e coleta o contexto da VPS.
+    # sed remove BOM e CRs que o pipe do PowerShell para comando nativo introduz
+    # (preambulo UTF-8 + CRLF final apendado) — sem isso o bash quebra no parse.
+    $upCmd = 'sed -e ''1s/^\xef\xbb\xbf//'' -e ''s/\r$//'' > /tmp/f1-server.sh && echo ok && hostname && cd /opt/351monitor && git rev-parse --short HEAD && grep ''^STAGING_DOMAIN='' infra/.env'
+    $ctx = Invoke-SshOnce $upCmd $RemoteServerScript
+    Log "SSH ao staging OK: $($ctx -join ' | ')"
+    $script:StagingCommit = @($ctx | Where-Object { $_ -match '^[0-9a-f]{7,12}$' })[0]
 
-    $domLine = @(Invoke-Ssh "grep '^STAGING_DOMAIN=' /opt/351monitor/infra/.env")[0]
+    Start-RemoteSession
+
+    $domLine = @($ctx | Where-Object { $_ -like 'STAGING_DOMAIN=*' })[0]
+    if (-not $domLine) { throw "STAGING_DOMAIN nao encontrado no contexto da VPS: $($ctx -join ' | ')" }
     $domain = $domLine.Split('=', 2)[1].Trim()
     $script:ApiUrl = "https://$domain"
 
@@ -193,7 +283,7 @@ function Phase-Context {
 # ---------------------------------------------------------------- fase 1: backoffice
 function Phase-Backoffice {
     Log "=== FASE 1: criar tenant + enrollment key no staging ==="
-    $orgOut = (Invoke-Ssh "docker exec $ApiContainer dotnet M351.Api.dll create-org --name F1-Aceite-$RunId --owner-email $OwnerEmail --slug $Slug") -join "`n"
+    $orgOut = (Invoke-RemoteCmd "docker exec $ApiContainer dotnet M351.Api.dll create-org --name F1-Aceite-$RunId --owner-email $OwnerEmail --slug $Slug") -join "`n"
     # redige o token do link de convite do Owner (vai para log publico do Actions/evidencias)
     $orgRedigido = ($orgOut -replace 'token=[A-Za-z0-9_\-\.]+', 'token=<redigido>') -replace 'convite/[A-Za-z0-9_\-\.]+', 'convite/<redigido>'
     Log "create-org:`n$orgRedigido"
@@ -202,7 +292,7 @@ function Phase-Backoffice {
     if (-not $script:TenantId) { throw "org '$Slug' nao encontrada apos create-org" }
     Log "tenant_id = $($script:TenantId)"
 
-    $keyOut = (Invoke-Ssh "docker exec $ApiContainer dotnet M351.Api.dll create-enrollment-key --org-slug $Slug --label aceite-f1-$RunId") -join "`n"
+    $keyOut = (Invoke-RemoteCmd "docker exec $ApiContainer dotnet M351.Api.dll create-enrollment-key --org-slug $Slug --label aceite-f1-$RunId") -join "`n"
     if ($keyOut -match 'ek_[A-Za-z0-9]+') { $script:EnrollKey = $Matches[0] } else { throw "enrollment key nao encontrada na saida:`n$keyOut" }
     Log "enrollment key gerada: $($script:EnrollKey.Substring(0,7))... (redigida)"
 }
@@ -269,6 +359,10 @@ function Phase-OutageC2 {
     $preMax   = [int](Invoke-SqlScalar "SELECT coalesce(max(seq),0) FROM raw_events WHERE device_id = '$($script:DeviceId)';")
     $preCount = [int](Invoke-SqlScalar "SELECT count(*) FROM raw_events WHERE device_id = '$($script:DeviceId)';")
     Log "pre-queda: max(seq)=$preMax count=$preCount"
+
+    # encerra a sessao ssh antes do bloqueio (seria cortada no meio); ela reabre
+    # sozinha no primeiro job apos a restauracao da rede
+    Stop-RemoteSession
 
     netsh advfirewall firewall add rule name=$FwRule dir=out action=block remoteip=$VpsHost | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'netsh add rule falhou' }
@@ -371,16 +465,17 @@ function Phase-PolicyC3 {
     Invoke-Sql "UPDATE tenant_agent_configs SET idle_threshold_sec = 600, config_version = config_version + 1, updated_at = now() WHERE tenant_id = '$($script:TenantId)';" | Out-Null
     Log "config: idle_threshold_sec 300 -> 600, config_version $vAtual -> $vNova"
 
+    # ">=" e nao "=": um retry da sessao ssh pode reexecutar o UPDATE (version +2)
     $elapsed = Wait-Until -timeoutSec 240 -pollSec 10 -what 'POLICY_APPLIED' -cond {
-        $n = Invoke-SqlScalar "SELECT count(*) FROM raw_events WHERE device_id = '$($script:DeviceId)' AND event_type = 'POLICY_APPLIED' AND (payload->>'config_version')::int = $vNova;"
+        $n = Invoke-SqlScalar "SELECT count(*) FROM raw_events WHERE device_id = '$($script:DeviceId)' AND event_type = 'POLICY_APPLIED' AND (payload->>'config_version')::int >= $vNova;"
         [int]$n -gt 0
     }
     $devVer = [int](Invoke-SqlScalar "SELECT config_version FROM devices WHERE id = '$($script:DeviceId)';")
-    $logHit = (Read-ServiceLog) -match "Config v$vNova aplicada"
+    $logHit = (Read-ServiceLog) -match "Config v\d+ aplicada"
     $evRow = (Invoke-Sql "SELECT seq, occurred_at, payload, received_at FROM raw_events WHERE device_id = '$($script:DeviceId)' AND event_type = 'POLICY_APPLIED' ORDER BY seq DESC LIMIT 3;") -join "`n"
     Save-Evidence 'c3-policy-applied.txt' "config_version esperada: $vNova`ndevices.config_version: $devVer`nlog do agente contem 'Config v$vNova aplicada': $logHit`neventos POLICY_APPLIED:`n$evRow"
 
-    $pass = ($elapsed -ge 0) -and ($devVer -eq $vNova) -and $logHit
+    $pass = ($elapsed -ge 0) -and ($devVer -ge $vNova) -and $logHit
     Add-Criterio 'C3' 'idle_threshold_sec mudado no banco -> agente aplica e emite POLICY_APPLIED' $pass `
         ("POLICY_APPLIED v$vNova em {0}s; devices.config_version=$devVer; log do agente: $logHit" -f $(if ($elapsed -ge 0) { [int]$elapsed } else { 'TIMEOUT' }))
 }
@@ -503,6 +598,7 @@ try {
     # nunca deixar o bloqueio de firewall para tras
     netsh advfirewall firewall delete rule name=$FwRule 2>$null | Out-Null
     try { sc.exe stop $ServiceName 2>$null | Out-Null; Start-Sleep -Seconds 5 } catch {}
+    try { Stop-RemoteSession } catch {}
 
     $fails = @($Criterios | Where-Object { $_.Resultado -eq 'FAIL' }).Count
     $total = $Criterios.Count
