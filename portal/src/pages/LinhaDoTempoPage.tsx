@@ -384,7 +384,7 @@ export function LinhaDoTempoPage() {
       {deviceId === null ? (
         // Estado vazio 8.9: sem device selecionado → instrução.
         <Card>
-          <CardContent className="flex flex-col items-center gap-3 px-6 py-14 text-center">
+          <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
             <span className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
               <MonitorSmartphone className="h-7 w-7 text-muted-foreground" aria-hidden />
             </span>
@@ -392,7 +392,7 @@ export function LinhaDoTempoPage() {
             <p className="text-sm text-muted-foreground">
               Escolha uma máquina no seletor acima para reconstruir o dia dela na linha do tempo.
             </p>
-          </CardContent>
+          </div>
         </Card>
       ) : (
         <Card>
