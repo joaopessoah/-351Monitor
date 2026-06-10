@@ -1,0 +1,3 @@
+device_id=019eb181-fa8e-73c4-b41b-744d99a19950 tenant_id=019eb181-ee94-7704-8efa-6de956fcb417
+seq|event_type|occurred_at|tz_offset_min|boot_id|received_at
+1|AGENT_START|2026-06-10 12:29:06.398+00|0|dbcbbdbc-d36b-4d54-84c3-ef87caf55fb9|2026-06-10 12:29:07.561411+00

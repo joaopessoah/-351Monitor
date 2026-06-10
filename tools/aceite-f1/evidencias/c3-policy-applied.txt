@@ -1,0 +1,4 @@
+config_version esperada: 2
+devices.config_version: 1
+log do agente contem 'Config v2 aplicada': True
+eventos POLICY_APPLIED:
