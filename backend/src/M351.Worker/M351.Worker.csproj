@@ -7,12 +7,19 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <!-- Quartz.NET: agendamento dos jobs da Seção 7.6 (Intervalization 60 s etc.) -->
+    <PackageReference Include="Quartz.Extensions.Hosting" Version="3.13.1" />
     <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
     <PackageReference Include="Serilog.Settings.Configuration" Version="8.0.4" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
     <!-- Sink do Seq (Seção 4: Serilog→Seq); ativado por config em staging via
          Serilog__WriteTo__1__Name=Seq + Serilog__WriteTo__1__Args__serverUrl -->
     <PackageReference Include="Serilog.Sinks.Seq" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- IntervalizationService (e o Npgsql) vêm da Infrastructure -->
+    <ProjectReference Include="..\M351.Infrastructure\M351.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
