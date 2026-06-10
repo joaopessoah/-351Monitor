@@ -19,9 +19,9 @@
 # =============================================================================
 set -euo pipefail
 
-STAGING_SSH_HOST="${STAGING_SSH_HOST:-staging.SEU-DOMINIO.com.br}" # PLACEHOLDER
-STAGING_SSH_USER="${STAGING_SSH_USER:-deploy}"
-STAGING_DIR="${STAGING_DIR:-/opt/m351}"
+STAGING_SSH_HOST="${STAGING_SSH_HOST:-2.25.193.15}"
+STAGING_SSH_USER="${STAGING_SSH_USER:-root}"
+STAGING_DIR="${STAGING_DIR:-/opt/351monitor}"
 SSH_KEY_FILE="${SSH_KEY_FILE:-}"
 
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15)
@@ -36,8 +36,9 @@ set -euo pipefail
 DIR="$1"
 cd "$DIR"
 
-echo "[deploy] atualizando código (git pull --ff-only)"
-git pull --ff-only
+echo "[deploy] sincronizando código com origin/main (staging nunca tem commits locais)"
+git fetch origin main
+git reset --hard origin/main
 
 echo "[deploy] docker compose pull (imagens de terceiros) + up -d --build"
 docker compose -f infra/docker-compose.staging.yml --env-file infra/.env pull --ignore-buildable || true
