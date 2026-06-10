@@ -53,6 +53,8 @@ services:
       # Provider de e-mail: Smtp (padrão do appsettings) ou Dev (grava .txt no
       # container — usar enquanto não houver servidor SMTP contratado)
       Email__Provider: ${EMAIL_PROVIDER:-Smtp}
+      # Diretório gravável pelo usuário não-root do container (provider Dev)
+      Email__DevMailDirectory: /tmp/dev-mail
       Email__SmtpHost: ${SMTP_HOST:-}
       Email__SmtpPort: ${SMTP_PORT:-587}
       Email__SmtpUsername: ${SMTP_USERNAME:-}
