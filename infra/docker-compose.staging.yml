@@ -50,7 +50,9 @@ services:
       Mfa__EncryptionKey: ${MFA_ENCRYPTION_KEY:?defina MFA_ENCRYPTION_KEY em infra/.env}
       # URL base usada nos links de convite por e-mail
       Portal__BaseUrl: https://${STAGING_DOMAIN:?defina STAGING_DOMAIN em infra/.env}
-      # E-mail real via SMTP (Email:Provider=Smtp no appsettings)
+      # Provider de e-mail: Smtp (padrão do appsettings) ou Dev (grava .txt no
+      # container — usar enquanto não houver servidor SMTP contratado)
+      Email__Provider: ${EMAIL_PROVIDER:-Smtp}
       Email__SmtpHost: ${SMTP_HOST:-}
       Email__SmtpPort: ${SMTP_PORT:-587}
       Email__SmtpUsername: ${SMTP_USERNAME:-}
