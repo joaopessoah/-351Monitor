@@ -96,26 +96,38 @@ public static class CreateOrgCommand
         await SeedCategoriesAsync(db, org.Id);
 
         var link = $"{portal.BaseUrl.TrimEnd('/')}/convite/{token}";
-        await emailSender.SendAsync(new EmailMessage(
-            email,
-            $"Sua organização {org.Name} foi criada no +351 Monitor",
-            $"""
-            Olá,
 
-            A organização {org.Name} foi provisionada no +351 Monitor e você é o Owner.
-
-            Para definir sua senha e configurar a verificação em duas etapas (obrigatória para Owner),
-            abra o link abaixo (válido por 7 dias):
-
-            {link}
-            """));
-
+        // O link no console é a fonte de verdade do backoffice: imprimir ANTES de
+        // tentar o e-mail, para que uma falha de envio não perca o convite
+        // (o token não é recuperável depois — só o hash fica no banco).
         Console.WriteLine("Organização criada com sucesso.");
         Console.WriteLine($"  Tenant ID : {org.Id}");
         Console.WriteLine($"  Nome      : {org.Name}");
         Console.WriteLine($"  Slug      : {org.Slug}");
         Console.WriteLine($"  Owner     : {email}");
         Console.WriteLine($"  Convite   : {link}");
+
+        try
+        {
+            await emailSender.SendAsync(new EmailMessage(
+                email,
+                $"Sua organização {org.Name} foi criada no +351 Monitor",
+                $"""
+                Olá,
+
+                A organização {org.Name} foi provisionada no +351 Monitor e você é o Owner.
+
+                Para definir sua senha e configurar a verificação em duas etapas (obrigatória para Owner),
+                abra o link abaixo (válido por 7 dias):
+
+                {link}
+                """));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  AVISO: o e-mail de convite não pôde ser enviado ({ex.Message}). Use o link acima.");
+        }
+
         return 0;
     }
 

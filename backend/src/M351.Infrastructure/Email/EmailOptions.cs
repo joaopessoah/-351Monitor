@@ -7,8 +7,8 @@ public class EmailOptions
     /// <summary>"Dev" (grava .txt em disco) ou "Smtp".</summary>
     public string Provider { get; set; } = "Dev";
 
-    /// <summary>Diretório dos e-mails do provider Dev.</summary>
-    public string DevMailDirectory { get; set; } = @"C:\dev\351-monitor\.dev-mail";
+    /// <summary>Diretório dos e-mails do provider Dev (relativo ao diretório de trabalho por padrão — seguro em container).</summary>
+    public string DevMailDirectory { get; set; } = ".dev-mail";
 
     public string SmtpHost { get; set; } = string.Empty;
     public int SmtpPort { get; set; } = 587;
