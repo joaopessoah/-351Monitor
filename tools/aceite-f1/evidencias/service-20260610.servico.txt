@@ -1,0 +1,13 @@
+[11:58:11.731 INF] Serviço iniciando…
+[11:58:11.862 INF] AGENT_START emitido (start_reason=crash_recovery, boot_id=ab55b70b-1775-4e8e-9a34-94cab528d083).
+[11:58:12.798 INF] Helper lançado na sessão 2 (pid 8040).
+[11:58:12.855 INF] Serviço iniciado.
+[11:58:12.945 INF] Helper conectado ao pipe da sessão 2.
+[11:58:13.207 INF] Lote enviado: 1 eventos | ack: accepted=1 duplicates=0 rejected=0
+[11:58:43.474 INF] Lote enviado: 3 eventos | ack: accepted=3 duplicates=0 rejected=0
+[11:59:13.739 INF] Lote enviado: 1 eventos | ack: accepted=1 duplicates=0 rejected=0
+[11:59:17.684 INF] Encerrando (reason=service_stop)…
+[11:59:17.688 INF] AGENT_STOP emitido (reason=service_stop); shutdown limpo registrado.
+[11:59:17.754 INF] Lote enviado: 1 eventos | ack: accepted=1 duplicates=0 rejected=0
+[11:59:17.762 INF] Encerrado.
+
