@@ -71,7 +71,7 @@ public class TimelineController(
         var rows = (await connection.QueryAsync<IntervalRow>(new CommandDefinition(
             """
             SELECT i.started_at, i.ended_at, i.state, i.window_title, i.data_incomplete,
-                   a.id AS app_id, a.process_name, a.display_name
+                   i.device_user_id, a.id AS app_id, a.process_name, a.display_name
             FROM activity_intervals i
             LEFT JOIN app_catalog a ON a.id = i.app_id
             WHERE i.tenant_id = @TenantId AND i.device_id = @DeviceId
@@ -238,8 +238,17 @@ public class TimelineController(
     }
 
     // ------------------------------------------------------------ helpers
+    /// <summary>
+    /// Regra canônica de arredondamento do gate 11.3: soma EXATA (ticks) por LANE
+    /// (device_user_id) com floor POR LANE, depois soma das lanes — espelho bit a bit do
+    /// floor(sum(extract(epoch ...)))::int agrupado por device_user_id da agregação diária
+    /// (DailyAggregationService). Truncar a soma global em double divergiria do agregado
+    /// com 2+ lanes e durações fracionárias (ex.: 100.5s + 100.5s → 201 vs 100 + 100).
+    /// </summary>
     private static long SecondsIn(List<IntervalRow> rows, string state) =>
-        (long)rows.Where(r => r.State == state).Sum(r => (r.EndedAt - r.StartedAt).TotalSeconds);
+        rows.Where(r => r.State == state)
+            .GroupBy(r => r.DeviceUserId)
+            .Sum(lane => lane.Sum(r => (r.EndedAt - r.StartedAt).Ticks) / TimeSpan.TicksPerSecond);
 
     private static DateTimeOffset LocalMidnightUtc(DateOnly day, TimeZoneInfo tz)
     {
@@ -265,6 +274,7 @@ public class TimelineController(
     {
         public DateTimeOffset StartedAt { get; set; }
         public DateTimeOffset EndedAt { get; set; }
+        public Guid? DeviceUserId { get; set; }
         public string State { get; set; } = "";
         public string? WindowTitle { get; set; }
         public bool DataIncomplete { get; set; }

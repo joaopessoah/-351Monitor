@@ -22,8 +22,10 @@ namespace M351.Infrastructure.Intervalization;
 ///  4. divide intervalos na meia-noite do fuso da org (source_day exato por dia local);
 ///  5. resolve app_id no app_catalog (auto-insert não-curado; JAMAIS window_title no catálogo)
 ///     e device_user_id por (device_id, windows_sid);
-///  6. grava intervalos + dirty_days e finaliza o cursor — dirty_from só é zerado se o
-///     updated_at não mudou (lote que chegou DURANTE o processamento re-suja o cursor).
+///  6. grava intervalos + dirty_days (dias dos intervalos novos E dos deletados; upsert
+///     no-op com lock de linha para fechar a corrida com a agregação diária) e finaliza o
+///     cursor — dirty_from só é zerado se o updated_at não mudou (lote que chegou DURANTE
+///     o processamento re-suja o cursor).
 ///
 /// Partições mensais de activity_intervals são garantidas fora da transação (auto-commit,
 /// mesmo padrão do RawEventPartitionManager) — a migration só criou mês corrente e próximo.
@@ -167,21 +169,42 @@ public sealed class IntervalizationService(NpgsqlDataSource dataSource, ILogger<
 
         var result = IntervalizationEngine.Build(events, seeds: null, seqBefore, windowStart);
 
-        // delete-and-rebuild (idempotente)
-        await ExecAsync(conn, tx, """
-            DELETE FROM activity_intervals
-            WHERE tenant_id = @t AND device_id = @d AND ended_at > @start
-            """, [("t", tenantId), ("d", deviceId), ("start", windowStart)], ct);
+        // delete-and-rebuild (idempotente). RETURNING captura os source_day dos intervalos
+        // REMOVIDOS: um dia cujos intervalos sumiram no rebuild sem ganhar substitutos (ex.:
+        // clock_offset_ms mudou entre execuções e o retalho migrou para o dia vizinho)
+        // também precisa voltar a dirty_days — senão o agregado obsoleto dele sobrevive
+        // para sempre, reportando segundos de intervalos que já não existem.
+        var deletedDays = new List<DateOnly>();
+        await using (var command = new NpgsqlCommand("""
+            WITH del AS (
+                DELETE FROM activity_intervals
+                WHERE tenant_id = @t AND device_id = @d AND ended_at > @start
+                RETURNING source_day)
+            SELECT DISTINCT source_day FROM del
+            """, conn, tx))
+        {
+            command.Parameters.AddWithValue("t", tenantId);
+            command.Parameters.AddWithValue("d", deviceId);
+            command.Parameters.AddWithValue("start", windowStart);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct)) deletedDays.Add(reader.GetFieldValue<DateOnly>(0));
+        }
 
         var rows = await MaterializeAsync(conn, tx, tenantId, deviceId, orgTimezone, result.Intervals, ct);
 
-        // dirty_days: cada dia local (TZ da org) tocado (§7.3 passo 4) — consumo é F3
-        var days = rows.Select(r => r.SourceDay).Distinct().ToList();
+        // dirty_days: cada dia local (TZ da org) tocado — escrito OU esvaziado (§7.3 passo 4).
+        // Upsert deliberadamente DO UPDATE no-op (e não DO NOTHING): conflito com linha VIVA
+        // adquire o lock da linha, então o DELETE da agregação concorrente espera o commit
+        // DESTA transação e o recompute lê os intervalos novos. DO NOTHING não locka linha
+        // viva — a agregação podia consumir a marca lendo o estado antigo (uncommitted aqui,
+        // invisível lá) e o dia ficava com agregado obsoleto permanente.
+        var days = rows.Select(r => r.SourceDay).Concat(deletedDays).Distinct().ToList();
         foreach (var day in days)
         {
             await ExecAsync(conn, tx, """
                 INSERT INTO dirty_days (tenant_id, device_id, day)
-                VALUES (@t, @d, @day) ON CONFLICT DO NOTHING
+                VALUES (@t, @d, @day)
+                ON CONFLICT (tenant_id, device_id, day) DO UPDATE SET day = EXCLUDED.day
                 """, [("t", tenantId), ("d", deviceId), ("day", day)], ct);
         }
 

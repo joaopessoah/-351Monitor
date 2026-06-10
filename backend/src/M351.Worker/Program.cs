@@ -1,3 +1,4 @@
+using M351.Infrastructure.Aggregation;
 using M351.Infrastructure.Intervalization;
 using M351.Worker;
 using Npgsql;
@@ -16,18 +17,29 @@ builder.Services.AddSingleton(NpgsqlDataSource.Create(connectionString));
 builder.Services.AddSingleton<IntervalizationService>(sp => new IntervalizationService(
     sp.GetRequiredService<NpgsqlDataSource>(),
     sp.GetRequiredService<ILogger<IntervalizationService>>()));
+builder.Services.AddSingleton<DailyAggregationService>(sp => new DailyAggregationService(
+    sp.GetRequiredService<NpgsqlDataSource>(),
+    sp.GetRequiredService<ILogger<DailyAggregationService>>()));
 
-// Quartz (Seção 7.6): Intervalization a cada 60 s; demais jobs (DailyAggregation,
-// PartitionMaintenance, RetentionPurge) entram nas fases seguintes.
+// Quartz (Seção 7.6): Intervalization a cada 60 s; DailyAggregation a cada 15 min;
+// demais jobs (PartitionMaintenance, RetentionPurge) entram nas fases seguintes.
 builder.Services.AddQuartz(quartz =>
 {
-    var jobKey = new JobKey("intervalization");
-    quartz.AddJob<IntervalizationJob>(options => options.WithIdentity(jobKey));
+    var intervalizationKey = new JobKey("intervalization");
+    quartz.AddJob<IntervalizationJob>(options => options.WithIdentity(intervalizationKey));
     quartz.AddTrigger(trigger => trigger
-        .ForJob(jobKey)
+        .ForJob(intervalizationKey)
         .WithIdentity("intervalization-60s")
         .StartNow()
         .WithSimpleSchedule(schedule => schedule.WithIntervalInSeconds(60).RepeatForever()));
+
+    var dailyAggregationKey = new JobKey("daily-aggregation");
+    quartz.AddJob<DailyAggregationJob>(options => options.WithIdentity(dailyAggregationKey));
+    quartz.AddTrigger(trigger => trigger
+        .ForJob(dailyAggregationKey)
+        .WithIdentity("daily-aggregation-15min")
+        .StartNow()
+        .WithSimpleSchedule(schedule => schedule.WithIntervalInMinutes(15).RepeatForever()));
 });
 builder.Services.AddQuartzHostedService(options => options.WaitForJobsToComplete = true);
 
