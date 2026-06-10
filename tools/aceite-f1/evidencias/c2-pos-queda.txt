@@ -1,11 +1,11 @@
-queda (UTC): 2026-06-10 12:29:17Z -> 2026-06-10 12:39:23Z
+queda (UTC): 2026-06-10 13:48:29Z -> 2026-06-10 13:58:29Z
 pre-queda: max(seq)=1 count=1
 duplicatas por event_id: 0 linha(s)
 duplicatas por seq:      0 linha(s)
 gaps de seq:             0 linha(s) 
 EVENTS_DROPPED:          0
-count/esperado(max-min+1): 63/63
-devices.seq_max/max(raw): 63/63
+count/esperado(max-min+1): 61/61
+devices.seq_max/max(raw): 61/61
 eventos com occurred_at DENTRO da janela de queda: 50
 eventos da janela recebidos AINDA DURANTE a queda (deve ser 0): 0
 agente registrou modo offline no log: True
