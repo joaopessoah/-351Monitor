@@ -17,15 +17,31 @@ public class DevicesController(M351DbContext db, AuditWriter audit) : ApiControl
 {
     private const int MaxPageSize = 100;
 
-    /// <summary>Lista paginada de devices do tenant (funcional mesmo vazia — F0).</summary>
+    /// <summary>
+    /// Lista paginada de devices do tenant com filtros da F2 (Seção 7.4):
+    /// ?status (active|paused|archived|revoked), ?tag (match em tags[]), ?q (hostname/nome).
+    /// </summary>
     [HttpGet]
     public async Task<IActionResult> List(
-        [FromQuery] int page = 1, [FromQuery(Name = "page_size")] int pageSize = 50, CancellationToken ct = default)
+        [FromQuery] int page = 1, [FromQuery(Name = "page_size")] int pageSize = 50,
+        [FromQuery] string? status = null, [FromQuery] string? tag = null, [FromQuery] string? q = null,
+        CancellationToken ct = default)
     {
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
 
-        var query = db.Devices.OrderBy(d => d.Hostname);
+        IQueryable<Device> filtered = db.Devices;
+        if (!string.IsNullOrWhiteSpace(status)) filtered = filtered.Where(d => d.Status == status);
+        if (!string.IsNullOrWhiteSpace(tag)) filtered = filtered.Where(d => d.Tags != null && d.Tags.Contains(tag));
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var needle = $"%{q.Trim()}%";
+            filtered = filtered.Where(d =>
+                EF.Functions.ILike(d.Hostname, needle) ||
+                (d.DisplayName != null && EF.Functions.ILike(d.DisplayName, needle)));
+        }
+
+        var query = filtered.OrderBy(d => d.Hostname);
         var total = await query.CountAsync(ct);
         var items = await query
             .Skip((page - 1) * pageSize)
