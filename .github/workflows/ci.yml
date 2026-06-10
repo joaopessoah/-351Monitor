@@ -1,8 +1,8 @@
-# =============================================================================
-# +351 Monitor — CI/CD (F0)
-# backend (build+test com gate de isolamento multi-tenant) → portal (build)
-# → docker (build das imagens, sem push de registry por enquanto)
-# → deploy-staging (SSH; skip com aviso se secrets ausentes)
+﻿# =============================================================================
+# +351 Monitor â€” CI/CD (F0)
+# backend (build+test com gate de isolamento multi-tenant) â†’ portal (build)
+# â†’ docker (build das imagens, sem push de registry por enquanto)
+# â†’ deploy-staging (SSH; skip com aviso se secrets ausentes)
 # =============================================================================
 name: CI
 
@@ -38,7 +38,7 @@ jobs:
           --health-timeout 5s
           --health-retries 12
     env:
-      # Connection string dos testes de integração (Testcontainers indisponível →
+      # Connection string dos testes de integraÃ§Ã£o (Testcontainers indisponÃ­vel â†’
       # service container; o gate de isolamento multi-tenant roda AQUI).
       M351_TEST_PG: Host=localhost;Port=5432;Database=m351_test;Username=postgres;Password=postgres
       DOTNET_NOLOGO: "1"
@@ -60,11 +60,11 @@ jobs:
       - name: Test (inclui gate de isolamento multi-tenant)
         run: dotnet test backend/M351.sln -c Release --no-build --logger "console;verbosity=normal"
 
-      - name: Pacotes vulneráveis (gate 11.1.3 — sem críticos)
+      - name: Pacotes vulnerÃ¡veis (gate 11.1.3 â€” sem crÃ­ticos)
         run: |
           dotnet list backend/M351.sln package --vulnerable --include-transitive | tee vulneraveis.txt
-          if grep -qiE '\bcritical\b|\bcrítico\b' vulneraveis.txt; then
-            echo "::error::Pacote com vulnerabilidade CRÍTICA encontrado — corrija antes do merge."
+          if grep -qiE '\bcritical\b|\bcrÃ­tico\b' vulneraveis.txt; then
+            echo "::error::Pacote com vulnerabilidade CRÃTICA encontrado â€” corrija antes do merge."
             exit 1
           fi
 
@@ -101,8 +101,8 @@ jobs:
       - name: Configurar buildx
         uses: docker/setup-buildx-action@v3
 
-      # Sem push de registry por enquanto (GHCR é etapa futura) — o build
-      # garante que as imagens de api e worker são construíveis a cada main.
+      # Sem push de registry por enquanto (GHCR Ã© etapa futura) â€” o build
+      # garante que as imagens de api e worker sÃ£o construÃ­veis a cada main.
       - name: Build imagem api
         uses: docker/build-push-action@v6
         with:
@@ -138,12 +138,12 @@ jobs:
       - name: Deploy em staging (skip se secrets ausentes)
         run: |
           if [ -z "${STAGING_SSH_HOST}" ] || [ -z "${STAGING_SSH_KEY}" ]; then
-            echo "::warning::skipping: secrets ausentes (STAGING_SSH_HOST/STAGING_SSH_KEY) — deploy de staging não executado"
+            echo "::warning::skipping: secrets ausentes (STAGING_SSH_HOST/STAGING_SSH_KEY) â€” deploy de staging nÃ£o executado"
             exit 0
           fi
           mkdir -p ~/.ssh
           printf '%s\n' "${STAGING_SSH_KEY}" > ~/.ssh/staging_key
           chmod 600 ~/.ssh/staging_key
           export SSH_KEY_FILE="$HOME/.ssh/staging_key"
-          export STAGING_SSH_USER="${STAGING_SSH_USER:-deploy}"
+          export STAGING_SSH_USER="${STAGING_SSH_USER:-root}"
           bash infra/scripts/deploy-staging.sh
