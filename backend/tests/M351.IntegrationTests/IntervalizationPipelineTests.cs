@@ -388,6 +388,51 @@ public class IntervalizationPipelineTests(ApiTestFixture fixture)
         Assert.Equal(T(10, 11), Ts(active["ended_at"]));
     }
 
+    // ------------------------------------------------------------ janela cruzando intervalo existente
+    [Fact]
+    public async Task JanelaQueCruzaIntervaloExistente_EstendeERebuildaSemErro()
+    {
+        // Regressão do bug de produção (10/06): quando a janela R cruza um intervalo já
+        // materializado, a query do ponto-fixo retorna timestamptz (DateTime no scalar do
+        // Npgsql) e a conversão para DateTimeOffset? lançava InvalidCastException — o worker
+        // falhava a cada ciclo e a timeline congelava com o cursor sujo para sempre.
+        var (client, device) = await SetupAsync("NB-CRUZA-JANELA");
+        var f = new EventFactory();
+
+        // lote 1: intervalo LONGO 10:00→11:00 (heartbeats sustentam) — materializado
+        var eventos1 = new List<Dictionary<string, object?>>
+        {
+            f.Event("ACTIVE_WINDOW_CHANGED", T(10, 0), new Dictionary<string, object?> { ["process_name"] = "a.exe" }),
+        };
+        for (var m = 8; m <= 56; m += 8) // < 600 s entre eventos (600 exatos dispararia o gap N7)
+            eventos1.Add(f.Event("HEARTBEAT", T(10, m), new Dictionary<string, object?> { ["state"] = "active" }));
+        eventos1.Add(f.Event("HEARTBEAT", T(11, 0), new Dictionary<string, object?> { ["state"] = "active" }));
+        var ack1 = await AgentClient.SendBatchAsync(client, device.DeviceToken, eventos1);
+        (await AgentClient.ReadAckAsync(ack1)).Dispose();
+        await RunPipelineAsync();
+
+        // lote 2: dirty_from 11:45 → R.start = 10:45, que CRUZA o intervalo 10:00→11:00
+        var ack2 = await AgentClient.SendBatchAsync(client, device.DeviceToken, new[]
+        {
+            f.Event("ACTIVE_WINDOW_CHANGED", T(11, 45), new Dictionary<string, object?> { ["process_name"] = "b.exe" }),
+            f.Event("LOCK", T(11, 50)),
+        });
+        (await AgentClient.ReadAckAsync(ack2)).Dispose();
+        await RunPipelineAsync(); // antes do fix: InvalidCastException; cursor ficava sujo
+
+        var dirty = await TestDb.ScalarAsync<DateTime?>(fixture.Database.ConnectionString,
+            "SELECT dirty_from FROM ingest_cursors WHERE device_id = @d", ("d", device.DeviceId));
+        Assert.Null(dirty); // processou de verdade
+
+        var intervals = await IntervalsAsync(device.DeviceId);
+        // o intervalo longo sobrevive INTEIRO (janela estendida até o started_at dele)
+        Assert.Contains(intervals, r => (string)r["state"]! == "active"
+            && Ts(r["started_at"]) == T(10, 0) && Ts(r["ended_at"]) == T(11, 0));
+        // e o gap 11:00→11:45 vira no_data, seguido do active do lote 2
+        Assert.Contains(intervals, r => (string)r["state"]! == "no_data" && Ts(r["started_at"]) == T(11, 0));
+        Assert.Contains(intervals, r => (string)r["state"]! == "active" && Ts(r["started_at"]) == T(11, 45));
+    }
+
     // ------------------------------------------------------------ cursor
     [Fact]
     public async Task Cursor_LimpoAposProcessar_ResujadoPorNovoLote()

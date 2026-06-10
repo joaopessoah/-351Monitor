@@ -363,6 +363,14 @@ public sealed class IntervalizationService(NpgsqlDataSource dataSource, ILogger<
         foreach (var (name, value) in args)
             command.Parameters.AddWithValue(name, value ?? DBNull.Value);
         var result = await command.ExecuteScalarAsync(ct);
-        return result is null or DBNull ? default : (T)result;
+        if (result is null or DBNull) return default;
+        if (result is T typed) return typed;
+
+        // ExecuteScalar de timestamptz devolve DateTime (Kind=Utc) — converter explicitamente
+        // (unboxing direto para DateTimeOffset? lança InvalidCastException)
+        var target = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
+        if (target == typeof(DateTimeOffset) && result is DateTime dt)
+            return (T)(object)new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc), TimeSpan.Zero);
+        return (T)Convert.ChangeType(result, target);
     }
 }
