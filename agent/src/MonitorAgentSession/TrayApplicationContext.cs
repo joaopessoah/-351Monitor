@@ -102,7 +102,10 @@ public sealed class TrayApplicationContext : ApplicationContext
             _ = _engine.RunAsync(_cts.Token);
             _log.Info("Coletores de sessão iniciados (janela ativa, ociosidade, heartbeat).");
 
-            MaybeShowNotice();
+            // Task.Run: o NoticeForm e modal (ShowDialog) e este handler roda no read-loop
+            // do pipe — bloquear aqui deixaria o helper sem read pendente e configs novas
+            // do servico nunca seriam aplicadas (nem entregues, com buffer de pipe cheio).
+            _ = Task.Run(MaybeShowNotice);
         }
         else
         {

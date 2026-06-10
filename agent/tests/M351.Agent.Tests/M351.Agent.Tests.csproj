@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\M351.Agent.Core\M351.Agent.Core.csproj" />
+    <ProjectReference Include="..\..\src\MonitorAgentService\MonitorAgentService.csproj" />
   </ItemGroup>
 
 </Project>
