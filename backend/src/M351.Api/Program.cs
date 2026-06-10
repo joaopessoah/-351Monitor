@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using M351.Api;
+using M351.Api.Agent;
 using M351.Api.Auth;
 using M351.Api.Backoffice;
 using M351.Api.Middleware;
@@ -10,7 +11,10 @@ using M351.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
 using Serilog;
+
+DapperConfig.Apply();
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,20 +29,35 @@ builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddScoped<AuthFlowService>();
 builder.Services.AddScoped<AuditWriter>();
 
+// F1 — ingestão (hot path em Dapper/Npgsql — Seção 7) e enrollment
+builder.Services.AddSingleton(provider =>
+    NpgsqlDataSource.Create(provider.GetRequiredService<IConfiguration>().GetConnectionString("Default")
+        ?? throw new InvalidOperationException("ConnectionStrings:Default ausente.")));
+builder.Services.AddSingleton<AgentConfigService>();
+builder.Services.AddSingleton<RawEventPartitionManager>();
+builder.Services.AddScoped<EnrollmentService>();
+builder.Services.AddScoped<IngestService>();
+builder.Services.AddRequestDecompression(); // Content-Encoding: gzip dos lotes (Seção 5.4)
+
 builder.Services.AddControllers().AddJsonOptions(options =>
 {
     options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
     options.JsonSerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.SnakeCaseLower;
+    options.JsonSerializerOptions.Converters.Add(new UtcDateTimeOffsetConverter());
 });
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+    options.SerializerOptions.Converters.Add(new UtcDateTimeOffsetConverter());
 });
 builder.Services.AddProblemDetails();
 
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    // scheme do device token (Bearer dt_...), SEPARADO do JWT do portal (Seção 7.5)
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, DeviceAuthenticationHandler>(
+        AuthConstants.SchemeDevice, displayName: null, configureOptions: null)
     .AddJwtBearer(options =>
     {
         options.MapInboundClaims = false;
@@ -83,6 +102,13 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AuthConstants.PolicyMfaToken, policy => policy
         .RequireAuthenticatedUser()
         .RequireClaim(AuthConstants.ClaimTokenUse, AuthConstants.TokenUseMfa, AuthConstants.TokenUseAccess));
+
+    // device token: escopo EXCLUSIVO das rotas /api/v1/agent/* e /api/v1/ingest/* —
+    // JWT do portal não passa aqui, e o device token não passa nas policies acima
+    options.AddPolicy(AuthConstants.PolicyDevice, policy => policy
+        .AddAuthenticationSchemes(AuthConstants.SchemeDevice)
+        .RequireAuthenticatedUser()
+        .RequireClaim(AuthConstants.ClaimTokenUse, AuthConstants.TokenUseDevice));
 });
 
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
@@ -103,6 +129,12 @@ if (args.Length > 0 && string.Equals(args[0], "create-org", StringComparison.Ord
     return await CreateOrgCommand.RunAsync(app.Services, args[1..]);
 }
 
+// Backoffice CLI: enrollment key para onboarding manual (a key completa é impressa UMA vez)
+if (args.Length > 0 && string.Equals(args[0], "create-enrollment-key", StringComparison.OrdinalIgnoreCase))
+{
+    return await CreateEnrollmentKeyCommand.RunAsync(app.Services, args[1..]);
+}
+
 if (app.Configuration.GetValue<bool>("Database:AutoMigrate"))
 {
     using var scope = app.Services.CreateScope();
@@ -111,6 +143,21 @@ if (app.Configuration.GetValue<bool>("Database:AutoMigrate"))
 
 app.UseExceptionHandler();
 app.UseSerilogRequestLogging();
+
+// Seção 5.6: body comprimido máx. 1 MB nas rotas de ingestão (checado ANTES de descomprimir)
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api/v1/ingest")
+        && context.Request.Headers.ContentEncoding.Count > 0
+        && context.Request.ContentLength > AgentEndpoints.MaxCompressedBytes)
+    {
+        context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+        return;
+    }
+
+    await next(context);
+});
+app.UseRequestDecompression();
 
 // SPA do portal: em produção a imagem Docker copia o dist do Vite para wwwroot
 // (infra/docker/api.Dockerfile). Em dev/testes não há wwwroot — middlewares inertes.
@@ -127,6 +174,7 @@ app.UseMiddleware<TenantContextMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapAgentEndpoints();
 
 app.MapGet("/healthz", async (M351DbContext db, CancellationToken ct) =>
     await db.Database.CanConnectAsync(ct)

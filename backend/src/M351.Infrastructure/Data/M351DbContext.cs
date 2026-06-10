@@ -20,6 +20,8 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<EnrollmentKey> EnrollmentKeys => Set<EnrollmentKey>();
     public DbSet<Device> Devices => Set<Device>();
+    public DbSet<DeviceCommand> DeviceCommands => Set<DeviceCommand>();
+    public DbSet<TenantAgentConfig> TenantAgentConfigs => Set<TenantAgentConfig>();
     public DbSet<AuditLogEntry> AuditLog => Set<AuditLogEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -146,6 +148,39 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
             e.HasOne<EnrollmentKey>().WithMany().HasForeignKey(x => x.EnrollmentKeyId);
             e.HasIndex(x => new { x.TenantId, x.MachineFingerprint }).IsUnique();
             e.HasIndex(x => new { x.TenantId, x.LastSeenAt }).HasDatabaseName("ix_devices_tenant_lastseen");
+
+            e.HasQueryFilter(x => _tenant.TenantId != null && x.TenantId == _tenant.TenantId.Value);
+        });
+
+        modelBuilder.Entity<DeviceCommand>(e =>
+        {
+            e.ToTable("device_commands");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
+            e.Property(x => x.TenantId).HasColumnName("tenant_id");
+            e.Property(x => x.DeviceId).HasColumnName("device_id");
+            e.Property(x => x.Type).HasColumnName("type").HasColumnType("text");
+            e.Property(x => x.Payload).HasColumnName("payload").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.DeliveredAt).HasColumnName("delivered_at");
+
+            e.HasQueryFilter(x => _tenant.TenantId != null && x.TenantId == _tenant.TenantId.Value);
+        });
+
+        modelBuilder.Entity<TenantAgentConfig>(e =>
+        {
+            e.ToTable("tenant_agent_configs");
+            e.HasKey(x => x.TenantId);
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").ValueGeneratedNever();
+            e.Property(x => x.ConfigVersion).HasColumnName("config_version");
+            e.Property(x => x.HeartbeatSec).HasColumnName("heartbeat_sec");
+            e.Property(x => x.ActiveWindowPollSec).HasColumnName("active_window_poll_sec");
+            e.Property(x => x.IdleThresholdSec).HasColumnName("idle_threshold_sec");
+            e.Property(x => x.WindowTitlePolicy).HasColumnName("window_title_policy").HasColumnType("text");
+            e.Property(x => x.MaskedPatterns).HasColumnName("masked_patterns").HasColumnType("text[]");
+            e.Property(x => x.IgnoredProcesses).HasColumnName("ignored_processes").HasColumnType("text[]");
+            e.Property(x => x.CollectionWindow).HasColumnName("collection_window").HasColumnType("jsonb");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
 
             e.HasQueryFilter(x => _tenant.TenantId != null && x.TenantId == _tenant.TenantId.Value);
         });

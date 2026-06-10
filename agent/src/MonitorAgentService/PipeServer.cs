@@ -1,0 +1,217 @@
+using System.IO.Pipes;
+using System.Runtime.Versioning;
+using System.Security.AccessControl;
+using System.Security.Principal;
+using System.Text;
+using System.Text.Json;
+using M351.Agent.Core;
+using M351.Agent.Core.Contracts;
+using M351.Agent.Core.Events;
+using M351.Agent.Core.Logging;
+
+namespace MonitorAgentService;
+
+/// <summary>
+/// Lado serviço do IPC \\.\pipe\monitoragent.{sessionId} (Seção 6.1): JSON delimitado por linha.
+/// helper → serviço: eventos / updates / drops. serviço → helper: config (+ device_id, boot_id).
+/// DACL: ReadWrite só para o SID do usuário da sessão + SYSTEM (helper não acessa fila nem token).
+/// </summary>
+[SupportedOSPlatform("windows")]
+public sealed class PipeServer : IDisposable
+{
+    private readonly int _sessionId;
+    private readonly SecurityIdentifier? _userSid;
+    private readonly AgentRuntime _runtime;
+    private readonly ILogSink _log;
+    private readonly Action _onPipeDenied;
+    private readonly CancellationTokenSource _cts = new();
+    private readonly object _writerGate = new();
+    private StreamWriter? _writer;
+    private bool _started;
+
+    public PipeServer(int sessionId, SecurityIdentifier? userSid, AgentRuntime runtime, ILogSink log,
+        Action onPipeDenied)
+    {
+        _sessionId = sessionId;
+        _userSid = userSid;
+        _runtime = runtime;
+        _log = log;
+        _onPipeDenied = onPipeDenied;
+    }
+
+    public void Start()
+    {
+        lock (_writerGate)
+        {
+            if (_started) return;
+            _started = true;
+        }
+        _ = AcceptLoopAsync(_cts.Token);
+    }
+
+    private async Task AcceptLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            NamedPipeServerStream? server = null;
+            try
+            {
+                server = NamedPipeServerStreamAcl.Create(
+                    $"monitoragent.{_sessionId}",
+                    PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
+                    PipeOptions.Asynchronous, 0, 0, BuildSecurity());
+
+                await server.WaitForConnectionAsync(ct);
+                _log.Info($"Helper conectado ao pipe da sessão {_sessionId}.");
+
+                using var reader = new StreamReader(server, Encoding.UTF8, false, 16 * 1024, leaveOpen: true);
+                lock (_writerGate)
+                {
+                    _writer = new StreamWriter(server, new UTF8Encoding(false), 16 * 1024, leaveOpen: true)
+                    {
+                        AutoFlush = true
+                    };
+                }
+
+                SendConfig();
+
+                while (!ct.IsCancellationRequested)
+                {
+                    var line = await reader.ReadLineAsync(ct);
+                    if (line is null) break; // helper desconectou
+                    HandleLine(line);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _log.Error($"DACL/acesso negado no pipe da sessão {_sessionId}.", ex);
+                _onPipeDenied();
+                try { await Task.Delay(TimeSpan.FromSeconds(30), ct); }
+                catch (OperationCanceledException) { return; }
+            }
+            catch (Exception ex)
+            {
+                _log.Error($"Falha no pipe da sessão {_sessionId} (reabrindo).", ex);
+                try { await Task.Delay(TimeSpan.FromSeconds(2), ct); }
+                catch (OperationCanceledException) { return; }
+            }
+            finally
+            {
+                lock (_writerGate) { _writer = null; }
+                server?.Dispose();
+            }
+        }
+    }
+
+    private PipeSecurity BuildSecurity()
+    {
+        var security = new PipeSecurity();
+        security.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+            PipeAccessRights.FullControl, AccessControlType.Allow));
+        if (_userSid is not null)
+        {
+            security.AddAccessRule(new PipeAccessRule(_userSid,
+                PipeAccessRights.ReadWrite, AccessControlType.Allow));
+        }
+        return security;
+    }
+
+    private void HandleLine(string line)
+    {
+        PipeMessage? message;
+        try
+        {
+            message = JsonSerializer.Deserialize(line, AgentJsonContext.Default.PipeMessage);
+        }
+        catch (JsonException)
+        {
+            _log.Warn($"Mensagem ilegível no pipe da sessão {_sessionId} (descartada).");
+            return;
+        }
+        if (message is null) return;
+        if (_runtime.State.Unenrolled) return; // pós-UNENROLL: coleta parada
+
+        switch (message.Kind)
+        {
+            case PipeMessage.KindEvent when message.Event is not null:
+            {
+                var ev = message.Event;
+                if (ev.Type == EventTypes.Heartbeat)
+                {
+                    // o helper não conhece a fila: o serviço injeta o queue_depth real
+                    try
+                    {
+                        var hb = ev.Data.Deserialize(AgentJsonContext.Default.HeartbeatData);
+                        if (hb is not null)
+                        {
+                            hb.QueueDepth = _runtime.Queue.UnsentCount;
+                            ev = ev.CloneWithData(EventFactory.ToElement(hb));
+                        }
+                    }
+                    catch (JsonException) { /* heartbeat segue como veio */ }
+                }
+                _runtime.Queue.Enqueue(ev);
+                break;
+            }
+
+            case PipeMessage.KindUpdate when message.Event is not null:
+            {
+                // anti-flapping N16: se o original já foi enviado, vira evento novo (id novo)
+                if (!_runtime.Queue.TryUpdateUnsent(message.Event))
+                {
+                    var fresh = message.Event;
+                    fresh.EventId = Uuid7.NewUuid7().ToString();
+                    _runtime.Queue.Enqueue(fresh);
+                }
+                break;
+            }
+
+            case PipeMessage.KindDrops when message.Count is not null:
+                _runtime.Queue.Enqueue(_runtime.Factory.Create(EventTypes.EventsDropped,
+                    new EventsDroppedData
+                    {
+                        Count = message.Count.Value,
+                        OldestDroppedAt = message.OldestDroppedAt,
+                        Reason = "rate_limit"
+                    }, _sessionId));
+                break;
+        }
+    }
+
+    /// <summary>serviço → helper: config aplicável + device_id + boot_id + último envio.</summary>
+    public void SendConfig()
+    {
+        lock (_writerGate)
+        {
+            if (_writer is null) return;
+            try
+            {
+                var message = new PipeMessage
+                {
+                    Kind = PipeMessage.KindConfig,
+                    Config = _runtime.State.Config,
+                    ConfigVersion = _runtime.State.ConfigVersion,
+                    DeviceId = _runtime.State.DeviceId,
+                    BootId = _runtime.Factory.BootId,
+                    LastSentAt = _runtime.Sender.LastSuccessfulSendAt is { } t ? Iso.Format(t) : null
+                };
+                _writer.WriteLine(JsonSerializer.Serialize(message, AgentJsonContext.Default.PipeMessage));
+            }
+            catch (Exception ex)
+            {
+                _log.Warn($"Falha ao enviar config pelo pipe da sessão {_sessionId}: {ex.Message}");
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

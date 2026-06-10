@@ -164,6 +164,43 @@ namespace M351.Infrastructure.Data.Migrations
                     b.ToTable("devices", (string)null);
                 });
 
+            modelBuilder.Entity("M351.Domain.Entities.DeviceCommand", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeliveredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("delivered_at");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("device_id");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("device_commands", (string)null);
+                });
+
             modelBuilder.Entity("M351.Domain.Entities.EnrollmentKey", b =>
                 {
                     b.Property<Guid>("Id")
@@ -346,6 +383,57 @@ namespace M351.Infrastructure.Data.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("refresh_tokens", (string)null);
+                });
+
+            modelBuilder.Entity("M351.Domain.Entities.TenantAgentConfig", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("ActiveWindowPollSec")
+                        .HasColumnType("integer")
+                        .HasColumnName("active_window_poll_sec");
+
+                    b.Property<string>("CollectionWindow")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("collection_window");
+
+                    b.Property<int>("ConfigVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("config_version");
+
+                    b.Property<int>("HeartbeatSec")
+                        .HasColumnType("integer")
+                        .HasColumnName("heartbeat_sec");
+
+                    b.Property<int>("IdleThresholdSec")
+                        .HasColumnType("integer")
+                        .HasColumnName("idle_threshold_sec");
+
+                    b.Property<string[]>("IgnoredProcesses")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("ignored_processes");
+
+                    b.Property<string[]>("MaskedPatterns")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("masked_patterns");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("WindowTitlePolicy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("window_title_policy");
+
+                    b.HasKey("TenantId");
+
+                    b.ToTable("tenant_agent_configs", (string)null);
                 });
 
             modelBuilder.Entity("M351.Domain.Entities.User", b =>

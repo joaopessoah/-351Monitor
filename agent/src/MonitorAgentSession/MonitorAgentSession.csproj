@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>MonitorAgentSession</AssemblyName>
+    <RootNamespace>MonitorAgentSession</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\M351.Agent.Core\M351.Agent.Core.csproj" />
+  </ItemGroup>
+
+</Project>

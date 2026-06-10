@@ -51,7 +51,7 @@ public class ApiTestFixture : WebApplicationFactory<Program>
     public HttpClient CreateApiClient() =>
         CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
 
-    public async Task<Organization> CreateOrganizationAsync(string name)
+    public async Task<Organization> CreateOrganizationAsync(string name, int? deviceLimit = 25)
     {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<M351DbContext>();
@@ -62,7 +62,7 @@ public class ApiTestFixture : WebApplicationFactory<Program>
             Name = name,
             Slug = $"{name.ToLowerInvariant().Replace(' ', '-')}-{Guid.NewGuid():N}"[..30],
             Plan = "trial",
-            DeviceLimit = 25,
+            DeviceLimit = deviceLimit,
         };
         db.Organizations.Add(org);
         await db.SaveChangesAsync();
@@ -125,6 +125,15 @@ public class ApiTestFixture : WebApplicationFactory<Program>
 
     public async Task<EnrollmentKey> CreateEnrollmentKeyAsync(Guid tenantId, string? label = null)
     {
+        var (key, _) = await CreateEnrollmentKeyWithSecretAsync(tenantId, label);
+        return key;
+    }
+
+    /// <summary>Cria a key e devolve TAMBÉM o segredo completo (necessário aos testes de enroll).</summary>
+    public async Task<(EnrollmentKey Key, string FullKey)> CreateEnrollmentKeyWithSecretAsync(
+        Guid tenantId, string? label = null, int? maxUses = null,
+        DateTimeOffset? expiresAt = null, DateTimeOffset? revokedAt = null)
+    {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<M351DbContext>();
 
@@ -136,10 +145,13 @@ public class ApiTestFixture : WebApplicationFactory<Program>
             KeyPrefix = EnrollmentKeyGenerator.VisiblePrefix(fullKey),
             KeyHash = TokenGenerator.Sha256(fullKey),
             Label = label,
+            MaxUses = maxUses,
+            ExpiresAt = expiresAt,
+            RevokedAt = revokedAt,
         };
         db.EnrollmentKeys.Add(key);
         await db.SaveChangesAsync();
-        return key;
+        return (key, fullKey);
     }
 
     public async Task<(Invitation Invitation, string Token, TestUser User)> CreateInvitationAsync(
