@@ -1,6 +1,6 @@
 // =============================================================================
 // Fallback tabular da linha do tempo (Seção 8.5): os MESMOS intervalos do
-// canvas, zero fetch extra. Também serve de fallback de screen reader — a
+// canvas, zero fetch extra. Também serve de fallback de screen reader - a
 // página o renderiza em sr-only enquanto o canvas está visível.
 // =============================================================================
 
@@ -10,7 +10,7 @@ import { formatDuration, formatHm, stateLabels } from "@/lib/format";
 import type { IntervalState, TimelineInterval } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-/** Hachura diagonal vermelha do no_data — redundância NÃO-cromática (Seção 8.5). */
+/** Hachura diagonal vermelha do no_data - redundância NÃO-cromática (Seção 8.5). */
 const noDataHatch: CSSProperties = {
   backgroundImage:
     "repeating-linear-gradient(45deg, #dc2626 0px, #dc2626 2px, #fecaca 2px, #fecaca 4px)",
@@ -18,7 +18,7 @@ const noDataHatch: CSSProperties = {
 
 export interface TimelineTableProps {
   intervals: TimelineInterval[];
-  /** Fuso da organização (IANA) — horários sempre convertidos para ele. */
+  /** Fuso da organização (IANA) - horários sempre convertidos para ele. */
   timezone: string;
 }
 
@@ -63,10 +63,10 @@ export function TimelineTable({ intervals, timezone }: TimelineTableProps) {
                   </span>
                 </td>
                 <td className="max-w-[14rem] truncate px-3 py-1.5">
-                  {iv.app !== null ? iv.app.display_name : <span className="text-muted-foreground">—</span>}
+                  {iv.app !== null ? iv.app.display_name : <span className="text-muted-foreground">-</span>}
                 </td>
                 <td className="max-w-[22rem] truncate px-3 py-1.5 text-muted-foreground">
-                  {iv.window_title ?? "—"}
+                  {iv.window_title ?? "-"}
                 </td>
                 <td className="whitespace-nowrap px-3 py-1.5">
                   {iv.data_incomplete ? (
@@ -75,7 +75,7 @@ export function TimelineTable({ intervals, timezone }: TimelineTableProps) {
                       dados incompletos
                     </span>
                   ) : (
-                    <span className="text-muted-foreground">—</span>
+                    <span className="text-muted-foreground">-</span>
                   )}
                 </td>
               </tr>

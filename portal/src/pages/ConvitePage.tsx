@@ -176,7 +176,7 @@ export function ConvitePage() {
         </div>
         {invitation.mfa_required && (
           <p className="text-xs text-muted-foreground">
-            Seu papel ({roleLabels[invitation.role]}) exige verificação em duas etapas — você fará a
+            Seu papel ({roleLabels[invitation.role]}) exige verificação em duas etapas, e você fará a
             configuração na próxima etapa.
           </p>
         )}

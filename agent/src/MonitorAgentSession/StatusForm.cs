@@ -5,7 +5,7 @@ namespace MonitorAgentSession;
 
 /// <summary>
 /// "O que está sendo coletado agora" (Seção 6.5): app ativo, título capturado (já mascarado/null),
-/// estado ativo/ocioso/bloqueado, último envio, config aplicada e device_id — em tempo real.
+/// estado ativo/ocioso/bloqueado, último envio, config aplicada e device_id - em tempo real.
 /// </summary>
 public sealed class StatusForm : Form
 {
@@ -71,7 +71,7 @@ public sealed class StatusForm : Form
     {
         AutoSize = true,
         Font = new Font(FontFamily.GenericSansSerif, 9.5f, FontStyle.Bold),
-        Text = "—"
+        Text = "-"
     };
 
     private static void AddRow(TableLayoutPanel table, string caption, Label value)
@@ -86,14 +86,14 @@ public sealed class StatusForm : Form
         var status = _getStatus();
         var (deviceId, configVersion, config, pipeConnected) = _getInfo();
 
-        _appLabel.Text = status?.ForegroundProcess ?? "—";
+        _appLabel.Text = status?.ForegroundProcess ?? "-";
         _titleLabel.Text = status?.ForegroundTitle ?? "(não coletado)";
         _stateLabel.Text = status?.State switch
         {
             "active" => "Ativo",
             "idle" => "Ocioso",
             "locked" => "Bloqueado",
-            _ => "—"
+            _ => "-"
         };
         _lastSentLabel.Text = status?.LastSentAt is { } t
             ? t.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")

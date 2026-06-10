@@ -27,7 +27,7 @@ public sealed class NoticeForm : Form
             Text = "Esta máquina é monitorada pela sua empresa.\n\n" +
                    "São coletados: aplicativo e título da janela em foco (conforme a política da " +
                    "empresa), eventos de sessão (logon/bloqueio), ociosidade e saúde do agente.\n" +
-                   "Este aviso registra a sua ciência — não é um pedido de consentimento."
+                   "Este aviso registra a sua ciência. Não é um pedido de consentimento."
         };
 
         var seeButton = new Button

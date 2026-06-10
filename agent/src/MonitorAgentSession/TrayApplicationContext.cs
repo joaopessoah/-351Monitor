@@ -216,7 +216,7 @@ public sealed class TrayApplicationContext : ApplicationContext
     private void ShowAbout()
     {
         MessageBox.Show(
-            $"+351 Monitor — Agente de monitoramento corporativo\n\n" +
+            $"+351 Monitor: agente de monitoramento corporativo\n\n" +
             $"Versão: {AgentVersionInfo.Current}\n" +
             $"Dispositivo: {_deviceId ?? "(não registrado)"}\n\n" +
             "Este agente é sempre visível e coleta apenas: aplicativo/título em foco\n" +

@@ -1,8 +1,8 @@
 // =============================================================================
-// Linha do Tempo — modo device (F2, Seção 8.5): reconstruir o dia de uma
+// Linha do Tempo - modo device (F2, Seção 8.5): reconstruir o dia de uma
 // pessoa/máquina em 5 segundos de olhar. Canvas de estados + sub-faixa de apps,
 // fallback tabular com os MESMOS intervalos (zero fetch extra) e rodapé de
-// resumo vindo PRONTO do summary da API — nunca recalculado no front e nunca
+// resumo vindo PRONTO do summary da API - nunca recalculado no front e nunca
 // rotulado como registro de ponto.
 // =============================================================================
 
@@ -44,7 +44,7 @@ function addDays(dateStr: string, days: number): string {
   return `${dt.getUTCFullYear()}-${mm}-${dd}`;
 }
 
-/** "terça-feira, 10 de junho" — rótulo humano do dia exibido. */
+/** "terça-feira, 10 de junho" - rótulo humano do dia exibido. */
 function formatDateLabel(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   return new Intl.DateTimeFormat("pt-BR", {
@@ -71,7 +71,7 @@ const deviceStatusSuffix: Record<DeviceItem["status"], string> = {
   revoked: " · revogado",
 };
 
-/** Hachura diagonal vermelha do no_data — redundância NÃO-cromática (Seção 8.5). */
+/** Hachura diagonal vermelha do no_data - redundância NÃO-cromática (Seção 8.5). */
 const noDataHatch: CSSProperties = {
   backgroundImage:
     "repeating-linear-gradient(45deg, #dc2626 0px, #dc2626 2px, #fecaca 2px, #fecaca 4px)",
@@ -131,7 +131,7 @@ export function LinhaDoTempoPage() {
 
   const selectedDevice = devices.find((d) => d.id === deviceId);
 
-  // Teclas ← → mudam o dia — exceto quando o foco está em campos de formulário.
+  // Teclas ← → mudam o dia - exceto quando o foco está em campos de formulário.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
@@ -214,7 +214,7 @@ export function LinhaDoTempoPage() {
       {/* Controles: device, data (Hoje/Ontem/◀/▶ + teclas ← →), janela e visão */}
       <Card>
         {/* div com padding explícito: o p-6/pt-0 default do CardContent venceria o py-3
-            (cn() sem tailwind-merge — a ordem do stylesheet decide, não a da className) */}
+            (cn() sem tailwind-merge - a ordem do stylesheet decide, não a da className) */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
           <select
             aria-label="Dispositivo"
@@ -470,7 +470,7 @@ export function LinhaDoTempoPage() {
               </div>
             )}
 
-            {/* Rodapé de resumo: vem PRONTO do summary da API — nunca recalculado
+            {/* Rodapé de resumo: vem PRONTO do summary da API - nunca recalculado
                 no front; travessão quando o evento é null. Sem rótulos de ponto
                 ou expediente: sempre "Primeiro evento" / "Último evento". */}
             <div className="mt-4 border-t pt-3">
@@ -479,11 +479,11 @@ export function LinhaDoTempoPage() {
                   Primeiro evento{" "}
                   {data.summary.first_event_at !== null
                     ? formatHm(data.summary.first_event_at, timezone)
-                    : "—"}
+                    : "-"}
                   {" · "}Último evento{" "}
                   {data.summary.last_event_at !== null
                     ? formatHm(data.summary.last_event_at, timezone)
-                    : "—"}
+                    : "-"}
                   {" · "}Ligada {formatDuration(data.summary.seconds_on)}
                   {" · "}Ativa {formatDuration(data.summary.seconds_active)}
                   {" · "}Ociosa {formatDuration(data.summary.seconds_idle)}

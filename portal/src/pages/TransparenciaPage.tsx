@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 const collected = [
   "Aplicativo em primeiro plano e título da janela, conforme a política de privacidade configurada pela empresa",
   "Sessões do Windows: logon, logoff, bloqueio e desbloqueio",
-  "Períodos de ociosidade (apenas o fato de não haver uso de teclado/mouse — nunca o que foi digitado)",
+  "Períodos de ociosidade (apenas o fato de não haver uso de teclado/mouse, nunca o que foi digitado)",
   "Horários de ligar/desligar e suspensão da máquina",
   "Saúde do agente de monitoramento (versão, conectividade)",
 ];
@@ -40,7 +40,7 @@ export function TransparenciaPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Transparência do monitoramento</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Política de coleta da organização <span className="font-medium">{slug}</span>. Esta
-            página descreve o que o monitoramento corporativo coleta nas estações de trabalho — e o
+            página descreve o que o monitoramento corporativo coleta nas estações de trabalho, e o
             que ele jamais coleta. Nenhum dado pessoal é exibido aqui.
           </p>
         </div>
@@ -68,7 +68,7 @@ export function TransparenciaPage() {
           <CardHeader>
             <CardTitle className="text-base">O que NUNCA é coletado</CardTitle>
             <CardDescription>
-              Estas proibições fazem parte da arquitetura do produto — o código de coleta não
+              Estas proibições fazem parte da arquitetura do produto: o código de coleta não
               existe.
             </CardDescription>
           </CardHeader>

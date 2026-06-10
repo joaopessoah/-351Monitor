@@ -142,7 +142,7 @@ function TableHead() {
 
 const skeletonWidths = ["w-32", "w-24", "w-20", "w-20", "w-16", "w-12", "w-12", "w-24", "w-14", "w-20"];
 
-/** Lista de dispositivos com saúde dos agentes (F2, Seção 8.7 — somente leitura). */
+/** Lista de dispositivos com saúde dos agentes (F2, Seção 8.7 - somente leitura). */
 export function DispositivosPage() {
   const navigate = useNavigate();
 
@@ -198,7 +198,7 @@ export function DispositivosPage() {
     placeholderData: (prev) => prev,
   });
 
-  // Mesma queryKey do AppShell — resolve do cache, sem requisição extra.
+  // Mesma queryKey do AppShell - resolve do cache, sem requisição extra.
   const meQuery = useQuery({
     queryKey: ["me"],
     queryFn: () => api<MeResponse>("/me"),
@@ -254,7 +254,7 @@ export function DispositivosPage() {
         </p>
       </div>
 
-      {/* Filtros — qualquer mudança volta para a página 1 */}
+      {/* Filtros - qualquer mudança volta para a página 1 */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative w-full max-w-xs">
           <Search
@@ -409,13 +409,13 @@ export function DispositivosPage() {
                           <PresenceStateCell presence={p} />
                         </td>
                         <td className={cn(bodyCell, "whitespace-nowrap")}>
-                          {p?.windows_username ?? <span className="text-muted-foreground">—</span>}
+                          {p?.windows_username ?? <span className="text-muted-foreground">-</span>}
                         </td>
                         <td className={cn(bodyCell, "whitespace-nowrap tabular-nums text-muted-foreground")}>
                           {d.last_seen_at !== null ? formatRelative(d.last_seen_at, referenceTime) : "nunca"}
                         </td>
                         <td className={cn(bodyCell, "whitespace-nowrap tabular-nums text-muted-foreground")}>
-                          {d.agent_version ?? "—"}
+                          {d.agent_version ?? "-"}
                         </td>
                         <td className={bodyCell}>
                           {tzDiverges && d.tz_offset_min !== null ? (
@@ -426,7 +426,7 @@ export function DispositivosPage() {
                               {gmtLabel(d.tz_offset_min)}
                             </span>
                           ) : (
-                            <span className="text-muted-foreground">—</span>
+                            <span className="text-muted-foreground">-</span>
                           )}
                         </td>
                         <td className={bodyCell}>
@@ -439,7 +439,7 @@ export function DispositivosPage() {
                               relógio dessincronizado
                             </span>
                           ) : (
-                            <span className="text-muted-foreground">—</span>
+                            <span className="text-muted-foreground">-</span>
                           )}
                         </td>
                         <td className={bodyCell}>
@@ -465,7 +465,7 @@ export function DispositivosPage() {
                               ))}
                             </span>
                           ) : (
-                            <span className="text-muted-foreground">—</span>
+                            <span className="text-muted-foreground">-</span>
                           )}
                         </td>
                       </tr>

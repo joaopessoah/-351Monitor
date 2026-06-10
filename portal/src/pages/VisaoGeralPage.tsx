@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
-/** Tooltip pedagógico do estado Ocioso (Seção 8.4) — sempre presente via title. */
+/** Tooltip pedagógico do estado Ocioso (Seção 8.4) - sempre presente via title. */
 const IDLE_HINT =
   "Ocioso significa sem uso de teclado/mouse. Reuniões, chamadas e leitura podem aparecer como ociosidade.";
 
@@ -26,7 +26,7 @@ const stateOrder: Record<PresenceState, number> = {
   off_clean: 5,
 };
 
-/** Hachura diagonal vermelha do no_data — redundância NÃO-cromática (Seção 8.5). */
+/** Hachura diagonal vermelha do no_data - redundância NÃO-cromática (Seção 8.5). */
 const noDataHatch: CSSProperties = {
   backgroundImage:
     "repeating-linear-gradient(45deg, #dc2626 0px, #dc2626 2px, #fecaca 2px, #fecaca 4px)",
@@ -198,7 +198,7 @@ export function VisaoGeralPage() {
         </div>
       )}
 
-      {/* Linha 1 — cards de contagem por estado de presença (Seção 8.5). */}
+      {/* Linha 1 - cards de contagem por estado de presença (Seção 8.5). */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CountCardBody
@@ -251,7 +251,7 @@ export function VisaoGeralPage() {
         </button>
       </div>
 
-      {/* Linha 2 — tabela "Equipe agora" (Seção 8.4). */}
+      {/* Linha 2 - tabela "Equipe agora" (Seção 8.4). */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -334,7 +334,7 @@ function CountCardBody({
   );
 }
 
-/** Linha clicável da tabela Equipe agora — Enter/Espaço também navegam. */
+/** Linha clicável da tabela Equipe agora - Enter/Espaço também navegam. */
 function PresenceRow({
   item,
   serverTime,
@@ -377,7 +377,7 @@ function PresenceRow({
       <td className="px-3 py-2.5">
         <p className="max-w-[16rem] truncate font-medium">{item.device_name}</p>
         <p className="max-w-[16rem] truncate text-xs text-muted-foreground">
-          {item.windows_username ?? "—"}
+          {item.windows_username ?? "-"}
         </p>
       </td>
       <td className="px-3 py-2.5">
@@ -385,15 +385,15 @@ function PresenceRow({
           <p className="max-w-[24rem] truncate">
             <span className="font-medium">{item.foreground_process}</span>
             {item.foreground_title !== null && (
-              <span className="text-muted-foreground"> — {item.foreground_title}</span>
+              <span className="text-muted-foreground"> · {item.foreground_title}</span>
             )}
           </p>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         )}
       </td>
       <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">
-        {appSinceSeconds !== null ? formatDuration(appSinceSeconds) : <span className="text-muted-foreground">—</span>}
+        {appSinceSeconds !== null ? formatDuration(appSinceSeconds) : <span className="text-muted-foreground">-</span>}
       </td>
       <td className="whitespace-nowrap px-6 py-2.5 text-right tabular-nums text-muted-foreground">
         {formatRelative(item.last_contact_at, serverTime)}
@@ -419,7 +419,7 @@ function StateDot({ state }: { state: PresenceState }) {
   return <span aria-hidden className={cn("h-2.5 w-2.5 shrink-0 rounded-full", solid[state])} />;
 }
 
-/** Rodapé discreto: a Linha 3 (gráficos da semana) chega na F3 — não construir agora. */
+/** Rodapé discreto: a Linha 3 (gráficos da semana) chega na F3 - não construir agora. */
 function GraficosF3Card() {
   return (
     <Card className="border-dashed shadow-none">
