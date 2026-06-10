@@ -1,0 +1,17 @@
+# Ignore específico do api.Dockerfile (BuildKit: <Dockerfile>.dockerignore)
+.git/
+.github/
+docs/
+infra/
+agent/
+**/bin/
+**/obj/
+**/TestResults/
+**/node_modules/
+**/dist/
+**/.vite/
+**/*.user
+**/*.log
+**/.env
+**/.env.*
+backend/tests/

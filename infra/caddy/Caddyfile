@@ -1,0 +1,19 @@
+# +351 Monitor — Caddy (staging)
+# TLS automático via Let's Encrypt (ACME). Variáveis vêm do ambiente do
+# container caddy (definidas em infra/docker-compose.staging.yml ← infra/.env).
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$STAGING_DOMAIN} {
+	encode zstd gzip
+
+	# API + SPA (o ASP.NET Core serve o portal de wwwroot)
+	reverse_proxy api:8080
+
+	log {
+		output stdout
+		format json
+	}
+}

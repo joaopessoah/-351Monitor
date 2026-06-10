@@ -1,0 +1,18 @@
+# Ignore específico do worker.Dockerfile (BuildKit: <Dockerfile>.dockerignore)
+.git/
+.github/
+docs/
+infra/
+agent/
+portal/
+**/bin/
+**/obj/
+**/TestResults/
+**/node_modules/
+**/dist/
+**/.vite/
+**/*.user
+**/*.log
+**/.env
+**/.env.*
+backend/tests/

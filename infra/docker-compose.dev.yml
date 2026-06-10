@@ -1,0 +1,31 @@
+# =============================================================================
+# +351 Monitor — Docker Compose de DESENVOLVIMENTO (mínimo)
+# Sobe SOMENTE o Seq (sink do Serilog). Em dev o Postgres é local
+# (Host=localhost;Port=5432;Database=m351_dev;Username=postgres;Password=postgres)
+# e API/portal rodam fora de container (dotnet run / npm run dev).
+#
+# Uso:
+#   docker compose -f infra/docker-compose.dev.yml up -d
+#   UI do Seq:      http://localhost:8341
+#   Ingestão Seq:   http://localhost:5341
+#   Para enviar logs ao Seq em dev, configure no ambiente da API/Worker:
+#     Serilog__WriteTo__1__Name=Seq
+#     Serilog__WriteTo__1__Args__serverUrl=http://localhost:5341
+# =============================================================================
+
+name: m351-dev
+
+services:
+  seq:
+    image: datalust/seq:latest
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+    ports:
+      - "5341:5341" # ingestão (Serilog.Sinks.Seq)
+      - "8341:80"   # UI
+    volumes:
+      - seq_dev_data:/data
+
+volumes:
+  seq_dev_data:

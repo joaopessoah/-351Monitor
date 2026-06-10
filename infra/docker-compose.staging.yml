@@ -1,0 +1,128 @@
+# =============================================================================
+# +351 Monitor — Docker Compose de STAGING (1 VPS Hostinger, Ubuntu + Docker)
+#
+# Uso (na VPS, a partir da raiz do repo):
+#   docker compose -f infra/docker-compose.staging.yml --env-file infra/.env up -d --build
+#
+# Segredos: SOMENTE via variáveis de ambiente lidas de infra/.env
+# (copie infra/.env.example → infra/.env e preencha; .env está no .gitignore).
+#
+# ADAPTAÇÃO DECLARADA: o spec (Seção 4) pede PostgreSQL gerenciado em região BR;
+# no staging da VPS Hostinger o Postgres roda em CONTAINER (volume nomeado +
+# healthcheck). Produção deve migrar para Postgres gerenciado (Brazil South /
+# sa-east-1). A VPS deve estar no datacenter de São Paulo (residência BR).
+# =============================================================================
+
+name: m351-staging
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      STAGING_DOMAIN: ${STAGING_DOMAIN:?defina STAGING_DOMAIN em infra/.env}
+      ACME_EMAIL: ${ACME_EMAIL:?defina ACME_EMAIL em infra/.env}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+  api:
+    image: m351/api:staging
+    build:
+      context: ..                     # raiz do repositório
+      dockerfile: infra/docker/api.Dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Staging
+      ASPNETCORE_URLS: http://+:8080
+      # Chaves de config conferidas com o appsettings.json real do backend.
+      ConnectionStrings__Default: Host=postgres;Port=5432;Database=${POSTGRES_DB:-m351_staging};Username=${POSTGRES_USER:-m351};Password=${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD em infra/.env}
+      Database__AutoMigrate: "true"
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:?defina JWT_SIGNING_KEY em infra/.env}
+      # Chave AES-GCM (32 bytes em base64) que cifra os segredos TOTP (mfa_secret_enc)
+      Mfa__EncryptionKey: ${MFA_ENCRYPTION_KEY:?defina MFA_ENCRYPTION_KEY em infra/.env}
+      # URL base usada nos links de convite por e-mail
+      Portal__BaseUrl: https://${STAGING_DOMAIN:?defina STAGING_DOMAIN em infra/.env}
+      # E-mail real via SMTP (Email:Provider=Smtp no appsettings)
+      Email__SmtpHost: ${SMTP_HOST:-}
+      Email__SmtpPort: ${SMTP_PORT:-587}
+      Email__SmtpUsername: ${SMTP_USERNAME:-}
+      Email__SmtpPassword: ${SMTP_PASSWORD:-}
+      Email__FromAddress: ${SMTP_FROM_ADDRESS:-nao-responda@351monitor.com.br}
+      # Serilog → Seq (sink configurado por env; índice 0 = Console no appsettings)
+      Serilog__WriteTo__1__Name: Seq
+      Serilog__WriteTo__1__Args__serverUrl: http://seq:5341
+      # Sem efeito até o SDK do Sentry ser adicionado ao backend (fase futura)
+      Sentry__Dsn: ${SENTRY_DSN:-}
+    expose:
+      - "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      seq:
+        condition: service_started
+
+  worker:
+    image: m351/worker:staging
+    build:
+      context: ..                     # raiz do repositório
+      dockerfile: infra/docker/worker.Dockerfile
+    restart: unless-stopped
+    environment:
+      DOTNET_ENVIRONMENT: Staging
+      ConnectionStrings__Default: Host=postgres;Port=5432;Database=${POSTGRES_DB:-m351_staging};Username=${POSTGRES_USER:-m351};Password=${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD em infra/.env}
+      # Serilog → Seq (sink configurado por env; índice 0 = Console no appsettings)
+      Serilog__WriteTo__1__Name: Seq
+      Serilog__WriteTo__1__Args__serverUrl: http://seq:5341
+      # Sem efeito até o SDK do Sentry ser adicionado ao backend (fase futura)
+      Sentry__Dsn: ${SENTRY_DSN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      seq:
+        condition: service_started
+
+  seq:
+    image: datalust/seq:latest
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      # Gere com: echo 'SuaSenha' | docker run --rm -i datalust/seq config hash
+      SEQ_FIRSTRUN_ADMINPASSWORDHASH: ${SEQ_ADMIN_PASSWORD_HASH:-}
+    volumes:
+      - seq_data:/data
+    ports:
+      # UI exposta SÓ em loopback da VPS — acesse via túnel SSH:
+      #   ssh -L 8341:127.0.0.1:8341 deploy@<vps>  →  http://localhost:8341
+      - "127.0.0.1:8341:80"
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-m351_staging}
+      POSTGRES_USER: ${POSTGRES_USER:-m351}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD em infra/.env}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    # Sem porta publicada no host: acesso só pela rede interna do Compose
+    # (backup via `docker compose exec` — ver infra/scripts/backup.sh).
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-m351} -d ${POSTGRES_DB:-m351_staging}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  pg_data:
+  seq_data:
+  caddy_data:
+  caddy_config:
