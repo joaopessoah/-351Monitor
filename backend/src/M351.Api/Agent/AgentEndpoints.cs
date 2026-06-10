@@ -1,6 +1,8 @@
+using System.Globalization;
 using System.Text.Json;
 using M351.Api.Auth;
 using M351.Api.Contracts;
+using M351.Api.RateLimiting;
 
 namespace M351.Api.Agent;
 
@@ -26,16 +28,18 @@ public static class AgentEndpoints
         app.MapPost("/api/v1/agent/enroll",
                 async (EnrollRequest? request, EnrollmentService service, CancellationToken ct) =>
                     await service.EnrollAsync(request, ct))
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .RequireRateLimiting(RateLimitingPolicies.Enroll); // Seção 5.7: 10/min por IP
 
         app.MapPost("/api/v1/ingest/batch", IngestBatchAsync)
-            .RequireAuthorization(AuthConstants.PolicyDevice);
+            .RequireAuthorization(AuthConstants.PolicyDevice)
+            .RequireRateLimiting(RateLimitingPolicies.Ingest); // Seção 5.6: 6 lotes/min, burst 30
 
         return app;
     }
 
     private static async Task<IResult> IngestBatchAsync(
-        HttpContext context, IngestService service, CancellationToken ct)
+        HttpContext context, IngestService service, IngestDailyQuota quota, CancellationToken ct)
     {
         JsonDocument? doc;
         try
@@ -82,9 +86,35 @@ public static class AgentEndpoints
                 ConfigVersion: GetInt32(root, "config_version"),
                 Events: events);
 
-            var ack = await service.ProcessAsync(
-                CurrentDevice.TenantId(context.User), CurrentDevice.DeviceId(context.User), batch, ct);
+            var tenantId = CurrentDevice.TenantId(context.User);
+            var deviceId = CurrentDevice.DeviceId(context.User);
 
+            // Seção 5.6 — cota diária dura (eventos ACEITOS/device/dia UTC): reserva pelo tamanho
+            // do lote ANTES de persistir (excedente jamais chega ao banco) e devolve o não-aceito
+            // após o processamento (duplicatas/rejeitados não consomem cota)
+            var reservation = quota.TryReserve(deviceId, events.Count);
+            if (!reservation.Allowed)
+            {
+                context.Response.Headers.RetryAfter =
+                    reservation.RetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+                return Results.Problem(
+                    title: "Cota diária de eventos excedida.",
+                    statusCode: StatusCodes.Status429TooManyRequests,
+                    extensions: new Dictionary<string, object?> { ["reason"] = "daily_quota_exceeded" });
+            }
+
+            IngestAckResponse ack;
+            try
+            {
+                ack = await service.ProcessAsync(tenantId, deviceId, batch, ct);
+            }
+            catch
+            {
+                reservation.ReleaseAll(); // falha = nada persistido = nada consumido
+                throw;
+            }
+
+            reservation.ReleaseUnused(ack.Accepted);
             return Results.Ok(ack);
         }
     }

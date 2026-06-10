@@ -5,6 +5,7 @@ using M351.Api.Agent;
 using M351.Api.Auth;
 using M351.Api.Backoffice;
 using M351.Api.Middleware;
+using M351.Api.RateLimiting;
 using M351.Api.Services;
 using M351.Infrastructure;
 using M351.Infrastructure.Data;
@@ -38,6 +39,22 @@ builder.Services.AddSingleton<RawEventPartitionManager>();
 builder.Services.AddScoped<EnrollmentService>();
 builder.Services.AddScoped<IngestService>();
 builder.Services.AddRequestDecompression(); // Content-Encoding: gzip dos lotes (Seção 5.4)
+
+// Rate limiting nativo .NET 8 (Seções 5.6/5.7): enroll por IP, ingestão por device, cota diária
+builder.Services.AddM351RateLimiting(builder.Configuration);
+
+// Atrás do Caddy (infra/caddy) o IP real do agente chega em X-Forwarded-For. Proxies CONFIÁVEIS:
+// loopback (default do middleware) + 172.16.0.0/12 (faixa default das redes bridge do Docker —
+// docker-compose.*.yml não fixa subnet, então o Caddy recebe IP desse pool). XFF de origem não
+// confiável é ignorado e vale o RemoteIpAddress da conexão (fallback). ForwardedLimit default = 1:
+// honra apenas o último salto (o Caddy), impedindo spoofing de cadeia de XFF.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
+        | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(
+        System.Net.IPAddress.Parse("172.16.0.0"), 12));
+});
 
 builder.Services.AddControllers().AddJsonOptions(options =>
 {
@@ -141,6 +158,9 @@ if (app.Configuration.GetValue<bool>("Database:AutoMigrate"))
     await DatabaseInitializer.MigrateAsync(scope.ServiceProvider.GetRequiredService<M351DbContext>());
 }
 
+// antes de QUALQUER middleware que use o IP da conexão (rate limit por IP, logs)
+app.UseForwardedHeaders();
+
 app.UseExceptionHandler();
 app.UseSerilogRequestLogging();
 
@@ -172,6 +192,10 @@ if (corsOrigins.Length > 0)
 app.UseAuthentication();
 app.UseMiddleware<TenantContextMiddleware>();
 app.UseAuthorization();
+
+// DEPOIS de UseAuthorization: o token bucket por device precisa dos claims, e requisição sem
+// token leva 401 sem consumir limite; com RateLimiting:Enabled=false as policies viram no-op
+app.UseRateLimiter();
 
 app.MapControllers();
 app.MapAgentEndpoints();

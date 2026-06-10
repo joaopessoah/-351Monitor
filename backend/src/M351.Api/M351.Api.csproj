@@ -10,6 +10,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- IngestDailyQuota.TrackedDeviceCount: asserção de limpeza de memória nos testes -->
+    <InternalsVisibleTo Include="M351.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Hot path da ingestão (Seção 7): INSERT multi-row ON CONFLICT DO NOTHING via Dapper -->
     <PackageReference Include="Dapper" Version="2.1.35" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />

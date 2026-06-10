@@ -31,6 +31,11 @@ public class ApiTestFixture : WebApplicationFactory<Program>
         builder.UseSetting("Portal:BaseUrl", "http://localhost:5173");
         builder.UseSetting("Email:Provider", "Dev");
 
+        // Rate limiting (Seções 5.6/5.7) DESLIGADO por default: a suíte dispara rajadas muito
+        // acima dos limites canônicos. Os testes de RateLimitTests reabilitam com limites
+        // baixos específicos via WithWebHostBuilder (UseSetting roda DEPOIS e sobrescreve).
+        builder.UseSetting("RateLimiting:Enabled", "false");
+
         // Argon2id reduzido APENAS para acelerar a suíte de integração; os parâmetros canônicos
         // (64 MB / 3 / 4) são cobertos pelos testes unitários do hasher.
         builder.UseSetting("PasswordHashing:MemoryKb", "8192");
