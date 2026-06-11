@@ -61,6 +61,15 @@ export const stateLabels: Record<string, string> = {
   no_data: "Sem comunicação",
 };
 
+/** "GMT-4", "GMT+5:30" a partir do offset em minutos (badge de fuso divergente). */
+export function gmtLabel(offsetMin: number): string {
+  const sign = offsetMin < 0 ? "-" : "+";
+  const abs = Math.abs(offsetMin);
+  const h = Math.floor(abs / 60);
+  const m = abs % 60;
+  return m === 0 ? `GMT${sign}${h}` : `GMT${sign}${h}:${String(m).padStart(2, "0")}`;
+}
+
 /** "08:00" → minutos desde 00:00 (480); null para valores malformados. */
 export function parseHmToMinutes(hm: string): number | null {
   const match = /^(\d{1,2}):(\d{2})$/.exec(hm);

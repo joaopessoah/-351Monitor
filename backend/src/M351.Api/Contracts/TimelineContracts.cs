@@ -25,6 +25,27 @@ public sealed record TimelineIntervalResponse(
 public sealed record TimelineAppResponse(Guid AppId, string ProcessName, string DisplayName, string? Category);
 
 /// <summary>
+/// GET /api/v1/timeline/team (Seção 7.4/8.5, F3.4) — uma lane por device NÃO-archived
+/// do tenant (lanes vazias incluídas: o gestor varre a equipe inteira), ordenadas por
+/// nome de exibição. Mesma agregação do modo device; truncated = cap N21 atingido
+/// (lanes INTEIRAS deixadas de fora, nunca lane cortada no meio).
+/// </summary>
+public sealed record TeamTimelineResponse(
+    string Date,
+    int ResolutionSec,
+    DateTimeOffset ServerTime,
+    bool Truncated,
+    IReadOnlyList<TeamTimelineLaneResponse> Lanes);
+
+/// <summary>Lane de 28 px do modo equipe — intervals com o MESMO shape do modo device.</summary>
+public sealed record TeamTimelineLaneResponse(
+    Guid DeviceId,
+    string DeviceName,
+    int? DeviceTzOffsetMin,
+    bool DataIncomplete,
+    IReadOnlyList<TimelineIntervalResponse> Intervals);
+
+/// <summary>
 /// Rodapé do modo device (Seção 8.5): MESMOS números do relatório de jornada (11.3).
 /// seconds_on = active + idle + locked; first/last_event_at = bordas dos intervalos de
 /// usuário (off_clean/no_data não contam como "evento" — a noite desligada não é jornada).

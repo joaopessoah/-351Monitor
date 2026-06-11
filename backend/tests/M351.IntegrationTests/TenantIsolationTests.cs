@@ -211,6 +211,23 @@ public class TenantIsolationTests(ApiTestFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TimelineTeam_NaoVazaLanesDoTenantB()
+    {
+        // o modo equipe lista TODOS os devices do tenant — endpoint sem ID na URL, o gate
+        // aqui e a listagem nao vazar lanes (nem vazias) de devices do tenant B
+        var response = await SendAsync(HttpMethod.Get, "/api/v1/timeline/team?date=2026-06-01");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var ids = body.RootElement.GetProperty("lanes").EnumerateArray()
+            .Select(l => l.GetProperty("device_id").GetGuid())
+            .ToList();
+
+        Assert.Contains(_deviceA.Id, ids);
+        Assert.DoesNotContain(_deviceB.Id, ids);
+    }
+
+    [Fact]
     public async Task RespostaCruzada_NuncaEh403_SempreEh404()
     {
         // a distincao importa: 403 confirmaria a existencia do recurso de outro tenant

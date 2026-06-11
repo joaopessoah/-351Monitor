@@ -171,6 +171,29 @@ export interface TimelineResponse {
   summary: TimelineSummary;
 }
 
+/**
+ * Lane de `GET /timeline/team` (F3.4): um device NÃO-archived do tenant —
+ * inclusive devices sem intervalos no dia (lane vazia). Intervalos com o MESMO
+ * shape do `GET /timeline/device`.
+ */
+export interface TeamTimelineLane {
+  device_id: string;
+  device_name: string;
+  device_tz_offset_min: number | null;
+  data_incomplete: boolean;
+  intervals: TimelineInterval[];
+}
+
+/** Resposta de `GET /timeline/team?date=` — lanes ordenadas por nome de exibição asc. */
+export interface TeamTimelineResponse {
+  date: string;
+  resolution_sec: number;
+  server_time: string;
+  /** true quando o cap de ~3000 intervalos (N21) parou de adicionar lanes INTEIRAS. */
+  truncated: boolean;
+  lanes: TeamTimelineLane[];
+}
+
 /** Item de `GET /devices`. */
 export interface DeviceItem {
   id: string;

@@ -57,8 +57,8 @@ const APP_H = 32; // sub-faixa de apps (só intervalos active)
 const PAD_BOTTOM = 6;
 export const TIMELINE_CANVAS_HEIGHT = AXIS_H + STATE_H + LANE_GAP + APP_H + PAD_BOTTOM;
 
-// Cores canônicas da Seção 8.5.
-const COLOR = {
+// Cores canônicas da Seção 8.5 — também usadas pelo TeamTimelineCanvas (F3.4).
+export const COLOR = {
   active: "#16a34a",
   idle: "#d97706",
   locked: "#64748b",
@@ -355,8 +355,8 @@ export function TimelineCanvas({
   );
 }
 
-/** Padrão de hachura diagonal a 45° (tile 8×8 repetido). */
-function makeHatch(
+/** Padrão de hachura diagonal a 45° (tile 8×8 repetido) — reusado pelo modo equipe. */
+export function makeHatch(
   ctx: CanvasRenderingContext2D,
   stroke: string,
   background: string | null,
@@ -384,8 +384,8 @@ function makeHatch(
   return ctx.createPattern(tile, "repeat") ?? stroke;
 }
 
-/** Pequeno triângulo de alerta (redundância não-cromática do no_data). */
-function drawAlertTriangle(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
+/** Pequeno triângulo de alerta (redundância não-cromática do no_data) — reusado pelo modo equipe. */
+export function drawAlertTriangle(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
   ctx.beginPath();
   ctx.moveTo(cx, cy - 5);
   ctx.lineTo(cx + 5.5, cy + 4);

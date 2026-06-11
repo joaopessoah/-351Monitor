@@ -24,6 +24,9 @@ namespace M351.Api.Controllers;
 /// intervalo e o "agora" é sintetizado na leitura a partir de device_current_state —
 /// off_clean se o último evento foi desligamento limpo; no_data se o silêncio já passou de
 /// 600 s (N7). Estados de usuário não são estendidos (defasagem máxima ~1 ciclo do worker).
+///
+/// GET /api/v1/timeline/team?date (F3.4, Seção 8.5): uma lane por device NÃO-archived —
+/// mesma agregação, mesma cauda viva e mesmo cache, reusando os helpers do modo device.
 /// </summary>
 [Route("api/v1/timeline")]
 [Authorize] // Viewer+
@@ -68,6 +71,12 @@ public class TimelineController(
         var windowEnd = LocalMidnightUtc(day.AddDays(1), tz);
         var isToday = now >= windowStart && now < windowEnd;
 
+        // limite inferior em started_at (partition pruning): o worker divide intervalos na
+        // meia-noite do tenant, então nada que cruza a janela começa mais de ~25 h antes dela;
+        // 48 h de folga cobre até troca de fuso da org. Sem isso, o range scan da PK
+        // (tenant, device, started_at < @End) varreria TODAS as partições mensais (12 meses, N11).
+        var startFloor = windowStart.AddHours(-48);
+
         var rows = (await connection.QueryAsync<IntervalRow>(new CommandDefinition(
             """
             SELECT i.started_at, i.ended_at, i.state, i.window_title, i.data_incomplete,
@@ -75,18 +84,14 @@ public class TimelineController(
             FROM activity_intervals i
             LEFT JOIN app_catalog a ON a.id = i.app_id
             WHERE i.tenant_id = @TenantId AND i.device_id = @DeviceId
-              AND i.started_at < @End AND i.ended_at > @Start
+              AND i.started_at >= @StartFloor AND i.started_at < @End AND i.ended_at > @Start
             ORDER BY i.started_at
             """,
-            new { TenantId = tenantId, DeviceId = deviceId, Start = windowStart, End = windowEnd },
+            new { TenantId = tenantId, DeviceId = deviceId, StartFloor = startFloor, Start = windowStart, End = windowEnd },
             cancellationToken: ct))).ToList();
 
         // clip defensivo nas bordas (o worker já divide na meia-noite do tenant)
-        foreach (var r in rows)
-        {
-            if (r.StartedAt < windowStart) r.StartedAt = windowStart;
-            if (r.EndedAt > windowEnd) r.EndedAt = windowEnd;
-        }
+        ClipToWindow(rows, windowStart, windowEnd);
 
         // rodapé: computado dos intervalos PLENOS (pré-merge) — consistência com o
         // relatório de jornada (11.3) e com a agregação diária da F3
@@ -99,19 +104,19 @@ public class TimelineController(
             SecondsIn(userRows, "idle"),
             SecondsIn(userRows, "locked"));
 
-        if (isToday) await AppendLiveTailAsync(connection, rows, tenantId, deviceId.Value, windowStart, now, ct);
+        if (isToday)
+        {
+            var current = await connection.QuerySingleOrDefaultAsync<CurrentStateRow>(new CommandDefinition(
+                "SELECT device_id, state, last_contact_at FROM device_current_state WHERE tenant_id = @TenantId AND device_id = @DeviceId",
+                new { TenantId = tenantId, DeviceId = deviceId }, cancellationToken: ct));
+            AppendLiveTail(rows, current, windowStart, now);
+        }
 
         var merged = MergeToResolution(rows);
         var truncated = merged.Count > MaxIntervals;
         if (truncated) merged = merged.Take(MaxIntervals).ToList();
 
-        var intervals = merged.Select(r => new TimelineIntervalResponse(
-            r.StartedAt, r.EndedAt, r.State,
-            r.AppId is { } appId && r.State == "active"
-                ? new TimelineAppResponse(appId, r.ProcessName!, r.DisplayName ?? r.ProcessName!, null)
-                : null,
-            r.State == "active" ? r.WindowTitle : null,
-            r.DataIncomplete)).ToList();
+        var intervals = merged.Select(ToIntervalResponse).ToList();
 
         var response = new TimelineResponse(
             device.Id,
@@ -148,14 +153,142 @@ public class TimelineController(
         return Ok(response);
     }
 
-    // ------------------------------------------------------------ cauda viva de hoje
-    private async Task AppendLiveTailAsync(
-        NpgsqlConnection connection, List<IntervalRow> rows,
-        Guid tenantId, Guid deviceId, DateTimeOffset windowStart, DateTimeOffset now, CancellationToken ct)
+    /// <summary>
+    /// GET /api/v1/timeline/team?date (Seção 7.4/8.5, F3.4): uma lane por device NÃO-archived
+    /// do tenant — INCLUSIVE devices sem intervalos no dia (lane vazia: o gestor varre a
+    /// equipe inteira) — ordenadas por nome de exibição. Mesma agregação do modo device
+    /// (merge N21, cauda viva de hoje por device). Os intervalos do dia de TODOS os devices
+    /// vêm em UMA query (nada de N+1 por lane); a cauda viva idem, via device_current_state.
+    ///
+    /// Cap N21 (decisão documentada): o teto de ~3.000 vale para a SOMA de intervalos da
+    /// resposta; ao estourar, lanes INTEIRAS deixam de entrar — como um PREFIXO da ordem de
+    /// exibição (nunca cortar lane no meio, nunca pular uma lane cheia e incluir as
+    /// seguintes, o que embaralharia a varredura alfabética do gestor) — e truncated = true.
+    /// A primeira lane entra sempre; se SOZINHA estourar o teto (sessões simultâneas —
+    /// terminal server / fast user switching empilham intervalos sobrepostos pós-merge),
+    /// é truncada com o MESMO corte do modo device (Take + flag) — a resposta jamais
+    /// excede o teto e truncated jamais sai false ao truncar.
+    /// </summary>
+    [HttpGet("team")]
+    public async Task<IActionResult> Team([FromQuery(Name = "date")] string? date, CancellationToken ct)
     {
-        var current = await connection.QuerySingleOrDefaultAsync<CurrentStateRow>(new CommandDefinition(
-            "SELECT state, last_contact_at FROM device_current_state WHERE tenant_id = @TenantId AND device_id = @DeviceId",
-            new { TenantId = tenantId, DeviceId = deviceId }, cancellationToken: ct));
+        if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", out var day))
+            return ProblemResponse(StatusCodes.Status400BadRequest, "Parâmetro date é obrigatório no formato yyyy-MM-dd.");
+
+        var tenantId = Auth.CurrentUser.TenantId(User);
+        var now = clock.GetUtcNow();
+
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+
+        var timezone = await connection.ExecuteScalarAsync<string?>(new CommandDefinition(
+            "SELECT timezone FROM organizations WHERE id = @TenantId",
+            new { TenantId = tenantId }, cancellationToken: ct));
+        if (timezone is null) return NotFoundProblem();
+
+        // janela do dia no fuso do TENANT — mesma interpretação de date do modo device
+        var tz = TimeZoneInfo.FindSystemTimeZoneById(timezone);
+        var windowStart = LocalMidnightUtc(day, tz);
+        var windowEnd = LocalMidnightUtc(day.AddDays(1), tz);
+        var isToday = now >= windowStart && now < windowEnd;
+
+        var devices = (await connection.QueryAsync<TeamDeviceRow>(new CommandDefinition(
+            """
+            SELECT d.id, COALESCE(d.display_name, d.hostname) AS device_name, d.tz_offset_min
+            FROM devices d
+            WHERE d.tenant_id = @TenantId AND d.status <> 'archived'
+            ORDER BY lower(COALESCE(d.display_name, d.hostname)), d.id
+            """,
+            new { TenantId = tenantId }, cancellationToken: ct))).ToList();
+        var deviceIds = devices.Select(d => d.Id).ToArray();
+
+        // mesmo limite inferior do modo device (partition pruning) — aqui é VITAL: a query
+        // cobre TODOS os devices do tenant (alvo N25 ~2.500) e é repolled a cada 60 s (N18)
+        var startFloor = windowStart.AddHours(-48);
+
+        var rowsByDevice = (await connection.QueryAsync<IntervalRow>(new CommandDefinition(
+            """
+            SELECT i.device_id, i.started_at, i.ended_at, i.state, i.window_title, i.data_incomplete,
+                   i.device_user_id, a.id AS app_id, a.process_name, a.display_name
+            FROM activity_intervals i
+            LEFT JOIN app_catalog a ON a.id = i.app_id
+            WHERE i.tenant_id = @TenantId AND i.device_id = ANY(@DeviceIds)
+              AND i.started_at >= @StartFloor AND i.started_at < @End AND i.ended_at > @Start
+            ORDER BY i.started_at
+            """,
+            new { TenantId = tenantId, DeviceIds = deviceIds, StartFloor = startFloor, Start = windowStart, End = windowEnd },
+            cancellationToken: ct))).ToLookup(r => r.DeviceId);
+
+        // cauda viva de hoje: estado corrente de TODOS os devices em uma query só
+        var currentByDevice = new Dictionary<Guid, CurrentStateRow>();
+        if (isToday)
+        {
+            currentByDevice = (await connection.QueryAsync<CurrentStateRow>(new CommandDefinition(
+                "SELECT device_id, state, last_contact_at FROM device_current_state WHERE tenant_id = @TenantId AND device_id = ANY(@DeviceIds)",
+                new { TenantId = tenantId, DeviceIds = deviceIds }, cancellationToken: ct)))
+                .ToDictionary(c => c.DeviceId);
+        }
+
+        var lanes = new List<TeamTimelineLaneResponse>();
+        var total = 0;
+        var truncated = false;
+        foreach (var device in devices)
+        {
+            var rows = rowsByDevice[device.Id].ToList();
+            ClipToWindow(rows, windowStart, windowEnd);
+            if (isToday) AppendLiveTail(rows, currentByDevice.GetValueOrDefault(device.Id), windowStart, now);
+
+            var intervals = MergeToResolution(rows).Select(ToIntervalResponse).ToList();
+            if (lanes.Count == 0 && intervals.Count > MaxIntervals)
+            {
+                // primeira lane sozinha estoura (sessões simultâneas): mesmo corte do modo device
+                intervals = intervals.Take(MaxIntervals).ToList();
+                truncated = true;
+            }
+
+            if (lanes.Count > 0 && total + intervals.Count > MaxIntervals)
+            {
+                truncated = true; // cap N21: esta lane e as seguintes ficam INTEIRAS de fora
+                break;
+            }
+
+            total += intervals.Count;
+            lanes.Add(new TeamTimelineLaneResponse(
+                device.Id, device.DeviceName, device.TzOffsetMin,
+                intervals.Any(i => i.DataIncomplete), intervals));
+        }
+
+        var response = new TeamTimelineResponse(day.ToString("yyyy-MM-dd"), ResolutionSec, now, truncated, lanes);
+
+        // DoD 11.3: visualização de dado pessoal de VÁRIAS pessoas — target_id é nullable no
+        // schema (target_type text, target_id uuid), então "team" sem alvo individual (o
+        // tenant já está em tenant_id; repetir o tenant em target_id seria ruído) + detail {date}
+        audit.Add(tenantId, "view_timeline",
+            actorUserId: Auth.CurrentUser.UserId(User),
+            targetType: "team", targetId: null,
+            detailJson: JsonSerializer.Serialize(new { date = response.Date }));
+        await db.SaveChangesAsync(ct);
+
+        // dias passados são imutáveis → ETag/304; hoje muda a cada ciclo do worker
+        if (!isToday && windowEnd <= now)
+        {
+            var etag = $"\"{ComputeTeamETag(response)}\"";
+            Response.Headers.CacheControl = "private, max-age=300";
+            Response.Headers.ETag = etag;
+            if (Request.Headers.IfNoneMatch.Contains(etag)) return StatusCode(StatusCodes.Status304NotModified);
+        }
+        else
+        {
+            Response.Headers.CacheControl = "private, no-cache";
+        }
+
+        return Ok(response);
+    }
+
+    // ------------------------------------------------------------ cauda viva de hoje
+    /// <summary>Lógica compartilhada device/equipe — ver a decisão documentada no topo da classe.</summary>
+    private static void AppendLiveTail(
+        List<IntervalRow> rows, CurrentStateRow? current, DateTimeOffset windowStart, DateTimeOffset now)
+    {
         if (current is null) return;
 
         var lastEnd = rows.Count > 0 ? rows.Max(r => r.EndedAt) : windowStart;
@@ -256,22 +389,67 @@ public class TimelineController(
         return new DateTimeOffset(local, tz.GetUtcOffset(local)).ToUniversalTime();
     }
 
+    /// <summary>Clip defensivo nas bordas do dia (o worker já divide na meia-noite do tenant).</summary>
+    private static void ClipToWindow(List<IntervalRow> rows, DateTimeOffset windowStart, DateTimeOffset windowEnd)
+    {
+        foreach (var r in rows)
+        {
+            if (r.StartedAt < windowStart) r.StartedAt = windowStart;
+            if (r.EndedAt > windowEnd) r.EndedAt = windowEnd;
+        }
+    }
+
+    /// <summary>Shape ÚNICO do intervalo, compartilhado pelos modos device e equipe (contrato F3.4).</summary>
+    private static TimelineIntervalResponse ToIntervalResponse(IntervalRow r) => new(
+        r.StartedAt, r.EndedAt, r.State,
+        r.AppId is { } appId && r.State == "active"
+            ? new TimelineAppResponse(appId, r.ProcessName!, r.DisplayName ?? r.ProcessName!, null)
+            : null,
+        r.State == "active" ? r.WindowTitle : null,
+        r.DataIncomplete);
+
     private static string ComputeETag(TimelineResponse response)
     {
         var builder = new StringBuilder();
         builder.Append(response.DeviceId).Append('|').Append(response.Date);
-        foreach (var i in response.Intervals)
+        AppendIntervalsETag(builder, response.Intervals);
+        return HashHex(builder);
+    }
+
+    /// <summary>ETag do modo equipe: data + lanes (nome incluso — renomear device invalida o cache).</summary>
+    private static string ComputeTeamETag(TeamTimelineResponse response)
+    {
+        var builder = new StringBuilder();
+        builder.Append(response.Date).Append('|').Append(response.Truncated);
+        foreach (var lane in response.Lanes)
+        {
+            builder.Append('|').Append(lane.DeviceId).Append(',').Append(lane.DeviceName);
+            AppendIntervalsETag(builder, lane.Intervals);
+        }
+        return HashHex(builder);
+    }
+
+    private static void AppendIntervalsETag(StringBuilder builder, IReadOnlyList<TimelineIntervalResponse> intervals)
+    {
+        foreach (var i in intervals)
             builder.Append('|').Append(i.StartedAt.UtcTicks).Append(',').Append(i.EndedAt.UtcTicks)
                    .Append(',').Append(i.State).Append(',').Append(i.DataIncomplete);
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())))[..32];
     }
+
+    private static string HashHex(StringBuilder builder) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())))[..32];
 
     private sealed record DeviceRow(Guid Id, string DeviceName, int? TzOffsetMin, string Timezone);
 
-    private sealed record CurrentStateRow(string State, DateTimeOffset LastContactAt);
+    private sealed record TeamDeviceRow(Guid Id, string DeviceName, int? TzOffsetMin);
+
+    private sealed record CurrentStateRow(Guid DeviceId, string State, DateTimeOffset LastContactAt);
 
     internal sealed class IntervalRow
     {
+        /// <summary>Preenchido só no modo equipe (uma query para todas as lanes).</summary>
+        public Guid DeviceId { get; set; }
+
         public DateTimeOffset StartedAt { get; set; }
         public DateTimeOffset EndedAt { get; set; }
         public Guid? DeviceUserId { get; set; }
