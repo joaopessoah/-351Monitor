@@ -419,4 +419,116 @@ export interface UsageDeviceUserItem extends UsageDeviceItem {
   device_user_id: string;
   /** Usuário Windows quando resolvível via device_users. */
   windows_user: string | null;
+  /**
+   * Nome de exibição JÁ resolvido pelo backend (mesma regra das lanes da
+   * timeline): display_name amigável de device_users, senão windows_username,
+   * "Máquina (sem usuário)" para a lane de UUID zero e "Usuário desconhecido"
+   * para titular removido por DSR. Renderize este campo - nunca reimplemente
+   * a regra no cliente.
+   */
+  display_name: string;
+}
+
+// =============================================================================
+// Contratos da F3.5: relatório de jornada (GET /reports/jornada) e exports CSV
+// assíncronos (POST/GET /exports, GET /exports/{id}/download). O CSV é gerado
+// pelo worker (UTF-8 com BOM, separador ';'); o disclaimer da Portaria 671/MTE
+// vai em tela E como rodapé de todo CSV de jornada.
+// =============================================================================
+
+/**
+ * Observação da linha de jornada - null quando o dia tem dados normais.
+ * dados_incompletos: dia com data_incomplete; sem_comunicacao: seconds_on 0
+ * com no_data registrado; sem_dados: seconds_on 0 sem nenhum registro.
+ */
+export type JornadaNote = "dados_incompletos" | "sem_comunicacao" | "sem_dados";
+
+/**
+ * Linha de `GET /reports/jornada` - um device × dia do range INTEIRO (dias sem
+ * dados TAMBÉM viram linha, com observação). Colunas de tela SEMPRE "Primeiro
+ * evento"/"Último evento" - jamais "Entrada"/"Saída" (não é ponto eletrônico).
+ */
+export interface JornadaRow {
+  date: string;
+  device_id: string;
+  device_name: string;
+  /** Nomes das lanes de usuário com tempo no dia, separados por ", " - null sem usuários. */
+  users: string | null;
+  first_event_at: string | null;
+  last_event_at: string | null;
+  seconds_on: number;
+  seconds_active: number;
+  seconds_idle: number;
+  seconds_locked: number;
+  note: JornadaNote | null;
+}
+
+/** Totais por device do RANGE INTEIRO - independem da página corrente. */
+export interface JornadaDeviceTotals {
+  device_id: string;
+  device_name: string;
+  seconds_on: number;
+  seconds_active: number;
+  seconds_idle: number;
+  seconds_locked: number;
+  days_with_data: number;
+}
+
+/** Resposta de `GET /reports/jornada` - items ordenados por device_name, date. */
+export interface JornadaReportResponse {
+  items: JornadaRow[];
+  total: number;
+  page: number;
+  page_size: number;
+  device_totals: JornadaDeviceTotals[];
+}
+
+/** Tipos de export do MVP - dsr_* são F4 (o backend rejeita com 400). */
+export type ExportKind = "usage_csv" | "jornada_csv";
+
+export type ExportStatus = "queued" | "running" | "done" | "failed";
+
+/** Params do job - validados com os MESMOS validadores dos endpoints de leitura. */
+export interface ExportParams {
+  from: string;
+  to: string;
+  device_ids?: string[];
+  /** Apenas usage_csv. */
+  group_by?: "app" | "category" | "device" | "device_user";
+}
+
+/** Body de `POST /exports` (202 - o job entra na fila do worker). */
+export interface ExportCreateRequest {
+  kind: ExportKind;
+  params: ExportParams;
+}
+
+/** Resposta 202 de `POST /exports`. */
+export interface ExportCreateResponse {
+  id: string;
+  kind: ExportKind;
+  status: "queued";
+  created_at: string;
+}
+
+/** Item de `GET /exports` (últimos 30 dias do tenant, desc, máx. 100 - trilha de auditoria). */
+export interface ExportJobItem {
+  id: string;
+  kind: ExportKind;
+  status: ExportStatus;
+  created_at: string;
+  requested_by_name: string;
+  params: ExportParams;
+  /** Linhas de dados do CSV - null enquanto não concluído; máx. 500.000. */
+  row_count: number | null;
+  /** Teto de 500.000 linhas atingido: o CSV é PARCIAL - a tela avisa o usuário. */
+  truncated: boolean;
+  /** Conclusão + 7 dias - null enquanto não concluído. */
+  expires_at: string | null;
+  /** Job done com prazo vencido ou arquivo removido - o download responde 410. */
+  expired: boolean;
+}
+
+export interface ExportsResponse {
+  items: ExportJobItem[];
 }

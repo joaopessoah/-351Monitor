@@ -32,6 +32,9 @@ COPY --from=portal-build /portal/dist ./wwwroot
 ENV ASPNETCORE_URLS=http://+:8080 \
     DOTNET_EnableDiagnostics=0
 EXPOSE 8080
+# Diretório dos CSVs exportados (F3.5) ANTES do USER app: o volume nomeado herda o dono
+# do caminho da imagem na primeira montagem — sem isto ficaria root e a app não gravaria
+RUN mkdir -p /var/lib/m351/exports && chown -R app:app /var/lib/m351
 # Usuário não-root provido pelas imagens .NET 8
 USER app
 ENTRYPOINT ["dotnet", "M351.Api.dll"]

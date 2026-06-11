@@ -21,6 +21,14 @@ public class ApiTestFixture : WebApplicationFactory<Program>
     public PostgresTestDatabase Database { get; } = new();
     public CapturingEmailSender Emails { get; } = new();
 
+    /// <summary>
+    /// Diretório de exports descartável por execução (F3.5): a API serve o download daqui e
+    /// os testes instanciam ExportService apontando para o MESMO caminho (espelha o volume
+    /// compartilhado api+worker do staging).
+    /// </summary>
+    public string ExportsDirectory { get; } =
+        Path.Combine(Path.GetTempPath(), $"m351-exports-{Guid.NewGuid():N}");
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -30,6 +38,7 @@ public class ApiTestFixture : WebApplicationFactory<Program>
         builder.UseSetting("Mfa:EncryptionKey", "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=");
         builder.UseSetting("Portal:BaseUrl", "http://localhost:5173");
         builder.UseSetting("Email:Provider", "Dev");
+        builder.UseSetting("Exports:Directory", ExportsDirectory);
 
         // Rate limiting (Seções 5.6/5.7) DESLIGADO por default: a suíte dispara rajadas muito
         // acima dos limites canônicos. Os testes de RateLimitTests reabilitam com limites
@@ -188,6 +197,14 @@ public class ApiTestFixture : WebApplicationFactory<Program>
         if (disposing)
         {
             Database.Dispose();
+            try
+            {
+                if (Directory.Exists(ExportsDirectory)) Directory.Delete(ExportsDirectory, recursive: true);
+            }
+            catch (IOException)
+            {
+                // diretório temporário: o SO limpa eventualmente
+            }
         }
     }
 }

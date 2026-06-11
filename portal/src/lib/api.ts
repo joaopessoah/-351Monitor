@@ -1,6 +1,6 @@
 import type { ApiProblem } from "./types";
 
-const API_BASE = "/api/v1";
+export const API_BASE = "/api/v1";
 
 // Access token mantido EM MEMÓRIA (nunca em localStorage). A sessão sobrevive a
 // reload via refresh cookie httpOnly (POST /auth/refresh).
@@ -127,4 +127,62 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
     return undefined as T;
   }
   return (await res.json()) as T;
+}
+
+export interface ApiDownloadResult {
+  blob: Blob;
+  /** Nome sugerido pelo Content-Disposition do backend - null se ausente/ilegível. */
+  filename: string | null;
+}
+
+/**
+ * Download autenticado (ex.: GET /exports/{id}/download). Navegação de browser
+ * (location.href) NÃO envia o header Authorization e o access token vive só em
+ * memória - a API responderia 401 em todo download. Aqui: fetch com Bearer
+ * (mesmo retry único de refresh do api()) -> Blob, e o chamador dispara o save
+ * via URL.createObjectURL + <a download>. Trade-off documentado: o arquivo
+ * passa pela memória (aceitável - CSVs limitados a 500 k linhas) em troca de
+ * autenticação correta e tratamento inline de 409/410 sem ejetar o usuário
+ * da SPA para um JSON de problem details.
+ */
+export async function apiDownload(path: string): Promise<ApiDownloadResult> {
+  const doFetch = (): Promise<Response> => {
+    const headers: Record<string, string> = {};
+    if (accessToken !== null) headers["Authorization"] = `Bearer ${accessToken}`;
+    return fetch(`${API_BASE}${path}`, { headers, credentials: "include" });
+  };
+
+  let res = await doFetch();
+  if (res.status === 401) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      res = await doFetch();
+    }
+  }
+
+  if (!res.ok) {
+    const problem = await parseProblem(res);
+    throw new ApiError(res.status, problem, problem?.detail ?? problem?.title ?? `HTTP ${res.status}`);
+  }
+
+  return {
+    blob: await res.blob(),
+    filename: filenameFromContentDisposition(res.headers.get("Content-Disposition")),
+  };
+}
+
+/** Extrai o filename do Content-Disposition (filename*= RFC 5987 vence filename=). */
+function filenameFromContentDisposition(header: string | null): string | null {
+  if (header === null) return null;
+  const star = /filename\*\s*=\s*utf-8''([^;]+)/i.exec(header);
+  if (star?.[1] !== undefined) {
+    try {
+      return decodeURIComponent(star[1].trim());
+    } catch {
+      // percent-encoding inválido: cai para o filename= simples abaixo
+    }
+  }
+  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(header);
+  const name = plain?.[1]?.trim();
+  return name !== undefined && name.length > 0 ? name : null;
 }

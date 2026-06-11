@@ -4,6 +4,7 @@ using M351.Api.Contracts;
 using M351.Api.Services;
 using M351.Domain.Entities;
 using M351.Infrastructure.Data;
+using M351.Infrastructure.Reports;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
@@ -31,7 +32,8 @@ public class ReportsController(
     public const int DefaultPageSize = 50;
     public const int MaxPageSize = 100;
 
-    private static readonly string[] ValidGroupBys = ["app", "category", "device", "device_user"];
+    /// <summary>Compartilhado com a validação de params do POST /exports (F3.5).</summary>
+    internal static readonly string[] ValidGroupBys = ["app", "category", "device", "device_user"];
 
     /// <summary>UUID zero = lane-máquina (spec linha 652): intervalos sem sessão de usuário.</summary>
     private static readonly Guid MachineLane = Guid.Empty;
@@ -117,6 +119,106 @@ public class ReportsController(
                 detailJson: JsonSerializer.Serialize(new { from, to, group_by = groupBy, device_ids = deviceIds }));
             await db.SaveChangesAsync(ct);
         }
+
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// GET /api/v1/reports/jornada (F3.5, Seções 7.4/8.6): uma linha por device × dia do
+    /// RANGE INTEIRO — dias sem dados também viram linha, com observação (spec linha 947).
+    /// SQL canônico em JornadaReportSql (Infrastructure), COMPARTILHADO com o CSV assíncrono:
+    /// arquivo e tela saem da mesma query (DoD 11.3). Mesma régua de datas do dashboard
+    /// (fuso do tenant, máx. 92 dias); page_size default 50, máx. 100.
+    ///
+    /// Decisões documentadas (silêncios da spec):
+    ///  - devices archived FORA por default; device_ids EXPLÍCITO inclui archived (o gestor
+    ///    pediu aquele histórico — toggle "incluir arquivados" do portal); o gate de tenant
+    ///    continua: qualquer id de outro tenant → 404;
+    ///  - auditoria: view_report SEMPRE (jornada é dado pessoal mesmo sem filtro — lista
+    ///    nomes de usuário por dia), detail {from, to, device_ids};
+    ///  - device_totals respondem pelo range inteiro, independente da página.
+    /// </summary>
+    [HttpGet("jornada")]
+    public async Task<IActionResult> Jornada(
+        [FromQuery(Name = "from")] string? from,
+        [FromQuery(Name = "to")] string? to,
+        [FromQuery(Name = "device_ids")] string? deviceIdsRaw,
+        [FromQuery(Name = "page")] int page = 1,
+        [FromQuery(Name = "page_size")] int pageSize = DefaultPageSize,
+        CancellationToken ct = default)
+    {
+        var invalid = ValidateRange(from, to, out var fromDay, out var toDay);
+        if (invalid is not null) return invalid;
+
+        Guid[]? deviceIds = null;
+        if (!string.IsNullOrWhiteSpace(deviceIdsRaw))
+        {
+            var parts = deviceIdsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var parsed = new List<Guid>(parts.Length);
+            foreach (var part in parts)
+            {
+                if (!Guid.TryParse(part, out var deviceId))
+                    return ProblemResponse(StatusCodes.Status400BadRequest, "Parâmetro device_ids deve ser uma lista de UUIDs separados por vírgula.");
+                parsed.Add(deviceId);
+            }
+            deviceIds = parsed.Distinct().ToArray();
+        }
+
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+
+        var tenantId = Auth.CurrentUser.TenantId(User);
+
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+
+        // mesmo gate do usage: id inexistente OU de outro tenant → 404 (nunca 403)
+        if (deviceIds is { Length: > 0 })
+        {
+            var found = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                "SELECT count(*)::int FROM devices WHERE tenant_id = @TenantId AND id = ANY(@DeviceIds)",
+                new { TenantId = tenantId, DeviceIds = deviceIds }, cancellationToken: ct));
+            if (found != deviceIds.Length) return NotFoundProblem();
+        }
+
+        var args = new
+        {
+            TenantId = tenantId,
+            From = from,
+            To = to,
+            FilterDevices = deviceIds is { Length: > 0 },
+            DeviceIds = deviceIds ?? [],
+            Limit = pageSize,
+            Offset = (page - 1) * pageSize,
+        };
+
+        var rows = (await connection.QueryAsync<JornadaRow>(new CommandDefinition(
+            $"{JornadaReportSql.Rows}\nLIMIT @Limit OFFSET @Offset",
+            args, cancellationToken: ct))).ToList();
+
+        // total da paginação SEM materializar o produto: devices do recorte × dias do range
+        var deviceCount = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            JornadaReportSql.DeviceCount, args, cancellationToken: ct));
+        var total = deviceCount * (toDay.DayNumber - fromDay.DayNumber + 1);
+
+        var deviceTotals = (await connection.QueryAsync<JornadaTotalsRow>(new CommandDefinition(
+            JornadaReportSql.DeviceTotals, args, cancellationToken: ct))).ToList();
+
+        var response = new JornadaReportResponse(
+            rows.Select(r => new JornadaRowResponse(
+                r.Date, r.DeviceId, r.DeviceName, r.Users, r.FirstEventAt, r.LastEventAt,
+                r.SecondsOn, r.SecondsActive, r.SecondsIdle, r.SecondsLocked, r.Note)).ToList(),
+            total, page, pageSize,
+            deviceTotals.Select(t => new JornadaDeviceTotalsResponse(
+                t.DeviceId, t.DeviceName, t.SecondsOn, t.SecondsActive, t.SecondsIdle,
+                t.SecondsLocked, t.DaysWithData)).ToList());
+
+        // DoD 11.3: jornada é SEMPRE dado pessoal → view_report incondicional
+        audit.Add(tenantId, AuditActions.ViewReport,
+            actorUserId: Auth.CurrentUser.UserId(User),
+            targetType: deviceIds is { Length: 1 } ? "device" : "team",
+            targetId: deviceIds is { Length: 1 } ? deviceIds[0] : null,
+            detailJson: JsonSerializer.Serialize(new { from, to, device_ids = deviceIds }));
+        await db.SaveChangesAsync(ct);
 
         return Ok(response);
     }
@@ -351,4 +453,26 @@ public class ReportsController(
         long SecondsWorkRelated,
         long SecondsNeutral,
         long SecondsNotWorkRelated);
+
+    private sealed record JornadaRow(
+        string Date,
+        Guid DeviceId,
+        string DeviceName,
+        string? Users,
+        DateTimeOffset? FirstEventAt,
+        DateTimeOffset? LastEventAt,
+        long SecondsOn,
+        long SecondsActive,
+        long SecondsIdle,
+        long SecondsLocked,
+        string? Note);
+
+    private sealed record JornadaTotalsRow(
+        Guid DeviceId,
+        string DeviceName,
+        long SecondsOn,
+        long SecondsActive,
+        long SecondsIdle,
+        long SecondsLocked,
+        int DaysWithData);
 }

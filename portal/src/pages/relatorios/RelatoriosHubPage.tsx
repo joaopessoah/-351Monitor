@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Clock } from "lucide-react";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 const reports = [
@@ -45,6 +45,22 @@ export function RelatoriosHubPage() {
           </Link>
         ))}
       </div>
+
+      {/* Atalho do DoD F3 ("quem ficou mais tempo ocioso esta semana?" em
+          < 3 cliques): deep-link para o Uso já agrupado por dispositivo e
+          ordenado por tempo ocioso - Relatórios (1) + atalho (2). */}
+      <Card>
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3 text-sm">
+          <Clock className="h-4 w-4 text-muted-foreground" aria-hidden />
+          <span className="text-muted-foreground">Atalho:</span>
+          <Link
+            to="/relatorios/uso?group_by=device&sort=seconds_idle&dir=desc"
+            className="font-medium text-primary underline-offset-2 hover:underline"
+          >
+            Quem ficou mais tempo ocioso esta semana?
+          </Link>
+        </div>
+      </Card>
     </div>
   );
 }

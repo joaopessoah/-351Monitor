@@ -1,4 +1,5 @@
 using M351.Infrastructure.Aggregation;
+using M351.Infrastructure.Exports;
 using M351.Infrastructure.Intervalization;
 using M351.Worker;
 using Npgsql;
@@ -21,7 +22,16 @@ builder.Services.AddSingleton<DailyAggregationService>(sp => new DailyAggregatio
     sp.GetRequiredService<NpgsqlDataSource>(),
     sp.GetRequiredService<ILogger<DailyAggregationService>>()));
 
+// ExportWorker (F3.5): CSVs assíncronos no diretório COMPARTILHADO com a API
+// (Exports:Directory — volume em staging; default relativo em dev local)
+builder.Services.AddSingleton<ExportService>(sp => new ExportService(
+    sp.GetRequiredService<NpgsqlDataSource>(),
+    builder.Configuration[$"{ExportOptions.SectionName}:{nameof(ExportOptions.Directory)}"]
+        ?? new ExportOptions().Directory,
+    sp.GetRequiredService<ILogger<ExportService>>()));
+
 // Quartz (Seção 7.6): Intervalization a cada 60 s; DailyAggregation a cada 15 min;
+// ExportWorker a cada 15 s ("contínuo" da spec via polling curto — padrão dos demais jobs);
 // demais jobs (PartitionMaintenance, RetentionPurge) entram nas fases seguintes.
 builder.Services.AddQuartz(quartz =>
 {
@@ -40,6 +50,14 @@ builder.Services.AddQuartz(quartz =>
         .WithIdentity("daily-aggregation-15min")
         .StartNow()
         .WithSimpleSchedule(schedule => schedule.WithIntervalInMinutes(15).RepeatForever()));
+
+    var exportKey = new JobKey("export");
+    quartz.AddJob<ExportJob>(options => options.WithIdentity(exportKey));
+    quartz.AddTrigger(trigger => trigger
+        .ForJob(exportKey)
+        .WithIdentity("export-15s")
+        .StartNow()
+        .WithSimpleSchedule(schedule => schedule.WithIntervalInSeconds(15).RepeatForever()));
 });
 builder.Services.AddQuartzHostedService(options => options.WaitForJobsToComplete = true);
 

@@ -349,6 +349,42 @@ public class TenantIsolationTests(ApiTestFixture fixture) : IAsyncLifetime
         }
     }
 
+    // ------------------------------------------------------------ F3.5: jornada e exports
+    [Fact]
+    public async Task ReportsJornadaComDeviceIdsDeOutroTenant_Retorna404()
+    {
+        // mesmo gate do usage: device de B no filtro → 404, nunca 403
+        var response = await SendAsync(HttpMethod.Get,
+            $"/api/v1/reports/jornada?from=2026-06-01&to=2026-06-07&device_ids={_deviceB.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ExportJobDeOutroTenant_Retorna404_EListagemNaoVaza()
+    {
+        // job do tenant B semeado direto (o caminho real é o POST /exports; o gate aqui é
+        // a LEITURA: GET por id, download e listagem jamais enxergam jobs de B)
+        var jobB = Uuid7.NewUuid7();
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString, """
+            INSERT INTO export_jobs (id, tenant_id, requested_by, kind, params, status)
+            VALUES (@id, @t, @u, 'jornada_csv', '{"from":"2026-06-01","to":"2026-06-07"}'::jsonb, 'queued')
+            """, ("id", jobB), ("t", _userB.TenantId), ("u", _userB.Id));
+
+        var get = await SendAsync(HttpMethod.Get, $"/api/v1/exports/{jobB}");
+        Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
+
+        var download = await SendAsync(HttpMethod.Get, $"/api/v1/exports/{jobB}/download");
+        Assert.Equal(HttpStatusCode.NotFound, download.StatusCode);
+
+        var list = await SendAsync(HttpMethod.Get, "/api/v1/exports");
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        using var body = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        var ids = body.RootElement.GetProperty("items").EnumerateArray()
+            .Select(i => i.GetProperty("id").GetGuid())
+            .ToList();
+        Assert.DoesNotContain(jobB, ids);
+    }
+
     [Fact]
     public async Task RespostaCruzada_NuncaEh403_SempreEh404()
     {

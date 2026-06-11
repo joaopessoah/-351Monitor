@@ -21,16 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { UseQueryResult } from "@tanstack/react-query";
-import {
-  AlertTriangle,
-  ChartColumn,
-  Check,
-  ChevronDown,
-  Info,
-  MonitorSmartphone,
-  Table,
-  Tags,
-} from "lucide-react";
+import { AlertTriangle, ChartColumn, Info, Table, Tags } from "lucide-react";
 import type { EChartsOption } from "echarts";
 import { api } from "@/lib/api";
 import {
@@ -40,7 +31,7 @@ import {
   mergeUncategorizedRows,
   UNCATEGORIZED_LABEL,
 } from "@/lib/classification";
-import { formatDuration, localDateOf } from "@/lib/format";
+import { addDays, ddmm, formatDuration, isIsoDate, localDateOf } from "@/lib/format";
 import { genericErrorMessage } from "@/lib/messages";
 import { isAdmin } from "@/lib/roles";
 import type {
@@ -48,9 +39,7 @@ import type {
   AppTitlesResponse,
   CategoriesResponse,
   CategoryItem,
-  DeviceItem,
   MeResponse,
-  PagedResponse,
   UsageAppItem,
   UsageCategoryItem,
   UsageReportResponse,
@@ -65,23 +54,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EChart } from "@/components/charts/EChart";
 import { CategoryInlineSelect } from "@/components/apps/CategoryInlineSelect";
+import {
+  DeviceMultiSelect,
+  PERIOD_PRESETS,
+  PeriodPresetGroup,
+  useFilterDevices,
+} from "@/components/reports/filters";
 
 /** Altura fixa dos gráficos - skeleton/vazio/erro com a mesma geometria. */
 const CHART_H = 260;
-
-/** Presets do período (a spec permite até 92 dias por consulta). */
-const PRESETS = [7, 14, 30, 92] as const;
 
 /** Página da tabela no modo paginado pelo servidor. */
 const PAGE_SIZE = 50;
@@ -91,11 +75,6 @@ const MAX_PAGE_SIZE = 100;
 
 const AXIS_TEXT = "#64748b";
 const GRID_LINE = "#e2e8f0";
-
-// Classes do grupo segmentado (mesmo padrão da timeline/dashboard).
-const segmentedButton = "rounded-[5px] px-3 text-xs font-medium transition-colors";
-const segmentedOn = "bg-primary/10 text-primary";
-const segmentedOff = "text-muted-foreground hover:bg-accent hover:text-accent-foreground";
 
 const selectClass = cn(
   "h-9 rounded-md border border-input bg-card px-3 text-sm",
@@ -116,25 +95,6 @@ interface DonutSlice {
   label: string;
   value: number;
   color: string;
-}
-
-/** Soma `days` a uma data local yyyy-MM-dd (aritmética em UTC, imune a DST local). */
-function addDays(dateStr: string, days: number): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d + days));
-  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(dt.getUTCDate()).padStart(2, "0");
-  return `${dt.getUTCFullYear()}-${mm}-${dd}`;
-}
-
-/** "09/06" a partir de yyyy-MM-dd. */
-function ddmm(dateStr: string): string {
-  const [, m, d] = dateStr.split("-");
-  return `${d}/${m}`;
-}
-
-function isIsoDate(s: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(s);
 }
 
 /** Escapa HTML para os tooltips do ECharts (nomes vêm de dados do tenant). */
@@ -183,7 +143,7 @@ export function AppsPage() {
 
   const activePreset = useMemo<number | null>(() => {
     if (range === null || todayStr === null || range.to !== todayStr) return null;
-    return PRESETS.find((d) => addDays(todayStr, -(d - 1)) === range.from) ?? null;
+    return PERIOD_PRESETS.find((d) => addDays(todayStr, -(d - 1)) === range.from) ?? null;
   }, [range, todayStr]);
 
   function applyPreset(days: number): void {
@@ -205,19 +165,9 @@ export function AppsPage() {
     setPage(1);
   }, [range?.from, range?.to]);
 
-  const devicesQuery = useQuery({
-    queryKey: ["devices", { page_size: 100 }],
-    queryFn: () => api<PagedResponse<DeviceItem>>("/devices?page_size=100"),
-    staleTime: 60_000,
-  });
-  // Arquivados ficam fora do filtro (o relatório os exclui de toda forma);
-  // pausados/revogados entram - podem ter histórico dentro do período.
-  const devices = useMemo(() => {
-    const items = (devicesQuery.data?.items ?? []).filter((d) => d.status !== "archived");
-    return [...items].sort((a, b) =>
-      (a.display_name ?? a.hostname).localeCompare(b.display_name ?? b.hostname, "pt-BR"),
-    );
-  }, [devicesQuery.data]);
+  // Devices do filtro (componente compartilhado das telas de relatório):
+  // arquivados ficam fora, pausados/revogados entram - podem ter histórico.
+  const { devices } = useFilterDevices();
 
   const categoriesQuery = useQuery({
     queryKey: ["categories"],
@@ -418,92 +368,22 @@ export function AppsPage() {
       {/* Barra de filtros (todos os controles em h-9, padrão da timeline). */}
       <Card>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-          <div
-            role="group"
-            aria-label="Período"
-            className="inline-flex h-9 items-stretch rounded-md border border-input bg-card p-0.5"
-          >
-            {PRESETS.map((days) => (
-              <button
-                key={days}
-                type="button"
-                aria-pressed={activePreset === days}
-                disabled={todayStr === null}
-                onClick={() => applyPreset(days)}
-                className={cn(
-                  segmentedButton,
-                  activePreset === days ? segmentedOn : segmentedOff,
-                  "disabled:pointer-events-none disabled:opacity-40",
-                )}
-              >
-                {days} dias
-              </button>
-            ))}
-          </div>
+          <PeriodPresetGroup active={activePreset} onSelect={applyPreset} disabled={todayStr === null} />
           {range !== null && (
             <span className="text-xs tabular-nums text-muted-foreground">
               {ddmm(range.from)} a {ddmm(range.to)}
             </span>
           )}
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="h-9">
-                <MonitorSmartphone className="h-4 w-4" aria-hidden />
-                {deviceIds.length === 0
-                  ? "Todos os dispositivos"
-                  : deviceIds.length === 1
-                    ? "1 dispositivo"
-                    : `${deviceIds.length} dispositivos`}
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="max-h-72 w-64 overflow-y-auto">
-              <DropdownMenuLabel>Dispositivos</DropdownMenuLabel>
-              {devices.length === 0 && (
-                <p className="px-2 py-1.5 text-sm text-muted-foreground">Nenhum dispositivo.</p>
-              )}
-              {devices.map((d) => {
-                const checked = deviceIds.includes(d.id);
-                return (
-                  <DropdownMenuItem
-                    key={d.id}
-                    onSelect={(e) => {
-                      // Mantém o menu aberto para marcar vários devices.
-                      e.preventDefault();
-                      toggleDevice(d.id);
-                    }}
-                    aria-checked={checked}
-                    role="menuitemcheckbox"
-                  >
-                    <span
-                      aria-hidden
-                      className={cn(
-                        "flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border",
-                        checked ? "border-primary bg-primary text-primary-foreground" : "border-input",
-                      )}
-                    >
-                      {checked && <Check className="h-3 w-3" aria-hidden />}
-                    </span>
-                    <span className="truncate">{d.display_name ?? d.hostname}</span>
-                  </DropdownMenuItem>
-                );
-              })}
-              {deviceIds.length > 0 && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      setDeviceIds([]);
-                      setPage(1);
-                    }}
-                  >
-                    Limpar seleção
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <DeviceMultiSelect
+            devices={devices}
+            selected={deviceIds}
+            onToggle={toggleDevice}
+            onClear={() => {
+              setDeviceIds([]);
+              setPage(1);
+            }}
+          />
 
           <select
             aria-label="Categoria"

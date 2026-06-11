@@ -18,6 +18,9 @@ public static class AuditActions
     /// com troca de classification, DELETE de categoria e PUT de mapeamento app→categoria.
     /// </summary>
     public const string UpdateCategory = "update_category";
+
+    /// <summary>Solicitação de export CSV (F3.5): POST /exports, detail {kind, params}.</summary>
+    public const string ExportCsv = "export_csv";
 }
 
 /// <summary>Tabela audit_log — append-only, particionada por mês, retenção 24 meses (N13).</summary>

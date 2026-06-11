@@ -61,3 +61,45 @@ public sealed record UsageByDeviceUserItemResponse(
     long SecondsWorkRelated,
     long SecondsNeutral,
     long SecondsNotWorkRelated);
+
+// ----- GET /api/v1/reports/jornada (F3.5, Seções 7.4/8.6) -----
+
+/// <summary>
+/// items = página corrente (ordem device_name, date); total = devices × dias do range
+/// INTEIRO; device_totals SEMPRE do range inteiro, independente da página.
+/// </summary>
+public sealed record JornadaReportResponse(
+    IReadOnlyList<JornadaRowResponse> Items,
+    int Total,
+    int Page,
+    int PageSize,
+    IReadOnlyList<JornadaDeviceTotalsResponse> DeviceTotals);
+
+/// <summary>
+/// Uma linha por device × dia — dias sem dados TAMBÉM viram linha (spec linha 947).
+/// first/last_event_at = bordas dos intervalos de USUÁRIO (mesma definição do rodapé da
+/// timeline — consistência 11.3). note: dados_incompletos | sem_comunicacao | sem_dados |
+/// null. JAMAIS nomenclatura de ponto eletrônico nem cálculo de horas extras.
+/// </summary>
+public sealed record JornadaRowResponse(
+    string Date,
+    Guid DeviceId,
+    string DeviceName,
+    string? Users,
+    DateTimeOffset? FirstEventAt,
+    DateTimeOffset? LastEventAt,
+    long SecondsOn,
+    long SecondsActive,
+    long SecondsIdle,
+    long SecondsLocked,
+    string? Note);
+
+/// <summary>Totais por device do range inteiro; days_with_data = dias com seconds_on &gt; 0.</summary>
+public sealed record JornadaDeviceTotalsResponse(
+    Guid DeviceId,
+    string DeviceName,
+    long SecondsOn,
+    long SecondsActive,
+    long SecondsIdle,
+    long SecondsLocked,
+    int DaysWithData);

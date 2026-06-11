@@ -65,8 +65,12 @@ services:
       Serilog__WriteTo__1__Args__serverUrl: http://seq:5341
       # Sem efeito até o SDK do Sentry ser adicionado ao backend (fase futura)
       Sentry__Dsn: ${SENTRY_DSN:-}
+      # F3.5 — CSVs exportados: o worker gera, a API serve o download (MESMO volume)
+      Exports__Directory: /var/lib/m351/exports
     expose:
       - "8080"
+    volumes:
+      - exports_data:/var/lib/m351/exports
     depends_on:
       postgres:
         condition: service_healthy
@@ -87,6 +91,10 @@ services:
       Serilog__WriteTo__1__Args__serverUrl: http://seq:5341
       # Sem efeito até o SDK do Sentry ser adicionado ao backend (fase futura)
       Sentry__Dsn: ${SENTRY_DSN:-}
+      # F3.5 — CSVs exportados: o worker gera, a API serve o download (MESMO volume)
+      Exports__Directory: /var/lib/m351/exports
+    volumes:
+      - exports_data:/var/lib/m351/exports
     depends_on:
       postgres:
         condition: service_healthy
@@ -133,3 +141,6 @@ volumes:
   seq_data:
   caddy_data:
   caddy_config:
+  # CSVs de export (F3.5): compartilhado entre api (download) e worker (geração);
+  # arquivos expiram em 7 dias — o sweep do ExportService remove do disco
+  exports_data:

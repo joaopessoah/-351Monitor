@@ -90,3 +90,45 @@ export function localDateOf(date: Date, timezone: string): string {
   }).format(date);
   return parts;
 }
+
+/** Soma `days` a uma data local yyyy-MM-dd (aritmética em UTC, imune a DST local). */
+export function addDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${dt.getUTCFullYear()}-${mm}-${dd}`;
+}
+
+/** "09/06" a partir de yyyy-MM-dd. */
+export function ddmm(dateStr: string): string {
+  const [, m, d] = dateStr.split("-");
+  return `${d}/${m}`;
+}
+
+export function isIsoDate(s: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+
+/** "seg", "ter", "sáb"... dia da semana abreviado pt-BR de uma data yyyy-MM-dd. */
+export function weekdayShort(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const label = new Intl.DateTimeFormat("pt-BR", { weekday: "short", timeZone: "UTC" }).format(
+    new Date(Date.UTC(y, m - 1, d)),
+  );
+  return label.replace(/\.$/, "");
+}
+
+/** "10/06 14:32" de um instante ISO no fuso do tenant. */
+export function formatDayMonthTime(iso: string, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: timezone,
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(iso));
+  const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("day")}/${get("month")} ${get("hour")}:${get("minute")}`;
+}

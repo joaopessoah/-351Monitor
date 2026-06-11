@@ -25,6 +25,9 @@ builder.Host.UseSerilog((context, loggerConfiguration) =>
 builder.Services.AddM351Infrastructure(builder.Configuration);
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.Configure<PortalOptions>(builder.Configuration.GetSection(PortalOptions.SectionName));
+// F3.5 — diretório dos CSVs exportados (compartilhado com o worker; a API serve o download)
+builder.Services.Configure<M351.Infrastructure.Exports.ExportOptions>(
+    builder.Configuration.GetSection(M351.Infrastructure.Exports.ExportOptions.SectionName));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddScoped<AuthFlowService>();
