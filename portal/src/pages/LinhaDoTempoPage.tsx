@@ -20,7 +20,7 @@ import {
   Table,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { formatDuration, formatHm, localDateOf, stateLabels } from "@/lib/format";
+import { formatDuration, formatHm, localDateOf, parseHmToMinutes, stateLabels } from "@/lib/format";
 import { genericErrorMessage } from "@/lib/messages";
 import type { DeviceItem, MeResponse, PagedResponse, TimelineResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -82,9 +82,8 @@ export function LinhaDoTempoPage() {
   const deviceId = searchParams.get("device");
 
   const [dateOverride, setDateOverride] = useState<string | null>(null);
-  // Janela default "Horário de trabalho" = 05:00–21:00 local (06–20 com 1h de
-  // folga de cada lado). TODO(F3): substituir pela business_hours configurada
-  // por tenant quando o backend a expuser.
+  // Janela "Horário de trabalho" = business_hours da org com 1h de folga de
+  // cada lado (Seção 8.5); fallback 05:00-21:00 quando a org não definiu.
   const [windowMode, setWindowMode] = useState<"work" | "full">("work");
   const [view, setView] = useState<"canvas" | "table">("canvas");
 
@@ -94,6 +93,7 @@ export function LinhaDoTempoPage() {
     staleTime: 5 * 60 * 1000,
   });
   const timezone = meQuery.data?.organization.timezone ?? null;
+  const businessHours = meQuery.data?.organization.business_hours ?? null;
 
   const devicesQuery = useQuery({
     queryKey: ["devices", { page_size: 100 }],
@@ -172,8 +172,24 @@ export function LinhaDoTempoPage() {
     setDateOverride(next);
   }
 
-  const windowStartHour = windowMode === "work" ? 5 : 0;
-  const windowEndHour = windowMode === "work" ? 21 : 24;
+  // Janela "Horário de trabalho": business_hours do tenant arredondada para a
+  // hora cheia, com 1h de folga de cada lado; fallback 05-21 sem configuração.
+  const workWindow = useMemo(() => {
+    if (businessHours !== null) {
+      const startMin = parseHmToMinutes(businessHours.start);
+      const endMin = parseHmToMinutes(businessHours.end);
+      if (startMin !== null && endMin !== null && endMin > startMin) {
+        return {
+          start: Math.max(Math.floor(startMin / 60) - 1, 0),
+          end: Math.min(Math.ceil(endMin / 60) + 1, 24),
+        };
+      }
+    }
+    return { start: 5, end: 21 };
+  }, [businessHours]);
+
+  const windowStartHour = windowMode === "work" ? workWindow.start : 0;
+  const windowEndHour = windowMode === "work" ? workWindow.end : 24;
 
   // Badge de fuso divergente: offset reportado pelo device vs offset do tenant.
   const tenantOffsetMin =

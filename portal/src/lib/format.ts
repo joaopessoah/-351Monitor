@@ -61,6 +61,16 @@ export const stateLabels: Record<string, string> = {
   no_data: "Sem comunicação",
 };
 
+/** "08:00" → minutos desde 00:00 (480); null para valores malformados. */
+export function parseHmToMinutes(hm: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(hm);
+  if (match === null) return null;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (h > 23 || m > 59) return null;
+  return h * 60 + m;
+}
+
 /** Data local (yyyy-MM-dd) de um instante no fuso do tenant. */
 export function localDateOf(date: Date, timezone: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", {

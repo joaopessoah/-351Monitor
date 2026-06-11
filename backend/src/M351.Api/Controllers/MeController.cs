@@ -1,3 +1,4 @@
+using System.Text.Json;
 using M351.Api.Auth;
 using M351.Api.Contracts;
 using M351.Domain;
@@ -26,8 +27,16 @@ public class MeController(M351DbContext db) : ApiControllerBase
         // filtro global por tenant garante a org do token
         var org = await db.Organizations.FirstAsync(ct);
 
+        // business_hours: jsonb cru da org exposto como objeto (Clone() desprende do doc descartado)
+        JsonElement? businessHours = null;
+        if (org.BusinessHours is not null)
+        {
+            using var doc = JsonDocument.Parse(org.BusinessHours);
+            businessHours = doc.RootElement.Clone();
+        }
+
         return Ok(new MeResponse(
             new MeUserResponse(user.Id, user.Email, user.DisplayName, user.Role.ToDbValue()),
-            new MeOrganizationResponse(org.Id, org.Name, org.Slug, org.Timezone)));
+            new MeOrganizationResponse(org.Id, org.Name, org.Slug, org.Timezone, businessHours)));
     }
 }

@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { WeeklyChartsRow } from "@/components/dashboard/WeeklyChartsRow";
 
 /** Tooltip pedagógico do estado Ocioso (Seção 8.4) - sempre presente via title. */
 const IDLE_HINT =
@@ -177,7 +178,7 @@ export function VisaoGeralPage() {
             </Link>
           </div>
         </Card>
-        <GraficosF3Card />
+        <WeeklyChartsRow />
       </div>
     );
   }
@@ -303,7 +304,8 @@ export function VisaoGeralPage() {
         </CardContent>
       </Card>
 
-      <GraficosF3Card />
+      {/* Linha 3 - gráficos da semana (F3.2, Seção 8.4). */}
+      <WeeklyChartsRow />
     </div>
   );
 }
@@ -417,15 +419,4 @@ function StateDot({ state }: { state: PresenceState }) {
     no_session: "bg-slate-400",
   };
   return <span aria-hidden className={cn("h-2.5 w-2.5 shrink-0 rounded-full", solid[state])} />;
-}
-
-/** Rodapé discreto: a Linha 3 (gráficos da semana) chega na F3 - não construir agora. */
-function GraficosF3Card() {
-  return (
-    <Card className="border-dashed shadow-none">
-      <div className="px-6 py-4 text-center text-sm text-muted-foreground">
-        Gráficos de atividade chegam na F3.
-      </div>
-    </Card>
-  );
 }

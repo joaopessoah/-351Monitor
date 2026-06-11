@@ -16,8 +16,11 @@ namespace M351.IntegrationTests;
 [Collection(ApiCollection.Name)]
 public class TimelineEndpointTests(ApiTestFixture fixture)
 {
+    // "ontem" no dia LOCAL do tenant (GMT-3), não no dia UTC: entre 21:00 e 00:00 locais a
+    // data UTC já virou, e UtcNow.Date.AddDays(-1) cairia no dia local CORRENTE — a timeline
+    // trataria o dia como "hoje" (sem ETag) e o teste do 304 flakearia toda noite.
     private static readonly DateTimeOffset Base =
-        new(DateTime.UtcNow.Date.AddDays(-1), TimeSpan.Zero);
+        new(DateTime.UtcNow.AddHours(-3).Date.AddDays(-1), TimeSpan.Zero);
 
     private static DateTimeOffset T(int h, int m, int s = 0) => Base.AddHours(h).AddMinutes(m).AddSeconds(s);
     private static string Iso(DateTimeOffset t) => t.UtcDateTime.ToString("o");

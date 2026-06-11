@@ -192,7 +192,7 @@ public sealed class DailyAggregationService(NpgsqlDataSource dataSource, ILogger
                        bool_or(i.data_incomplete) AS incomplete
                 FROM activity_intervals i
                 LEFT JOIN tenant_app_categories tac ON tac.tenant_id = i.tenant_id AND tac.app_id = i.app_id
-                LEFT JOIN categories c ON c.id = tac.category_id
+                LEFT JOIN categories c ON c.tenant_id = i.tenant_id AND c.id = tac.category_id
                 WHERE i.tenant_id = @t AND i.device_id = @d AND i.source_day = @day
                 GROUP BY 1
             ) lanes

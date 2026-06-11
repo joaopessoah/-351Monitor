@@ -9,6 +9,9 @@ public static class AuditActions
     public const string UpdateUserRole = "update_user_role";
     public const string RevokeKey = "revoke_key";
     public const string RevokeDevice = "revoke_device";
+
+    /// <summary>Visualização de relatório/dashboard FILTRADO por um titular (device ou device_user).</summary>
+    public const string ViewReport = "view_report";
 }
 
 /// <summary>Tabela audit_log — append-only, particionada por mês, retenção 24 meses (N13).</summary>

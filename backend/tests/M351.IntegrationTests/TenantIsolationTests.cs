@@ -139,6 +139,78 @@ public class TenantIsolationTests(ApiTestFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task DashboardSummaryComDeviceDeOutroTenant_Retorna404()
+    {
+        var response = await SendAsync(HttpMethod.Get,
+            $"/api/v1/dashboard/summary?from=2026-06-01&to=2026-06-07&device_id={_deviceB.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DashboardSummaryComDeviceUserDeOutroTenant_Retorna404_ESemAuditoria()
+    {
+        // device_user do tenant B semeado direto (o caminho real e a ingestao; o gate aqui
+        // e o lookup do filtro device_user_id do summary, segundo parametro portador de ID)
+        var deviceUserB = Uuid7.NewUuid7();
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString, """
+            INSERT INTO device_users (
+                id, tenant_id, device_id, windows_sid, windows_username, first_seen_at, last_seen_at)
+            VALUES (@id, @t, @d, 'S-1-5-21-ISO-B', 'usuario.b', now(), now())
+            """, ("id", deviceUserB), ("t", _deviceB.TenantId), ("d", _deviceB.Id));
+
+        var response = await SendAsync(HttpMethod.Get,
+            $"/api/v1/dashboard/summary?from=2026-06-01&to=2026-06-07&device_user_id={deviceUserB}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+
+        // o probe que levou 404 nao pode deixar rastro de view_report (nao houve acesso a dado)
+        var audits = await TestDb.ScalarAsync<long>(fixture.Database.ConnectionString,
+            "SELECT count(*) FROM audit_log WHERE action = 'view_report' AND target_id = @id",
+            ("id", deviceUserB));
+        Assert.Equal(0L, audits);
+    }
+
+    [Fact]
+    public async Task DashboardSummaryETopApps_NaoVazamAgregadosDoTenantB()
+    {
+        // semeia agregados diários DIRETO no tenant B: o gate aqui é da LEITURA dos
+        // endpoints F3.2, não do pipeline (coberto em DailyAggregationTests)
+        var appId = Uuid7.NewUuid7();
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString, """
+            INSERT INTO app_catalog (id, process_name, display_name)
+            VALUES (@a, 'iso-leak.exe', 'iso-leak.exe')
+            ON CONFLICT (process_name) DO NOTHING
+            """, ("a", appId));
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString, """
+            INSERT INTO daily_device_summaries (
+                tenant_id, summary_date, device_id, device_user_id,
+                seconds_active, seconds_on, computed_at)
+            VALUES (@t, '2026-06-01', @d, '00000000-0000-0000-0000-000000000000', 3600, 3600, now())
+            """, ("t", _deviceB.TenantId), ("d", _deviceB.Id));
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString, """
+            INSERT INTO daily_app_usage (
+                tenant_id, summary_date, device_id, device_user_id, app_id, seconds_active, focus_count)
+            SELECT @t, '2026-06-01', @d, '00000000-0000-0000-0000-000000000000', a.id, 3600, 3
+            FROM app_catalog a WHERE a.process_name = 'iso-leak.exe'
+            """, ("t", _deviceB.TenantId), ("d", _deviceB.Id));
+
+        var summary = await SendAsync(HttpMethod.Get, "/api/v1/dashboard/summary?from=2026-05-30&to=2026-06-03");
+        Assert.Equal(HttpStatusCode.OK, summary.StatusCode);
+        using (var body = JsonDocument.Parse(await summary.Content.ReadAsStringAsync()))
+        {
+            Assert.Empty(body.RootElement.GetProperty("days").EnumerateArray());
+            Assert.Equal(0, body.RootElement.GetProperty("totals").GetProperty("device_count").GetInt32());
+        }
+
+        var topApps = await SendAsync(HttpMethod.Get, "/api/v1/dashboard/top-apps?from=2026-05-30&to=2026-06-03");
+        Assert.Equal(HttpStatusCode.OK, topApps.StatusCode);
+        using (var body = JsonDocument.Parse(await topApps.Content.ReadAsStringAsync()))
+        {
+            Assert.Empty(body.RootElement.GetProperty("items").EnumerateArray());
+            Assert.Equal(0, body.RootElement.GetProperty("total_seconds_active").GetInt64());
+        }
+    }
+
+    [Fact]
     public async Task RespostaCruzada_NuncaEh403_SempreEh404()
     {
         // a distincao importa: 403 confirmaria a existencia do recurso de outro tenant

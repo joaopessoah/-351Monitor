@@ -63,6 +63,8 @@ export interface MeResponse {
     name: string;
     slug: string;
     timezone: string;
+    /** Horário de trabalho configurado (jsonb cru) - null quando a org não definiu. */
+    business_hours: BusinessHours | null;
   };
 }
 
@@ -189,4 +191,77 @@ export interface PagedResponse<T> {
   total: number;
   page: number;
   page_size: number;
+}
+
+// =============================================================================
+// Contratos da F3.2: dashboard histórico (GET /dashboard/summary,
+// GET /dashboard/top-apps) e business_hours da organização em GET /me.
+// =============================================================================
+
+/** Horário de trabalho da organização, ex.: {"days":[1,2,3,4,5],"start":"08:00","end":"18:00"}. */
+export interface BusinessHours {
+  /** Dias da semana ISO (1 = segunda … 7 = domingo). */
+  days: number[];
+  /** Início "HH:mm" no fuso da organização. */
+  start: string;
+  /** Fim "HH:mm" no fuso da organização. */
+  end: string;
+}
+
+/** Um dia agregado de `GET /dashboard/summary` - dias sem linhas NÃO aparecem. */
+export interface DashboardSummaryDay {
+  date: string;
+  seconds_active: number;
+  seconds_idle: number;
+  seconds_locked: number;
+  seconds_on: number;
+  seconds_work_related: number;
+  seconds_neutral: number;
+  seconds_not_work_related: number;
+  data_incomplete: boolean;
+  device_count: number;
+}
+
+/** Totais do período: mesmos campos somados; device_count distinct do período. */
+export interface DashboardSummaryTotals {
+  seconds_active: number;
+  seconds_idle: number;
+  seconds_locked: number;
+  seconds_on: number;
+  seconds_work_related: number;
+  seconds_neutral: number;
+  seconds_not_work_related: number;
+  data_incomplete: boolean;
+  device_count: number;
+}
+
+export interface DashboardSummaryResponse {
+  days: DashboardSummaryDay[];
+  totals: DashboardSummaryTotals;
+}
+
+/** Categoria do tenant aplicada a um app (classification: 1, 0 ou -1). */
+export interface TopAppCategory {
+  id: string;
+  name: string;
+  classification: number;
+  /** Cor hex opcional da categoria - null quando não definida (coluna nullable). */
+  color: string | null;
+}
+
+/** Item de `GET /dashboard/top-apps` (ordenado por seconds_active desc). */
+export interface TopAppItem {
+  app_id: string;
+  process_name: string;
+  display_name: string;
+  custom_display_name: string | null;
+  category: TopAppCategory | null;
+  seconds_active: number;
+  device_count: number;
+}
+
+export interface TopAppsResponse {
+  items: TopAppItem[];
+  /** Soma de TODOS os apps do período - não apenas os do top. */
+  total_seconds_active: number;
 }
