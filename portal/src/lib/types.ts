@@ -288,3 +288,135 @@ export interface TopAppsResponse {
   /** Soma de TODOS os apps do período - não apenas os do top. */
   total_seconds_active: number;
 }
+
+// =============================================================================
+// Contratos da F3.3: categorias do tenant (CRUD /categories), catálogo de apps
+// (GET /app-catalog, PUT /app-catalog/{appId}/category, GET
+// /app-catalog/{appId}/titles) e relatório de uso (GET /reports/usage).
+// Classificação SEMPRE no vocabulário fixo: 1 = Relacionado ao trabalho,
+// 0 = Neutro, -1 = Não relacionado ao trabalho, sem mapeamento = Não
+// categorizado (ver lib/classification.ts).
+// =============================================================================
+
+/** Item de `GET /categories` - ordenado por classification desc, name asc. */
+export interface CategoryItem {
+  id: string;
+  name: string;
+  /** 1, 0 ou -1 (vocabulário fixo acima). */
+  classification: number;
+  color: string | null;
+  /** Quantos apps do tenant estão mapeados nesta categoria. */
+  app_count: number;
+}
+
+export interface CategoriesResponse {
+  items: CategoryItem[];
+}
+
+/** Body de `POST /categories` (201) - nome duplicado no tenant responde 409. */
+export interface CategoryCreateRequest {
+  name: string;
+  classification: number;
+  color?: string;
+}
+
+/** Body de `PATCH /categories/{id}` - mudar classification reagrega 30 dias. */
+export interface CategoryUpdateRequest {
+  name?: string;
+  classification?: number;
+  color?: string;
+}
+
+/**
+ * Item de `GET /app-catalog?q=&uncategorized=true` - apps CONHECIDOS DO TENANT
+ * (catálogo global, recorte do tenant), janela fixa dos últimos 30 dias no
+ * fuso da organização, ordem seconds_active_30d desc, máximo 500 itens.
+ */
+export interface AppCatalogItem {
+  app_id: string;
+  process_name: string;
+  display_name: string;
+  custom_display_name: string | null;
+  category: TopAppCategory | null;
+  seconds_active_30d: number;
+  device_count_30d: number;
+}
+
+export interface AppCatalogResponse {
+  items: AppCatalogItem[];
+  /** Total de apps do tenant sem categoria (independe de q/uncategorized). */
+  uncategorized_count: number;
+}
+
+/**
+ * Body de `PUT /app-catalog/{appId}/category` - category_id null desmapeia
+ * (app volta a Não categorizado); reagrega os últimos 30 dias no backend.
+ */
+export interface AppCategoryPutRequest {
+  category_id: string | null;
+  custom_display_name?: string | null;
+}
+
+/** Item de `GET /app-catalog/{appId}/titles?from&to` (top 20 títulos por tempo ativo). */
+export interface AppTitleItem {
+  window_title: string;
+  seconds_active: number;
+}
+
+export interface AppTitlesResponse {
+  items: AppTitleItem[];
+  /** Soma dos intervalos cujo título foi mascarado pela política de privacidade. */
+  masked_seconds: number;
+  total_seconds: number;
+}
+
+/** Envelope de `GET /reports/usage` (paginado; exclui devices arquivados). */
+export interface UsageReportResponse<TItem> {
+  items: TItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  /** Tempo ativo total do período INTEIRO - todos os itens, não só a página. */
+  total_seconds_active: number;
+}
+
+/** Item de `GET /reports/usage?group_by=app` (fonte daily_app_usage). */
+export interface UsageAppItem {
+  app_id: string;
+  process_name: string;
+  display_name: string;
+  custom_display_name: string | null;
+  category: TopAppCategory | null;
+  seconds_active: number;
+  device_count: number;
+}
+
+/** Item de `group_by=category` - campos null representam o Não categorizado. */
+export interface UsageCategoryItem {
+  category_id: string | null;
+  name: string | null;
+  classification: number | null;
+  color: string | null;
+  seconds_active: number;
+  app_count: number;
+}
+
+/** Item de `group_by=device` (fonte daily_device_summaries). */
+export interface UsageDeviceItem {
+  device_id: string;
+  device_name: string;
+  seconds_active: number;
+  seconds_idle: number;
+  seconds_locked: number;
+  seconds_on: number;
+  seconds_work_related: number;
+  seconds_neutral: number;
+  seconds_not_work_related: number;
+}
+
+/** Item de `group_by=device_user` - device_user_id de UUID zero = "Máquina (sem usuário)". */
+export interface UsageDeviceUserItem extends UsageDeviceItem {
+  device_user_id: string;
+  /** Usuário Windows quando resolvível via device_users. */
+  windows_user: string | null;
+}

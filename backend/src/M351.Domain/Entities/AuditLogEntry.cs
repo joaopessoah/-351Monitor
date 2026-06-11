@@ -12,6 +12,12 @@ public static class AuditActions
 
     /// <summary>Visualização de relatório/dashboard FILTRADO por um titular (device ou device_user).</summary>
     public const string ViewReport = "view_report";
+
+    /// <summary>
+    /// Mudança de categorização que dispara a reagregação de 30 dias (F3.3): PATCH de categoria
+    /// com troca de classification, DELETE de categoria e PUT de mapeamento app→categoria.
+    /// </summary>
+    public const string UpdateCategory = "update_category";
 }
 
 /// <summary>Tabela audit_log — append-only, particionada por mês, retenção 24 meses (N13).</summary>

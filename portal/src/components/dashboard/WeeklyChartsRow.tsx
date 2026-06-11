@@ -16,6 +16,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import { AlertTriangle, ChartColumn, Table } from "lucide-react";
 import type { EChartsOption } from "echarts";
 import { api } from "@/lib/api";
+import { classificationColor, classificationLabel } from "@/lib/classification";
 import { formatDuration, localDateOf, parseHmToMinutes } from "@/lib/format";
 import { genericErrorMessage } from "@/lib/messages";
 import type {
@@ -47,21 +48,6 @@ const COLOR = {
   axisText: "#64748b",
   grid: "#e2e8f0",
 } as const;
-
-/** Vocabulário FIXO da Seção 8.7 - jamais os adjetivos vetados de produtividade. */
-function classificationLabel(classification: number | null): string {
-  if (classification === 1) return "Relacionado ao trabalho";
-  if (classification === 0) return "Neutro";
-  if (classification === -1) return "Não relacionado ao trabalho";
-  return "Não categorizado";
-}
-
-function classificationColor(classification: number | null): string {
-  if (classification === 1) return COLOR.workRelated;
-  if (classification === 0) return COLOR.neutral;
-  if (classification === -1) return COLOR.notWorkRelated;
-  return COLOR.uncategorized;
-}
 
 type WeekChoice = "current" | "previous";
 type CardView = "chart" | "table";

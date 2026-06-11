@@ -7,7 +7,7 @@
 
 import { useEffect, useRef } from "react";
 import * as echarts from "echarts/core";
-import { BarChart } from "echarts/charts";
+import { BarChart, PieChart } from "echarts/charts";
 import {
   AriaComponent,
   GraphicComponent,
@@ -23,6 +23,7 @@ import type { ECElementEvent, EChartsOption, EChartsType } from "echarts";
 // gráfico exigem registrar o chart/component correspondente aqui.
 echarts.use([
   BarChart,
+  PieChart,
   AriaComponent,
   GraphicComponent,
   GridComponent,
