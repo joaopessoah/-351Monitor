@@ -155,6 +155,12 @@ if (args.Length > 0 && string.Equals(args[0], "create-enrollment-key", StringCom
     return await CreateEnrollmentKeyCommand.RunAsync(app.Services, args[1..]);
 }
 
+// Backoffice CLI (F3.6): tenant demo sintético injetado pelo pipeline REAL de intervalização
+if (args.Length > 0 && string.Equals(args[0], "seed-demo-tenant", StringComparison.OrdinalIgnoreCase))
+{
+    return await SeedDemoTenantCommand.RunAsync(app.Services, args[1..]);
+}
+
 if (app.Configuration.GetValue<bool>("Database:AutoMigrate"))
 {
     using var scope = app.Services.CreateScope();
