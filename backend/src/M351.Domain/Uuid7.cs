@@ -30,4 +30,19 @@ public static class Uuid7
         // Guid(byte[]) usa layout little-endian nos 3 primeiros grupos; usar o construtor big-endian
         return new Guid(bytes, bigEndian: true);
     }
+
+    /// <summary>
+    /// Extrai o instante de criação (48 bits de Unix ms) de um UUIDv7 gerado por este sistema.
+    /// Usado onde não há coluna de timestamp própria — ex.: enrolled_at de devices (F3.7), que
+    /// é o instante do PRIMEIRO enroll (re-enroll por fingerprint preserva o id).
+    /// </summary>
+    public static DateTimeOffset TimestampOf(Guid id)
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        id.TryWriteBytes(bytes, bigEndian: true, out _);
+
+        long unixMs = ((long)bytes[0] << 40) | ((long)bytes[1] << 32) | ((long)bytes[2] << 24)
+                    | ((long)bytes[3] << 16) | ((long)bytes[4] << 8) | bytes[5];
+        return DateTimeOffset.FromUnixTimeMilliseconds(unixMs);
+    }
 }

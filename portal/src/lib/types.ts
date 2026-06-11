@@ -203,10 +203,24 @@ export interface DeviceItem {
   os_version: string | null;
   agent_version: string | null;
   status: "active" | "paused" | "archived" | "revoked";
-  tags: string[];
+  /** A API emite null (não []) para device sem tags - a coluna text[] não tem default. */
+  tags: string[] | null;
   last_seen_at: string | null;
   tz_offset_min: number | null;
   clock_offset_ms: number;
+}
+
+/**
+ * Body de `PATCH /devices/{id}` (F3.7, admin/owner) - campos ausentes não
+ * mudam. display_name null limpa o apelido (o device volta a exibir o
+ * hostname). revoked é terminal: o backend responde 400 para qualquer PATCH
+ * em device revogado (só o re-enroll revive). Resposta 200 com o DeviceItem
+ * atualizado (mesmo shape do GET).
+ */
+export interface DevicePatchRequest {
+  display_name?: string | null;
+  tags?: string[];
+  status?: "active" | "paused" | "archived";
 }
 
 export interface PagedResponse<T> {

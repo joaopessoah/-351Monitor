@@ -385,6 +385,42 @@ public class TenantIsolationTests(ApiTestFixture fixture) : IAsyncLifetime
         Assert.DoesNotContain(jobB, ids);
     }
 
+    // ------------------------------------------------------------ F3.7: PATCH device e billing
+    [Fact]
+    public async Task PatchDeviceDeOutroTenant_Retorna404_ESemEfeito()
+    {
+        var response = await SendAsync(HttpMethod.Patch, $"/api/v1/devices/{_deviceB.Id}",
+            new { display_name = "invasao", status = "archived" });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+
+        // o device de B permanece intacto (sem rename e sem arquivamento)
+        var row = await TestDb.RowAsync(fixture.Database.ConnectionString,
+            "SELECT display_name, status FROM devices WHERE id = @d", ("d", _deviceB.Id));
+        Assert.Null(row!["display_name"]);
+        Assert.Equal("active", row["status"]);
+    }
+
+    [Fact]
+    public async Task BillableDevices_SoListaDevicesDoProprioTenant()
+    {
+        // contato de B no mês corrente: B seria cobrável NO TENANT B, jamais para A
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            "UPDATE devices SET last_seen_at = now() WHERE id = @d", ("d", _deviceB.Id));
+
+        // mês corrente no fuso default das orgs de teste (America/Sao_Paulo, GMT-3)
+        var month = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(-3)).ToString("yyyy-MM");
+        var response = await SendAsync(HttpMethod.Get, $"/api/v1/billing/billable-devices?month={month}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var ids = body.RootElement.GetProperty("items").EnumerateArray()
+            .Select(i => i.GetProperty("device_id").GetGuid())
+            .ToList();
+
+        Assert.Contains(_deviceA.Id, ids); // enrolado no mês corrente: cobrável (enrolled)
+        Assert.DoesNotContain(_deviceB.Id, ids);
+    }
+
     [Fact]
     public async Task RespostaCruzada_NuncaEh403_SempreEh404()
     {

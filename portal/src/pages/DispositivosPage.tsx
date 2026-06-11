@@ -1,18 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Archive,
+  ArchiveRestore,
   ChevronLeft,
   ChevronRight,
+  Ellipsis,
   MonitorSmartphone,
+  Pencil,
   Search,
+  Tags,
   TriangleAlert,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatRelative, stateLabels } from "@/lib/format";
 import { genericErrorMessage } from "@/lib/messages";
+import { isAdmin } from "@/lib/roles";
 import type {
   DeviceItem,
+  DevicePatchRequest,
   MeResponse,
   PagedResponse,
   PresenceItem,
@@ -22,7 +29,23 @@ import type {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const PAGE_SIZE = 50;
@@ -38,9 +61,11 @@ const deviceStatusLabels: Record<DeviceStatus, string> = {
   revoked: "Revogado",
 };
 
+// paused em cinza-azulado (slate): âmbar ficava idêntico ao dot de "Inativo"
+// e ao badge "não suportado" - pausado não é alerta, é um estado neutro.
 const deviceStatusClasses: Record<DeviceStatus, string> = {
   active: "bg-emerald-100 text-emerald-800",
-  paused: "bg-amber-100 text-amber-800",
+  paused: "bg-slate-200 text-slate-700",
   archived: "bg-gray-100 text-gray-600",
   revoked: "bg-red-100 text-red-700",
 };
@@ -121,7 +146,8 @@ function PresenceStateCell({ presence }: { presence: PresenceItem | undefined })
 const headerCell = "px-3 py-2 text-left font-medium";
 const bodyCell = "px-3 py-1.5 align-middle";
 
-function TableHead() {
+/** showActions: coluna de ações por linha - só admin/owner (viewer nem vê a coluna). */
+function TableHead({ showActions }: { showActions: boolean }) {
   return (
     <thead>
       <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
@@ -135,6 +161,7 @@ function TableHead() {
         <th className={headerCell}>Relógio</th>
         <th className={headerCell}>Status</th>
         <th className={headerCell}>Tags</th>
+        {showActions && <th className={cn(headerCell, "w-12 text-right")}>Ações</th>}
       </tr>
     </thead>
   );
@@ -142,7 +169,13 @@ function TableHead() {
 
 const skeletonWidths = ["w-32", "w-24", "w-20", "w-20", "w-16", "w-12", "w-12", "w-24", "w-14", "w-20"];
 
-/** Lista de dispositivos com saúde dos agentes (F2, Seção 8.7 - somente leitura). */
+/**
+ * Lista de dispositivos com saúde dos agentes (F2, Seção 8.7) + ações de
+ * curadoria da F3.7 (admin/owner): renomear, etiquetas e arquivar/reativar via
+ * PATCH /devices/{id}. Toggle "Incluir arquivados" (OFF por default) controla
+ * o include_archived da listagem; o filtro de status "Arquivado" já inclui os
+ * arquivados por definição e ignora o toggle.
+ */
 export function DispositivosPage() {
   const navigate = useNavigate();
 
@@ -152,7 +185,11 @@ export function DispositivosPage() {
   const [q, setQ] = useState("");
   const [tag, setTag] = useState("");
   const [status, setStatus] = useState<StatusFilter>("");
+  const [includeArchived, setIncludeArchived] = useState(false);
   const [page, setPage] = useState(1);
+
+  // Ação aberta no momento (dialog) - as PRIMEIRAS mutações desta tela (F3.7).
+  const [action, setAction] = useState<DeviceAction | null>(null);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -176,8 +213,13 @@ export function DispositivosPage() {
     return () => window.clearTimeout(handle);
   }, [tagInput, tag]);
 
+  // include_archived é DEFAULT true na API (comportamento antigo preservado);
+  // o portal nasce com o toggle OFF e manda =false explícito. Com o filtro de
+  // status "Arquivado" o toggle é ignorado: o ?status= já inclui por definição.
+  const effectiveIncludeArchived = status === "archived" || includeArchived;
+
   const devicesQuery = useQuery({
-    queryKey: ["devices", { page, q, status, tag }],
+    queryKey: ["devices", { page, q, status, tag, include_archived: effectiveIncludeArchived }],
     queryFn: () => {
       const params = new URLSearchParams();
       params.set("page", String(page));
@@ -185,6 +227,7 @@ export function DispositivosPage() {
       if (q.length > 0) params.set("q", q);
       if (status.length > 0) params.set("status", status);
       if (tag.length > 0) params.set("tag", tag);
+      if (!effectiveIncludeArchived) params.set("include_archived", "false");
       return api<PagedResponse<DeviceItem>>(`/devices?${params.toString()}`);
     },
     placeholderData: (prev) => prev,
@@ -213,6 +256,8 @@ export function DispositivosPage() {
     return map;
   }, [presenceQuery.data]);
 
+  const admin = isAdmin(meQuery.data);
+
   const orgTimezone = meQuery.data?.organization.timezone;
   const orgOffsetMin = useMemo(
     () => (orgTimezone !== undefined ? timezoneOffsetMinutes(orgTimezone) : null),
@@ -223,7 +268,7 @@ export function DispositivosPage() {
   // exceto como fallback enquanto a presença não carregou).
   const referenceTime = presenceQuery.data?.server_time ?? new Date().toISOString();
 
-  const hasActiveFilters = q.length > 0 || tag.length > 0 || status.length > 0;
+  const hasActiveFilters = q.length > 0 || tag.length > 0 || status.length > 0 || includeArchived;
 
   function clearFilters() {
     setQInput("");
@@ -231,6 +276,7 @@ export function DispositivosPage() {
     setQ("");
     setTag("");
     setStatus("");
+    setIncludeArchived(false);
     setPage(1);
   }
 
@@ -294,6 +340,31 @@ export function DispositivosPage() {
           aria-label="Filtrar por tag"
           className="h-9 w-full max-w-[12rem]"
         />
+        <label
+          className={cn(
+            "flex h-9 items-center gap-2 text-sm",
+            status === "archived" ? "cursor-not-allowed text-muted-foreground" : "cursor-pointer",
+          )}
+          title={
+            status === "archived"
+              ? "O filtro de status Arquivado já inclui os dispositivos arquivados"
+              : undefined
+          }
+        >
+          <input
+            type="checkbox"
+            // Com status "Arquivado" o toggle não tem efeito: aparece marcado e
+            // desabilitado, sem perder a escolha do usuário ao trocar o filtro.
+            checked={status === "archived" ? true : includeArchived}
+            disabled={status === "archived"}
+            onChange={(e) => {
+              setIncludeArchived(e.target.checked);
+              setPage(1);
+            }}
+            className="h-4 w-4 accent-primary disabled:cursor-not-allowed"
+          />
+          Incluir arquivados
+        </label>
       </div>
 
       {presenceQuery.isError && presenceQuery.data === undefined && (
@@ -313,11 +384,11 @@ export function DispositivosPage() {
           // Skeleton com a geometria final da tabela (nunca spinner de página inteira).
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <TableHead />
+              <TableHead showActions={admin} />
               <tbody>
                 {Array.from({ length: 8 }).map((_, row) => (
                   <tr key={row} className="h-9 border-b last:border-0">
-                    {skeletonWidths.map((width, col) => (
+                    {(admin ? [...skeletonWidths, "w-8"] : skeletonWidths).map((width, col) => (
                       <td key={col} className={bodyCell}>
                         <Skeleton className={cn("h-4", width)} />
                       </td>
@@ -364,7 +435,7 @@ export function DispositivosPage() {
                   devicesQuery.isFetching && "opacity-70",
                 )}
               >
-                <TableHead />
+                <TableHead showActions={admin} />
                 <tbody>
                   {(devices?.items ?? []).map((d) => {
                     const p = presenceByDevice.get(d.id);
@@ -453,7 +524,7 @@ export function DispositivosPage() {
                           </span>
                         </td>
                         <td className={bodyCell}>
-                          {d.tags.length > 0 ? (
+                          {d.tags && d.tags.length > 0 ? (
                             <span className="flex flex-wrap gap-1">
                               {d.tags.map((t) => (
                                 <span
@@ -468,6 +539,23 @@ export function DispositivosPage() {
                             <span className="text-muted-foreground">-</span>
                           )}
                         </td>
+                        {admin && (
+                          // stopPropagation: a linha inteira navega para a
+                          // timeline; o menu de ações não pode disparar isso.
+                          <td
+                            className={cn(bodyCell, "w-12 text-right")}
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                          >
+                            {d.status === "revoked" ? (
+                              // revoked é terminal (só o re-enroll revive): o
+                              // backend responde 400 a qualquer PATCH.
+                              <span className="text-muted-foreground">-</span>
+                            ) : (
+                              <DeviceRowActions device={d} onAction={setAction} />
+                            )}
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -502,6 +590,308 @@ export function DispositivosPage() {
           </>
         )}
       </Card>
+
+      {action !== null && action.kind === "rename" && (
+        <RenameDeviceDialog device={action.device} onClose={() => setAction(null)} />
+      )}
+      {action !== null && action.kind === "tags" && (
+        <DeviceTagsDialog device={action.device} onClose={() => setAction(null)} />
+      )}
+      {action !== null && (action.kind === "archive" || action.kind === "reactivate") && (
+        <DeviceStatusDialog
+          device={action.device}
+          kind={action.kind}
+          onClose={() => setAction(null)}
+        />
+      )}
     </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Ações por dispositivo (F3.7) - PATCH /devices/{id}, admin/owner
+// -----------------------------------------------------------------------------
+
+type DeviceActionKind = "rename" | "tags" | "archive" | "reactivate";
+
+interface DeviceAction {
+  kind: DeviceActionKind;
+  device: DeviceItem;
+}
+
+/**
+ * PATCH /devices/{id} + invalidação - mesmo padrão de mutation da F3.3
+ * (CategoryInlineSelect): mutationFn fina sobre api() e invalidação de TODAS
+ * as queries afetadas no onSuccess, aguardando o refetch antes de fechar o
+ * dialog (a tabela nunca "volta" ao valor antigo). Invalida ["devices"]
+ * (esta tela e o useFilterDevices dos relatórios) e a presença - arquivar
+ * tira o device dos dashboards.
+ */
+function useDevicePatch(onDone: () => void) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ deviceId, body }: { deviceId: string; body: DevicePatchRequest }) =>
+      api<DeviceItem>(`/devices/${encodeURIComponent(deviceId)}`, { method: "PATCH", body }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["devices"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard", "presence"] }),
+      ]);
+      onDone();
+    },
+  });
+}
+
+/** "a, b,,a " vira ["a","b"]: separa por vírgula, apara, descarta vazios e repetidos. */
+function parseTags(input: string): string[] {
+  const out: string[] = [];
+  for (const raw of input.split(",")) {
+    const t = raw.trim();
+    if (t.length > 0 && !out.includes(t)) out.push(t);
+  }
+  return out;
+}
+
+/** Menu de reticências da linha - não renderizado para device revogado. */
+function DeviceRowActions({
+  device,
+  onAction,
+}: {
+  device: DeviceItem;
+  onAction: (action: DeviceAction) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0"
+          aria-label={`Ações de ${device.display_name ?? device.hostname}`}
+        >
+          <Ellipsis className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={() => onAction({ kind: "rename", device })}>
+          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+          Renomear
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onAction({ kind: "tags", device })}>
+          <Tags className="h-3.5 w-3.5" aria-hidden="true" />
+          Editar etiquetas
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {device.status === "archived" ? (
+          <DropdownMenuItem onSelect={() => onAction({ kind: "reactivate", device })}>
+            <ArchiveRestore className="h-3.5 w-3.5" aria-hidden="true" />
+            Reativar
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onSelect={() => onAction({ kind: "archive", device })}>
+            <Archive className="h-3.5 w-3.5" aria-hidden="true" />
+            Arquivar
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** Renomear - display_name; vazio limpa o apelido (volta a exibir o hostname). */
+function RenameDeviceDialog({ device, onClose }: { device: DeviceItem; onClose: () => void }) {
+  const [name, setName] = useState(device.display_name ?? "");
+  const mutation = useDevicePatch(onClose);
+
+  function submit() {
+    if (mutation.isPending) return;
+    const trimmed = name.trim();
+    mutation.mutate({
+      deviceId: device.id,
+      body: { display_name: trimmed.length > 0 ? trimmed : null },
+    });
+  }
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !mutation.isPending) onClose();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Renomear dispositivo</DialogTitle>
+          <DialogDescription>
+            Nome de exibição de "{device.hostname}". Deixe em branco para voltar ao hostname.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-1.5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          <Label htmlFor="device-display-name">Nome de exibição</Label>
+          <Input
+            id="device-display-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={device.hostname}
+            maxLength={120}
+            autoFocus
+          />
+        </form>
+        {mutation.isError && (
+          <p role="alert" className="text-sm text-destructive">
+            {genericErrorMessage(mutation.error)}
+          </p>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>
+            Cancelar
+          </Button>
+          <Button onClick={submit} disabled={mutation.isPending}>
+            {mutation.isPending ? "Salvando…" : "Salvar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Editar etiquetas - input separado por vírgula que vira o array tags do PATCH. */
+function DeviceTagsDialog({ device, onClose }: { device: DeviceItem; onClose: () => void }) {
+  const [value, setValue] = useState((device.tags ?? []).join(", "));
+  const mutation = useDevicePatch(onClose);
+
+  function submit() {
+    if (mutation.isPending) return;
+    mutation.mutate({ deviceId: device.id, body: { tags: parseTags(value) } });
+  }
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !mutation.isPending) onClose();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Editar etiquetas</DialogTitle>
+          <DialogDescription>
+            Etiquetas de "{device.display_name ?? device.hostname}", separadas por vírgula. Elas
+            aparecem na tabela e no filtro por tag.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-1.5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          <Label htmlFor="device-tags">Etiquetas</Label>
+          <Input
+            id="device-tags"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="financeiro, matriz"
+            autoComplete="off"
+            autoFocus
+          />
+        </form>
+        {mutation.isError && (
+          <p role="alert" className="text-sm text-destructive">
+            {genericErrorMessage(mutation.error)}
+          </p>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>
+            Cancelar
+          </Button>
+          <Button onClick={submit} disabled={mutation.isPending}>
+            {mutation.isPending ? "Salvando…" : "Salvar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Arquivar (status archived) ou Reativar (status active) com confirmação. */
+function DeviceStatusDialog({
+  device,
+  kind,
+  onClose,
+}: {
+  device: DeviceItem;
+  kind: "archive" | "reactivate";
+  onClose: () => void;
+}) {
+  const mutation = useDevicePatch(onClose);
+  const archiving = kind === "archive";
+  const name = device.display_name ?? device.hostname;
+
+  function submit() {
+    if (mutation.isPending) return;
+    mutation.mutate({
+      deviceId: device.id,
+      body: { status: archiving ? "archived" : "active" },
+    });
+  }
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !mutation.isPending) onClose();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{archiving ? "Arquivar dispositivo" : "Reativar dispositivo"}</DialogTitle>
+          <DialogDescription>
+            {archiving ? `Arquivar "${name}"?` : `Reativar "${name}"?`}
+          </DialogDescription>
+        </DialogHeader>
+        {archiving ? (
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              O dispositivo sai dos dashboards e do relatório de cobrança. O histórico fica
+              preservado e pode ser consultado marcando "Incluir arquivados" nos filtros.
+            </p>
+            <p>
+              O agente instalado continua coletando normalmente; arquivar não interrompe a coleta.
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            O dispositivo volta a aparecer nos dashboards e a contar no relatório de cobrança.
+          </p>
+        )}
+        {mutation.isError && (
+          <p role="alert" className="text-sm text-destructive">
+            {genericErrorMessage(mutation.error)}
+          </p>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>
+            Cancelar
+          </Button>
+          <Button onClick={submit} disabled={mutation.isPending}>
+            {mutation.isPending
+              ? archiving
+                ? "Arquivando…"
+                : "Reativando…"
+              : archiving
+                ? "Arquivar"
+                : "Reativar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

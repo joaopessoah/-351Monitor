@@ -21,6 +21,13 @@ public static class AuditActions
 
     /// <summary>Solicitação de export CSV (F3.5): POST /exports, detail {kind, params}.</summary>
     public const string ExportCsv = "export_csv";
+
+    /// <summary>
+    /// PATCH /devices/{id} (F3.7): edição de display_name/tags/status, detail com de→para por
+    /// campo alterado. Ação FORA da lista de exemplos da spec (que só ilustra revoke_device,
+    /// update_category etc.) — adotada pelo padrão verbo_alvo das demais; decisão documentada.
+    /// </summary>
+    public const string UpdateDevice = "update_device";
 }
 
 /// <summary>Tabela audit_log — append-only, particionada por mês, retenção 24 meses (N13).</summary>
