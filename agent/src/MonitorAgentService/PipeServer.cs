@@ -8,6 +8,7 @@ using M351.Agent.Core;
 using M351.Agent.Core.Contracts;
 using M351.Agent.Core.Events;
 using M351.Agent.Core.Logging;
+using M351.Agent.Core.Net;
 
 namespace MonitorAgentService;
 
@@ -201,7 +202,8 @@ public sealed class PipeServer : IDisposable
                     ConfigVersion = _runtime.State.ConfigVersion,
                     DeviceId = _runtime.State.DeviceId,
                     BootId = _runtime.Factory.BootId,
-                    LastSentAt = _runtime.Sender.LastSuccessfulSendAt is { } t ? Iso.Format(t) : null
+                    LastSentAt = _runtime.Sender.LastSuccessfulSendAt is { } t ? Iso.Format(t) : null,
+                    ConnectionState = ConnectionStateNames.ToWire(ResolveConnectionState())
                 };
                 _writer.WriteLine(JsonSerializer.Serialize(message, AgentJsonContext.Default.PipeMessage));
             }
@@ -211,6 +213,17 @@ public sealed class PipeServer : IDisposable
             }
         }
     }
+
+    /// <summary>
+    /// Estado de conexao reportado ao helper (tray). Em regime o BatchSender e a fonte; mas antes do
+    /// enroll de primeiro boot (golden image / NOENROLL) o BatchSender retorna cedo com NaoEnrolado
+    /// (sem device_token) e nunca classifica o transporte. Se o enroll FALHOU por erro de certificado
+    /// (possivel MITM, Secao 6.4 l.445), o EnrollmentClient registrou ErroCertificado em
+    /// LastConnectionState — a reconciliacao o prefere, evitando que o tray mostre "dispositivo ainda
+    /// nao registrado" e mascare justamente o cenario que a fatia cobre.
+    /// </summary>
+    private AgentConnectionState ResolveConnectionState() =>
+        ConnectionStateNames.Reconcile(_runtime.Sender.ConnectionState, _runtime.Enrollment.LastConnectionState);
 
     public void Dispose()
     {

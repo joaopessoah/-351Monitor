@@ -26,6 +26,9 @@ public sealed class PipeClient : IDisposable
     public bool IsConnected { get; private set; }
     public DateTimeOffset? LastSentAt { get; private set; }
 
+    /// <summary>Estado da conexao com o servidor reportado pelo servico (wire: ok/sem_rede/...).</summary>
+    public string? ConnectionState { get; private set; }
+
     public PipeClient(int sessionId, ILogSink log)
     {
         _sessionId = sessionId;
@@ -103,6 +106,7 @@ public sealed class PipeClient : IDisposable
                         try { LastSentAt = M351.Agent.Core.Iso.Parse(message.LastSentAt); }
                         catch (FormatException) { /* ignora */ }
                     }
+                    if (message.ConnectionState is not null) ConnectionState = message.ConnectionState;
                     ConfigReceived?.Invoke(message);
                 }
             }

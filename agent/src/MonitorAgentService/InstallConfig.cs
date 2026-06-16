@@ -20,7 +20,10 @@ public sealed record InstallConfig
     [JsonPropertyName("server_url")]
     public string? ServerUrl { get; init; }
 
-    /// <summary>Proxy opcional (PROXYURL). Persistido para consumo futuro (wiring real na F4.3).</summary>
+    /// <summary>
+    /// Proxy opcional (PROXYURL). Consumido por AgentRuntime no ponto unico do HttpClient
+    /// (enroll/batch/update); ausente = proxy de sistema (WinHTTP) ou conexao direta (F4.3).
+    /// </summary>
     [JsonPropertyName("proxy_url")]
     public string? ProxyUrl { get; init; }
 
@@ -30,6 +33,13 @@ public sealed record InstallConfig
     /// </summary>
     [JsonPropertyName("pending_enroll_key")]
     public string? PendingEnrollKey { get; init; }
+
+    /// <summary>
+    /// Log em nivel Debug (Secao 6.3): UNICO nivel onde titulo/usuario podem aparecer. Desligado por
+    /// padrao; quando true, o agente registra um aviso de que detalhe sensivel sera gravado em log.
+    /// </summary>
+    [JsonPropertyName("verbose_debug")]
+    public bool VerboseDebug { get; init; }
 
     private const string FileName = "install.json";
 

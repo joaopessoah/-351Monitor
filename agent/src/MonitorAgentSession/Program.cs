@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Compression;
+using M351.Agent.Core.Logging;
 
 namespace MonitorAgentSession;
 
@@ -37,7 +38,11 @@ internal static class Program
         return 0;
     }
 
-    /// <summary>ZIP de suporte: logs + contadores. Config sanitizada (sem token, sem títulos).</summary>
+    /// <summary>
+    /// ZIP de suporte: logs + contadores. Config sanitizada (sem token, sem títulos). Os *.log sao
+    /// redigidos linha a linha pelo LogScrubber ao empacotar (DiagnosticsLogPackager): mesmo as
+    /// linhas Debug crus (verbose_debug) saem sem window_title/usuario, pois o ZIP vai ao TI/suporte.
+    /// </summary>
     private static int WriteDiagnosticsZip()
     {
         try
@@ -47,15 +52,7 @@ internal static class Program
             var target = Path.Combine(Path.GetTempPath(), $"monitoragent-diag-{DateTime.Now:yyyyMMdd-HHmmss}.zip");
 
             using var zip = ZipFile.Open(target, ZipArchiveMode.Create);
-            var logsDir = Path.Combine(programData, "logs");
-            if (Directory.Exists(logsDir))
-            {
-                foreach (var file in Directory.EnumerateFiles(logsDir, "*.log"))
-                {
-                    try { zip.CreateEntryFromFile(file, $"logs/{Path.GetFileName(file)}"); }
-                    catch (IOException) { /* arquivo em uso: segue */ }
-                }
-            }
+            DiagnosticsLogPackager.AddScrubbedLogs(zip, Path.Combine(programData, "logs"));
 
             var info = zip.CreateEntry("info.txt");
             using (var writer = new StreamWriter(info.Open()))

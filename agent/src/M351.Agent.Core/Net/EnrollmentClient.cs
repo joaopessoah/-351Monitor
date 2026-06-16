@@ -21,6 +21,12 @@ public sealed class EnrollmentClient
     private readonly ILogSink _log;
     private readonly Func<string> _osVersion;
 
+    /// <summary>
+    /// Estado do ultimo enroll para diagnostico (ErroCertificado quando o handshake TLS falhou).
+    /// O BatchSender ja reporta o estado em regime; este expoe a falha de enroll de primeiro boot.
+    /// </summary>
+    public AgentConnectionState? LastConnectionState { get; private set; }
+
     public EnrollmentClient(HttpClient http, AgentStateStore state, IFingerprintSource fingerprintSource,
         ILogSink log, Func<string>? osVersion = null)
     {
@@ -50,9 +56,17 @@ public sealed class EnrollmentClient
             using var content = new StringContent(json, Encoding.UTF8, "application/json");
             response = await _http.PostAsync($"{serverUrl}/api/v1/agent/enroll", content, ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        catch (Exception ex) when (
+            ex is HttpRequestException or TaskCanceledException or System.Security.Authentication.AuthenticationException
+            && !ct.IsCancellationRequested)
         {
-            _log.Warn($"Enroll falhou (servidor inacessível): {ex.Message}");
+            LastConnectionState = TlsErrorDetector.ClassifyTransportFailure(ex);
+            if (LastConnectionState == AgentConnectionState.ErroCertificado)
+                // NUNCA desabilitamos a validacao de TLS: apenas diagnostico claro (Secao 6.4 l.445).
+                _log.Error("Enroll falhou por erro de certificado TLS (cadeia invalida ou possivel inspecao MITM); " +
+                           "validacao de certificado NAO foi desabilitada.", ex);
+            else
+                _log.Warn($"Enroll falhou (servidor inacessível): {ex.Message}");
             return false;
         }
 

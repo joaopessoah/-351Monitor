@@ -37,6 +37,13 @@ public sealed class BatchSender
     public TimeSpan SendInterval { get; init; } = TimeSpan.FromSeconds(30); // N3
     public DateTimeOffset? LastSuccessfulSendAt { get; private set; }
 
+    /// <summary>
+    /// Estado da conexao com o servidor, propagado ao helper (Secao 6.4 l.445). NaoEnrolado ate o
+    /// primeiro envio; SemRede em falha de transporte comum; ErroCertificado quando o handshake TLS
+    /// falha (cadeia invalida / possivel MITM); Ok apos HTTP recebido do servidor.
+    /// </summary>
+    public AgentConnectionState ConnectionState { get; private set; } = AgentConnectionState.NaoEnrolado;
+
     public BatchSender(HttpClient http, SqliteEventQueue queue, AgentStateStore state,
         AckProcessor ackProcessor, EnrollmentClient? enrollment, ILogSink log)
     {
@@ -110,7 +117,11 @@ public sealed class BatchSender
 
         var serverUrl = _state.ServerUrl;
         var token = _state.DeviceToken;
-        if (serverUrl is null || token is null) return false;
+        if (serverUrl is null || token is null)
+        {
+            ConnectionState = AgentConnectionState.NaoEnrolado;
+            return false;
+        }
 
         var events = _queue.PeekBatch(Math.Min(_currentMaxBatch, MaxBatchSize));
         var batch = BuildBatch(events, AgentVersionInfo.Current, _state.ConfigVersion, DateTimeOffset.UtcNow);
@@ -127,20 +138,41 @@ public sealed class BatchSender
             request.Content = content;
             response = await _http.SendAsync(request, ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        catch (Exception ex) when (
+            ex is HttpRequestException or TaskCanceledException or System.Security.Authentication.AuthenticationException
+            && !ct.IsCancellationRequested)
         {
             Backoff();
-            if (!_offlineLogged)
+            if (TlsErrorDetector.IsCertificateError(ex))
             {
-                _log.Warn($"Servidor inacessível — eventos permanecem na fila local ({_queue.UnsentCount} pendentes). " +
-                          $"Nova tentativa com backoff (N14).");
-                _offlineLogged = true;
+                // NUNCA contornamos a validacao de TLS: apenas reportamos (Secao 6.4 l.445).
+                ConnectionState = AgentConnectionState.ErroCertificado;
+                if (!_offlineLogged)
+                {
+                    _log.Error($"Erro de certificado TLS ao falar com o servidor (cadeia invalida ou possivel inspecao MITM). " +
+                               $"Eventos preservados na fila ({_queue.UnsentCount} pendentes); validacao de certificado NAO foi desabilitada.", ex);
+                    _offlineLogged = true;
+                }
+            }
+            else
+            {
+                ConnectionState = AgentConnectionState.SemRede;
+                if (!_offlineLogged)
+                {
+                    _log.Warn($"Servidor inacessível — eventos permanecem na fila local ({_queue.UnsentCount} pendentes). " +
+                              $"Nova tentativa com backoff (N14).");
+                    _offlineLogged = true;
+                }
             }
             return false;
         }
 
         using (response)
         {
+            // Recebemos uma resposta HTTP do servidor real: TLS e proxy funcionaram. Mesmo um
+            // 4xx/5xx significa "conexao ok" no nivel reportado ao helper (o 401 e questao de token).
+            ConnectionState = AgentConnectionState.Ok;
+
             if (response.StatusCode == HttpStatusCode.OK)
             {
                 _offlineLogged = false;

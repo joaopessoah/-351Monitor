@@ -50,4 +50,13 @@ public sealed class PipeMessage
     [JsonPropertyName("last_sent_at")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? LastSentAt { get; set; }
+
+    /// <summary>
+    /// Estado da conexao com o servidor (servico -> helper): "ok" | "sem_rede" | "erro_certificado" |
+    /// "nao_enrolado". O tray ("Status da conexao") exibe esse estado — em especial o erro de
+    /// certificado de uma inspecao MITM (Secao 6.4 l.445).
+    /// </summary>
+    [JsonPropertyName("connection_state")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ConnectionState { get; set; }
 }

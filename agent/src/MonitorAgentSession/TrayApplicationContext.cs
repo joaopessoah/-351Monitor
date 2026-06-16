@@ -21,6 +21,7 @@ public sealed class TrayApplicationContext : ApplicationContext
 
     private readonly int _sessionId;
     private readonly ILogSink _log;
+    private readonly IDisposable _logDisposable;
     private readonly PipeClient _pipe;
     private readonly PipeEventSink _sink;
     private readonly NotifyIcon _trayIcon;
@@ -39,9 +40,13 @@ public sealed class TrayApplicationContext : ApplicationContext
     public TrayApplicationContext(int sessionId)
     {
         _sessionId = sessionId;
-        var dataDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "M351", "MonitorAgent");
-        _log = new FileLogSink(Path.Combine(dataDir, "logs"), $"session-{sessionId}");
+
+        // Logs do helper junto aos do servico em %ProgramData% quando acessivel (Secao 6.6 l.461);
+        // fallback para %LOCALAPPDATA% se o helper de baixo privilegio nao puder escrever la.
+        var logsDir = ResolveLogsDirectory();
+        var serilog = SerilogLogSink.CreateFile(logsDir, $"session-{sessionId}");
+        _logDisposable = serilog;
+        _log = serilog;
 
         _identity = new SessionIdentity(
             sessionId,
@@ -208,9 +213,15 @@ public sealed class TrayApplicationContext : ApplicationContext
         var lastSent = _pipe.LastSentAt is { } t
             ? t.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
             : "ainda não enviado";
+        var serverState = M351.Agent.Core.Net.ConnectionStateNames.ToHumanPtBr(_pipe.ConnectionState);
+
+        // Erro de certificado (possível MITM): destaca com ícone de aviso (Seção 6.4 l.445).
+        var isCertError = _pipe.ConnectionState == M351.Agent.Core.Net.ConnectionStateNames.ErroCertificado;
+        var icon = isCertError ? MessageBoxIcon.Warning : MessageBoxIcon.Information;
+
         MessageBox.Show(
-            $"Canal local: {pipeState}\nÚltimo envio ao servidor: {lastSent}",
-            "Status da conexão", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            $"Canal local: {pipeState}\nServidor: {serverState}\nÚltimo envio ao servidor: {lastSent}",
+            "Status da conexão", MessageBoxButtons.OK, icon);
     }
 
     private void ShowAbout()
@@ -225,6 +236,31 @@ public sealed class TrayApplicationContext : ApplicationContext
             "Sobre o monitoramento", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
+    /// <summary>
+    /// %ProgramData%\M351\MonitorAgent\logs quando o helper consegue escrever (proximo aos logs do
+    /// servico); fallback %LOCALAPPDATA% para o helper de baixo privilegio sem acesso de escrita la.
+    /// </summary>
+    private static string ResolveLogsDirectory()
+    {
+        var programDataLogs = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "M351", "MonitorAgent", "logs");
+        try
+        {
+            Directory.CreateDirectory(programDataLogs);
+            var probe = Path.Combine(programDataLogs, $".probe-{Environment.ProcessId}");
+            File.WriteAllText(probe, "");
+            File.Delete(probe);
+            return programDataLogs;
+        }
+        catch (Exception)
+        {
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "M351", "MonitorAgent", "logs");
+        }
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
@@ -234,6 +270,7 @@ public sealed class TrayApplicationContext : ApplicationContext
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
             _pipe.Dispose();
+            _logDisposable.Dispose();
         }
         base.Dispose(disposing);
     }

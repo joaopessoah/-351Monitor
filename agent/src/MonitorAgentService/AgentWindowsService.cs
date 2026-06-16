@@ -18,6 +18,7 @@ public sealed class AgentWindowsService : ServiceBase
     private SessionManager? _sessions;
     private CancellationTokenSource? _cts;
     private ILogSink _log = new NullLogSink();
+    private IDisposable? _logDisposable;
     private DateTimeOffset? _suspendedAt;
     private string? _dataDir;
 
@@ -34,8 +35,17 @@ public sealed class AgentWindowsService : ServiceBase
     protected override void OnStart(string[] args)
     {
         var dataDir = AgentRuntime.ResolveDataDirectory(new NullLogSink());
-        _log = new FileLogSink(Path.Combine(dataDir, "logs"), "service");
+
+        // Serilog em %ProgramData%\M351\MonitorAgent\logs\service-.log: rotacao diaria, 5 MB/arquivo,
+        // maximo 10 arquivos (Secao 6.6 l.461). verbose_debug (install.json) habilita o nivel Debug.
+        var verboseDebug = InstallConfig.TryLoad(dataDir, new NullLogSink())?.VerboseDebug ?? false;
+        var serilog = SerilogLogSink.CreateFile(Path.Combine(dataDir, "logs"), "service", verboseDebug);
+        _logDisposable = serilog;
+        _log = serilog;
         _log.Info("Serviço iniciando…");
+        if (verboseDebug)
+            _log.Warn("Log em nivel Debug ATIVADO (verbose_debug): detalhe sensivel (titulo/usuario) pode " +
+                      "aparecer apenas nos arquivos de log Debug. Desative quando nao estiver diagnosticando.");
 
         _dataDir = dataDir;
 
@@ -261,6 +271,12 @@ public sealed class AgentWindowsService : ServiceBase
         catch (Exception ex)
         {
             _log.Error("Falha no encerramento.", ex);
+        }
+        finally
+        {
+            // Garante o flush do buffer do Serilog antes do processo morrer.
+            _logDisposable?.Dispose();
+            _logDisposable = null;
         }
     }
 

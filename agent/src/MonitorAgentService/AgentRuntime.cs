@@ -32,7 +32,7 @@ public sealed class AgentRuntime : IDisposable
 
     private readonly HttpClient _http;
 
-    private AgentRuntime(string dataDirectory, ILogSink log, bool updateDetected)
+    private AgentRuntime(string dataDirectory, ILogSink log, bool updateDetected, string? proxyUrl)
     {
         DataDirectory = dataDirectory;
         Log = log;
@@ -49,7 +49,9 @@ public sealed class AgentRuntime : IDisposable
         Queue.Dropped += (count, reason) =>
             Log.Warn($"Buffer local (N8): {count} eventos expurgados FIFO ({reason}) — EVENTS_DROPPED emitido.");
 
-        _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        // Ponto unico de construcao do HttpClient (enroll/batch/update compartilham): proxy de
+        // sistema (WinHTTP) por default; PROXYURL do install.json quando presente (Secao 6.4 l.445).
+        _http = AgentHttpClientFactory.Create(proxyUrl, log);
         Enrollment = new EnrollmentClient(_http, State, new WindowsFingerprintSource(), log, SystemInventory.DescribeOs);
         AckProcessor = new AckProcessor(Queue, State, Factory, log);
         Sender = new BatchSender(_http, Queue, State, AckProcessor, Enrollment, log);
@@ -64,7 +66,9 @@ public sealed class AgentRuntime : IDisposable
     public static AgentRuntime Create(ILogSink log, string? dataDirOverride = null, bool updateDetected = false)
     {
         var dataDir = dataDirOverride ?? ResolveDataDirectory(log);
-        return new AgentRuntime(dataDir, log, updateDetected);
+        // PROXYURL gravado pelo MSI no install.json (F4.1): consumido aqui no ponto unico do HttpClient.
+        var proxyUrl = InstallConfig.TryLoad(dataDir, log)?.ProxyUrl;
+        return new AgentRuntime(dataDir, log, updateDetected, proxyUrl);
     }
 
     /// <summary>

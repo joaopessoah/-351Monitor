@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Net;
+using System.Security.Authentication;
 using System.Text;
 using System.Text.Json;
 using M351.Agent.Core.Contracts;
@@ -145,5 +146,60 @@ public class BatchSenderTests
         Assert.True(ok);
         var body = JsonSerializer.Deserialize(handler.Bodies[0], AgentJsonContext.Default.BatchRequest)!;
         Assert.Empty(body.Events);
+    }
+
+    [Fact]
+    public async Task Envio_ok_marca_estado_de_conexao_Ok()
+    {
+        var (temp, _, sender, _) = Build(_ => Json(HttpStatusCode.OK, OkAck));
+        using var _1 = temp;
+        temp.Queue.Enqueue(TestEvents.Heartbeat(TestEvents.Factory()));
+
+        await sender.SendOnceAsync(CancellationToken.None);
+
+        Assert.Equal(AgentConnectionState.Ok, sender.ConnectionState);
+    }
+
+    [Fact]
+    public async Task Falha_de_TLS_marca_estado_ErroCertificado_e_preserva_fila()
+    {
+        // Inspecao MITM apresenta certificado nao confiavel: o handshake falha. NUNCA desabilitamos
+        // a validacao — o estado vira ErroCertificado e os eventos permanecem na fila.
+        var certError = new HttpRequestException("send failed",
+            new AuthenticationException("The remote certificate is invalid according to the validation procedure."));
+        var (temp, _, sender, _) = Build(_ => throw certError);
+        using var _1 = temp;
+        temp.Queue.Enqueue(TestEvents.Heartbeat(TestEvents.Factory()));
+
+        var ok = await sender.SendOnceAsync(CancellationToken.None);
+
+        Assert.False(ok);
+        Assert.Equal(AgentConnectionState.ErroCertificado, sender.ConnectionState);
+        Assert.Equal(1, temp.Queue.UnsentCount); // nada perdido
+    }
+
+    [Fact]
+    public async Task Falha_de_rede_comum_marca_estado_SemRede()
+    {
+        var (temp, _, sender, _) = Build(_ => throw new HttpRequestException("offline"));
+        using var _1 = temp;
+        temp.Queue.Enqueue(TestEvents.Heartbeat(TestEvents.Factory()));
+
+        await sender.SendOnceAsync(CancellationToken.None);
+
+        Assert.Equal(AgentConnectionState.SemRede, sender.ConnectionState);
+    }
+
+    [Fact]
+    public async Task Resposta_4xx_ainda_conta_como_conexao_Ok()
+    {
+        // 401: o servidor real respondeu (TLS/proxy funcionaram) — no nivel de conexao e "ok".
+        var (temp, _, sender, _) = Build(_ => Json(HttpStatusCode.Unauthorized, "{}"));
+        using var _1 = temp;
+        temp.Queue.Enqueue(TestEvents.Heartbeat(TestEvents.Factory()));
+
+        await sender.SendOnceAsync(CancellationToken.None);
+
+        Assert.Equal(AgentConnectionState.Ok, sender.ConnectionState);
     }
 }
