@@ -25,6 +25,7 @@ appsettings.*.Local.json
 # Dev
 .dev-mail/
 .exports/
+.releases/
 *.log
 .idea/
 .DS_Store

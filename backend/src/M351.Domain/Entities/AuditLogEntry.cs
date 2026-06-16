@@ -28,6 +28,19 @@ public static class AuditActions
     /// update_category etc.) — adotada pelo padrão verbo_alvo das demais; decisão documentada.
     /// </summary>
     public const string UpdateDevice = "update_device";
+
+    /// <summary>
+    /// CLI backoffice publish-agent-release (F4.2): publicação de um novo release do agente no
+    /// canal de auto-update, detail {channel, version, min_version, sha256, file_name}. Ação de
+    /// operação GLOBAL (sem tenant) — gravada sob o tenant-sentinela Guid.Empty.
+    /// </summary>
+    public const string PublishAgentRelease = "publish_agent_release";
+
+    /// <summary>
+    /// CLI backoffice rollback-agent-release (F4.2): rollback do canal para uma versão já
+    /// publicada (move is_current sem redeploy), detail {channel, from_version, to_version}.
+    /// </summary>
+    public const string RollbackAgentRelease = "rollback_agent_release";
 }
 
 /// <summary>Tabela audit_log — append-only, particionada por mês, retenção 24 meses (N13).</summary>

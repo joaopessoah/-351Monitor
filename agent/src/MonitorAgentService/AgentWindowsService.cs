@@ -2,6 +2,7 @@ using System.Runtime.Versioning;
 using System.ServiceProcess;
 using M351.Agent.Core.Contracts;
 using M351.Agent.Core.Logging;
+using M351.Agent.Core.Update;
 
 namespace MonitorAgentService;
 
@@ -38,6 +39,14 @@ public sealed class AgentWindowsService : ServiceBase
 
         _dataDir = dataDir;
 
+        // Auto-update (Secao 6.7): a sentinela .update foi gravada pelo agente antes do msiexec; o
+        // MSI reinstalou e religou o servico. Consumi-la AQUI (uma vez, antes de criar o runtime)
+        // faz o AGENT_START sair com start_reason "update" (precede crash_recovery/boot). Se nao ha
+        // sentinela, e um start normal. Consumir tambem evita herdar uma sentinela orfa num start futuro.
+        var updateDetected = UpdateFlag.Consume(dataDir, _log);
+        if (updateDetected)
+            _log.Info("Sentinela .update detectada no start — start_reason sera update.");
+
         // Higiene de sentinela: um start normal NUNCA e um uninstall. Se uma sentinela .uninstall
         // sobrou de um ciclo anterior (ex.: o servico foi parado sem passar pelo OnStop, ou o
         // uninstall foi abortado apos a sentinela ser gravada), descarta-la aqui evita que um stop
@@ -45,7 +54,7 @@ public sealed class AgentWindowsService : ServiceBase
         if (UninstallFlag.Consume(dataDir, _log))
             _log.Warn("Sentinela de uninstall orfa encontrada no start — descartada (start nao e uninstall).");
 
-        _runtime = AgentRuntime.Create(_log, dataDir);
+        _runtime = AgentRuntime.Create(_log, dataDir, updateDetected);
         _cts = new CancellationTokenSource();
         _sessions = new SessionManager(_runtime, _log);
 
@@ -74,6 +83,7 @@ public sealed class AgentWindowsService : ServiceBase
         _ = _runtime.Sender.RunAsync(ct);
         _ = _runtime.TimeMonitorLoopAsync(ct);
         _ = MachineHeartbeatLoopAsync(ct);
+        _ = StartUpdateLoop(dataDir, ct);
 
         _log.Info("Serviço iniciado.");
     }
@@ -160,9 +170,12 @@ public sealed class AgentWindowsService : ServiceBase
     protected override void OnShutdown() => ShutdownCore("shutdown");
 
     /// <summary>
-    /// Distingue um stop de DESINSTALACAO de um stop normal do SCM (Secao 6.6). O MSI grava a
-    /// sentinela .uninstall em %ProgramData% antes de mandar o SCM parar o servico no uninstall;
-    /// sem ela, um stop e service_stop comum (parada manual, reboot agendado etc.).
+    /// Distingue stops especiais de um stop normal do SCM (Secao 6.6 / 6.7). Precedencia:
+    /// uninstall &gt; update &gt; service_stop.
+    ///   - .uninstall (gravada pelo MSI no uninstall): AGENT_STOP{reason:"uninstall"} — consumida aqui.
+    ///   - .update (gravada pelo agente antes do msiexec): AGENT_STOP{reason:"update"}; NAO consumir
+    ///     aqui — o OnStart do servico religado precisa ve-la para start_reason "update".
+    ///   - sem sentinela: service_stop (parada manual, reboot agendado etc.).
     /// </summary>
     private string ResolveStopReason()
     {
@@ -170,6 +183,11 @@ public sealed class AgentWindowsService : ServiceBase
         {
             _log.Info("Sentinela de uninstall detectada — AGENT_STOP sera emitido com reason=uninstall.");
             return "uninstall";
+        }
+        if (_dataDir is not null && UpdateFlag.IsSet(_dataDir))
+        {
+            _log.Info("Sentinela .update detectada — AGENT_STOP sera emitido com reason=update (sentinela preservada para o start).");
+            return "update";
         }
         return "service_stop";
     }
@@ -271,6 +289,30 @@ public sealed class AgentWindowsService : ServiceBase
 
             try { await Task.Delay(TimeSpan.FromSeconds(_runtime?.State.Config.HeartbeatSec ?? 60), ct); }
             catch (OperationCanceledException) { return; }
+        }
+    }
+
+    /// <summary>
+    /// Auto-update (Secao 6.7): checagem a cada 6 h (jitter ate 30 min). O installer grava a
+    /// sentinela .update (consumida no proximo OnStart -> start_reason "update") e dispara
+    /// msiexec /i /qn, que para este servico (ResolveStopReason -> reason "update").
+    /// </summary>
+    private async Task StartUpdateLoop(string dataDir, CancellationToken ct)
+    {
+        if (_runtime is null) return;
+        var updatesDir = Path.Combine(dataDir, "updates");
+        var installer = new UpdateInstaller(
+            _runtime.UpdateClient, _log, updatesDir,
+            writeUpdateSentinel: () => UpdateFlag.Write(dataDir, _log),
+            clearUpdateSentinel: () => UpdateFlag.Consume(dataDir, _log));
+        var service = new UpdateService(_runtime.UpdateClient, installer, _runtime.State, _log);
+        try
+        {
+            await service.RunAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _log.Error("Loop de auto-update encerrado por excecao.", ex);
         }
     }
 

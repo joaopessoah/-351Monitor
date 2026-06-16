@@ -8,6 +8,7 @@ using M351.Agent.Core.Queue;
 using M351.Agent.Core.Security;
 using M351.Agent.Core.Storage;
 using M351.Agent.Core.Time;
+using M351.Agent.Core.Update;
 using M351.Agent.Core.Win32;
 
 namespace MonitorAgentService;
@@ -24,13 +25,14 @@ public sealed class AgentRuntime : IDisposable
     public AckProcessor AckProcessor { get; }
     public BatchSender Sender { get; }
     public EnrollmentClient Enrollment { get; }
+    public UpdateClient UpdateClient { get; }
     public ILogSink Log { get; }
     public string DataDirectory { get; }
     public string StartReason { get; }
 
     private readonly HttpClient _http;
 
-    private AgentRuntime(string dataDirectory, ILogSink log)
+    private AgentRuntime(string dataDirectory, ILogSink log, bool updateDetected)
     {
         DataDirectory = dataDirectory;
         Log = log;
@@ -38,7 +40,7 @@ public sealed class AgentRuntime : IDisposable
         Queue = new SqliteEventQueue(Path.Combine(dataDirectory, "queue.db"));
         State = new AgentStateStore(Queue, new DpapiSecretProtector());
 
-        var (bootId, startReason) = State.InitializeBoot(DateTimeOffset.UtcNow, Environment.TickCount64);
+        var (bootId, startReason) = State.InitializeBoot(DateTimeOffset.UtcNow, Environment.TickCount64, updateDetected);
         StartReason = startReason;
         Factory = new EventFactory(bootId);
 
@@ -51,12 +53,18 @@ public sealed class AgentRuntime : IDisposable
         Enrollment = new EnrollmentClient(_http, State, new WindowsFingerprintSource(), log, SystemInventory.DescribeOs);
         AckProcessor = new AckProcessor(Queue, State, Factory, log);
         Sender = new BatchSender(_http, Queue, State, AckProcessor, Enrollment, log);
+        UpdateClient = new UpdateClient(_http, State, log); // reusa HttpClient + device token
     }
 
-    public static AgentRuntime Create(ILogSink log, string? dataDirOverride = null)
+    /// <summary>
+    /// updateDetected: a sentinela .update foi vista (e consumida) neste start — o AGENT_START
+    /// saira com start_reason "update" (precede crash_recovery/boot/service_restart). O modo
+    /// console nunca passa por update (false).
+    /// </summary>
+    public static AgentRuntime Create(ILogSink log, string? dataDirOverride = null, bool updateDetected = false)
     {
         var dataDir = dataDirOverride ?? ResolveDataDirectory(log);
-        return new AgentRuntime(dataDir, log);
+        return new AgentRuntime(dataDir, log, updateDetected);
     }
 
     /// <summary>

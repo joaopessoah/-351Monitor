@@ -29,6 +29,13 @@ public class ApiTestFixture : WebApplicationFactory<Program>
     public string ExportsDirectory { get; } =
         Path.Combine(Path.GetTempPath(), $"m351-exports-{Guid.NewGuid():N}");
 
+    /// <summary>
+    /// Diretório de releases do agente descartável por execução (F4.2): a API serve o download
+    /// do MSI daqui e a CLI publish-agent-release copia para cá (espelha o volume do staging).
+    /// </summary>
+    public string ReleasesDirectory { get; } =
+        Path.Combine(Path.GetTempPath(), $"m351-releases-{Guid.NewGuid():N}");
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -39,6 +46,7 @@ public class ApiTestFixture : WebApplicationFactory<Program>
         builder.UseSetting("Portal:BaseUrl", "http://localhost:5173");
         builder.UseSetting("Email:Provider", "Dev");
         builder.UseSetting("Exports:Directory", ExportsDirectory);
+        builder.UseSetting("Releases:Directory", ReleasesDirectory);
 
         // Rate limiting (Seções 5.6/5.7) DESLIGADO por default: a suíte dispara rajadas muito
         // acima dos limites canônicos. Os testes de RateLimitTests reabilitam com limites
@@ -200,6 +208,7 @@ public class ApiTestFixture : WebApplicationFactory<Program>
             try
             {
                 if (Directory.Exists(ExportsDirectory)) Directory.Delete(ExportsDirectory, recursive: true);
+                if (Directory.Exists(ReleasesDirectory)) Directory.Delete(ReleasesDirectory, recursive: true);
             }
             catch (IOException)
             {

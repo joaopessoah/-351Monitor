@@ -28,6 +28,9 @@ builder.Services.Configure<PortalOptions>(builder.Configuration.GetSection(Porta
 // F3.5 — diretório dos CSVs exportados (compartilhado com o worker; a API serve o download)
 builder.Services.Configure<M351.Infrastructure.Exports.ExportOptions>(
     builder.Configuration.GetSection(M351.Infrastructure.Exports.ExportOptions.SectionName));
+// F4.2 — diretório dos MSIs do agente (auto-update; a API serve o download por streaming)
+builder.Services.Configure<M351.Infrastructure.Exports.ReleaseOptions>(
+    builder.Configuration.GetSection(M351.Infrastructure.Exports.ReleaseOptions.SectionName));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddScoped<AuthFlowService>();
@@ -161,6 +164,18 @@ if (args.Length > 0 && string.Equals(args[0], "seed-demo-tenant", StringComparis
     return await SeedDemoTenantCommand.RunAsync(app.Services, args[1..]);
 }
 
+// Backoffice CLI (F4.2): publica um release do agente no canal de auto-update (Seção 6.7)
+if (args.Length > 0 && string.Equals(args[0], "publish-agent-release", StringComparison.OrdinalIgnoreCase))
+{
+    return await PublishAgentReleaseCommand.RunAsync(app.Services, args[1..]);
+}
+
+// Backoffice CLI (F4.2): rollback do canal de auto-update para uma versão já publicada
+if (args.Length > 0 && string.Equals(args[0], "rollback-agent-release", StringComparison.OrdinalIgnoreCase))
+{
+    return await RollbackAgentReleaseCommand.RunAsync(app.Services, args[1..]);
+}
+
 if (app.Configuration.GetValue<bool>("Database:AutoMigrate"))
 {
     using var scope = app.Services.CreateScope();
@@ -208,6 +223,7 @@ app.UseRateLimiter();
 
 app.MapControllers();
 app.MapAgentEndpoints();
+app.MapAgentUpdateEndpoints(); // F4.2 — manifesto de auto-update + hospedagem do MSI (device token)
 
 app.MapGet("/healthz", async (M351DbContext db, CancellationToken ct) =>
     await db.Database.CanConnectAsync(ct)

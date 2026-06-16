@@ -115,10 +115,12 @@ public sealed class AgentStateStore
     public string BootId { get; private set; } = "";
 
     /// <summary>
-    /// Inicializa boot_id (GUID novo por boot) e calcula start_reason:
-    /// install | boot | crash_recovery | service_restart (update fica para a fase do MSI).
+    /// Inicializa boot_id (GUID novo por boot) e calcula start_reason. Precedencia (Secao 6.7):
+    /// update &gt; install &gt; crash_recovery &gt; boot &gt; service_restart. updateDetected vem da sentinela
+    /// .update (gravada pelo agente antes do msiexec; o MSI reinicia o servico): nesse caso o
+    /// start e atribuido ao update independentemente do estado de boot/shutdown.
     /// </summary>
-    public (string BootId, string StartReason) InitializeBoot(DateTimeOffset nowUtc, long monoMs)
+    public (string BootId, string StartReason) InitializeBoot(DateTimeOffset nowUtc, long monoMs, bool updateDetected = false)
     {
         var bootTime = nowUtc.AddMilliseconds(-monoMs);
         var prevBootId = _kv.KvGet(KeyBootId);
@@ -140,6 +142,7 @@ public sealed class AgentStateStore
         var bootId = newBoot || prevBootId is null ? Guid.NewGuid().ToString() : prevBootId;
 
         var startReason =
+            updateDetected ? "update" :
             firstRun ? "install" :
             !cleanShutdown ? "crash_recovery" :
             newBoot ? "boot" :
