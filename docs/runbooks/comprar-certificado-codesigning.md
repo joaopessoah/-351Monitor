@@ -11,7 +11,34 @@ Sem assinatura Authenticode, o Windows SmartScreen/Defender mostra "Editor desco
 pode bloquear o MSI; instaladores não assinados queimam a confiança do cliente logo no primeiro
 contato com o TI. A spec (Seção 6.6) exige MSI assinado.
 
-## OV vs EV — qual comprar
+## Quando comprar — NÃO agora
+
+O certificado é **gate da F5/piloto** (instalar em cliente real), **não do desenvolvimento**.
+Durante o dev e testes internos (VMs, PC-CASA, demos), o MSI **não-assinado funciona**: o
+`msiexec /qn` instala sem prompt; o aviso do SmartScreen só aparece em duplo-clique manual e
+você mesmo aprova. **Não gaste enquanto está só desenvolvendo** — compre quando tiver data de
+piloto marcada.
+
+## Opções por custo (preços de 2026 — confirmar no momento da compra)
+
+| Opção | Custo | Modelo | Observações |
+|---|---|---|---|
+| **Azure Trusted Signing** (renomeado "Azure Artifact Signing" em jan/2026) | **~US$ 9,99/mês** (até 5.000 assinaturas) | **Mensal — paga só quando usa** | Mais barato e moderno; reputação SmartScreen imediata (é Microsoft); HSM gerenciado embutido; assina no CI via `azuresigntool`. **Pegadinha de elegibilidade** (ver abaixo). |
+| **Certum Cloud Code Signing** | **~US$ 108/ano** (~€100) | Anual, cloud (sem token físico) | Mais barato em modelo anual; CA reconhecida. |
+| **Sectigo OV** via revendedor (SSL2BUY, SignMyCode, CheapSSLShop) | **~US$ 215–226/ano** (~€200) | Anual, token HSM | Padrão de mercado; mais barato que comprar da CA direto. |
+| **DigiCert direto** | **~€71/mês (~€850/ano)** | Anual | Premium — caro demais para a sua fase, sem vantagem funcional sobre os acima. |
+
+### Recomendação para você (PT, fase de dev, custo sensível)
+
+1. **Agora:** não compre. Siga com MSI não-assinado.
+2. **No piloto:** **Azure Trusted Signing (~€9/mês)** é a melhor escolha — é mensal (você pausa
+   quando não precisa, em vez de €71/mês fixos), tem reputação SmartScreen imediata e assina no
+   CI. Cobre **organizações na UE** (a empresa `+351`/PT qualifica geograficamente).
+3. **Se a empresa tiver < 3 anos** (a Azure exige org com ≥ 3 anos para validação "Organization"):
+   ou usar a **validação "Individual"** da Azure (estava em rollout em 2025 — confirmar se já
+   abriu para PT) **ou** ir de **Certum Cloud (~€100/ano)**, que não tem esse requisito de idade.
+
+## OV vs EV — qual comprar (se for de certificado tradicional, não Azure)
 
 | | **OV (Organization Validation)** | **EV (Extended Validation)** |
 |---|---|---|
