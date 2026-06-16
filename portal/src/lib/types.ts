@@ -698,3 +698,89 @@ export interface AuditLogsResponse {
   page: number;
   page_size: number;
 }
+
+// =============================================================================
+// Contratos da F4.8: transparência pública (GET /public/transparencia/{slug},
+// AllowAnonymous) e a configuração editável da organização (GET/PATCH
+// /organization). A página pública JAMAIS expõe dado pessoal, window_title ou
+// os masked_patterns crus: só a POLÍTICA vigente, derivada pelo backend em
+// vocabulário pt-BR amigável. JSON snake_case.
+// =============================================================================
+
+/** Política de títulos de janela (Seção 9). O backend já entrega a descrição. */
+export interface WindowTitlePolicyPublic {
+  /** FULL = títulos completos; MASKED_PATTERNS = com mascaramento; APP_ONLY = só o app. */
+  mode: "FULL" | "MASKED_PATTERNS" | "APP_ONLY";
+  /** Frase pt-BR amigável montada pelo backend (nunca os regex crus). */
+  descricao: string;
+}
+
+/** Janela de coleta vigente da organização. start/end/days null fora do modo. */
+export interface CollectionWindowPublic {
+  mode: "ALWAYS" | "BUSINESS_HOURS";
+  /** Dias da semana ISO (1 = segunda … 7 = domingo) - null quando ALWAYS. */
+  days: number[] | null;
+  /** "HH:mm" no fuso da organização - null quando ALWAYS. */
+  start: string | null;
+  end: string | null;
+  /** Frase pt-BR amigável montada pelo backend. */
+  descricao: string;
+}
+
+/** Retenções FIXAS do produto (N10-N13) - em dias/meses conforme o eixo. */
+export interface RetencoesPublic {
+  eventos_dias: number;
+  intervalos_meses: number;
+  agregados_meses: number;
+  auditoria_meses: number;
+}
+
+/**
+ * Resposta de `GET /api/v1/public/transparencia/{slug}` (AllowAnonymous,
+ * rate-limited). SEM auth, SEM cookies, Cache-Control público curto. Slug
+ * inexistente -> 404. `coletado`/`nunca_coletado` chegam prontos em pt-BR
+ * (derivados da política e da lista fixa da 9.7); o portal apenas renderiza.
+ */
+export interface TransparenciaPublicResponse {
+  organization_name: string;
+  window_title_policy: WindowTitlePolicyPublic;
+  collection_window: CollectionWindowPublic;
+  retencoes: RetencoesPublic;
+  finalidade_declarada: string | null;
+  contato_dpo: string | null;
+  /** Data de vigência da política (yyyy-MM-dd) - null quando não definida. */
+  vigencia: string | null;
+  /** Instante (timestamptz) da última purga concluída - null se nunca houve. */
+  ultima_purga: string | null;
+  /** Itens coletados em pt-BR, conforme a window_title_policy. */
+  coletado: string[];
+  /** Lista FIXA do que nunca é coletado (Seção 9.7), em pt-BR. */
+  nunca_coletado: string[];
+}
+
+/**
+ * Resposta de `GET /api/v1/organization` (PolicyAccess - qualquer papel
+ * autenticado). business_hours é o jsonb cru da org (null quando não definido).
+ */
+export interface OrganizationResponse {
+  name: string;
+  slug: string;
+  timezone: string;
+  business_hours: BusinessHours | null;
+  finalidade_declarada: string | null;
+  contato_dpo: string | null;
+  /** Data de vigência da política (yyyy-MM-dd) - null quando não definida. */
+  data_vigencia: string | null;
+}
+
+/**
+ * Body de `PATCH /api/v1/organization` (PolicyAdminPlus - Owner/Admin). Campos
+ * ausentes não mudam; enviar null limpa o campo (string vazia -> null no
+ * cliente). O backend audita a operação como update_privacy_config. Resposta
+ * 200 com o OrganizationResponse atualizado.
+ */
+export interface OrganizationPatchRequest {
+  finalidade_declarada?: string | null;
+  contato_dpo?: string | null;
+  data_vigencia?: string | null;
+}

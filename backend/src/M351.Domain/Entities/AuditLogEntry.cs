@@ -66,6 +66,14 @@ public static class AuditActions
     /// evidência de que a exclusão ocorreu).
     /// </summary>
     public const string DsrDelete = "dsr_delete";
+
+    /// <summary>
+    /// PATCH /api/v1/organization (F4.8, Seções 8.8/9.5): edição dos campos de transparência da
+    /// org (finalidade_declarada, contato_dpo, data_vigencia e business_hours). detail com de→para
+    /// por campo alterado — mudança de config de privacidade exige a trilha (de→para) da Seção 9.5.
+    /// Owner/Admin (AdminPlus) editam; Viewer recebe 403.
+    /// </summary>
+    public const string UpdatePrivacyConfig = "update_privacy_config";
 }
 
 /// <summary>Tabela audit_log — append-only, particionada por mês, retenção 24 meses (N13).</summary>

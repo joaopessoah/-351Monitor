@@ -26,6 +26,29 @@ public static class DapperConfig
         DefaultTypeMap.MatchNamesWithUnderscores = true;
         SqlMapper.AddTypeHandler(new DateTimeOffsetHandler());
         SqlMapper.AddTypeHandler(new IpAddressHandler());
+        SqlMapper.AddTypeHandler(new DateOnlyHandler());
+    }
+
+    /// <summary>
+    /// date ↔ DateOnly (F4.8 — leitura de organizations.data_vigencia na transparência pública via
+    /// Dapper). O Npgsql devolve o tipo `date` como System.DateTime; sem este handler o Dapper lança
+    /// "Invalid cast from System.DateTime to System.DateOnly". O handler de tipo-valor cobre também
+    /// o DateOnly? (o Dapper aplica o handler do tipo subjacente quando a coluna é NULL/valor).
+    /// </summary>
+    private sealed class DateOnlyHandler : SqlMapper.TypeHandler<DateOnly>
+    {
+        public override DateOnly Parse(object value) => value switch
+        {
+            DateOnly d => d,
+            DateTime dt => DateOnly.FromDateTime(dt),
+            _ => throw new InvalidCastException($"Não é possível converter {value.GetType()} em DateOnly."),
+        };
+
+        public override void SetValue(IDbDataParameter parameter, DateOnly value)
+        {
+            parameter.DbType = DbType.Date;
+            parameter.Value = value;
+        }
     }
 
     /// <summary>

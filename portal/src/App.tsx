@@ -19,6 +19,7 @@ import { UsuariosPage } from "@/pages/configuracoes/UsuariosPage";
 import { ChavesPage } from "@/pages/configuracoes/ChavesPage";
 import { CategoriasPage } from "@/pages/configuracoes/CategoriasPage";
 import { PrivacidadePage } from "@/pages/configuracoes/PrivacidadePage";
+import { OrganizacaoPage } from "@/pages/configuracoes/OrganizacaoPage";
 import { AuditoriaPage } from "@/pages/configuracoes/AuditoriaPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 
@@ -52,6 +53,7 @@ export function App() {
             <Route path="chaves" element={<ChavesPage />} />
             <Route path="categorias" element={<CategoriasPage />} />
             <Route path="privacidade" element={<PrivacidadePage />} />
+            <Route path="organizacao" element={<OrganizacaoPage />} />
             <Route path="auditoria" element={<AuditoriaPage />} />
           </Route>
         </Route>

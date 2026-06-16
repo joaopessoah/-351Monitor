@@ -46,3 +46,23 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* Impressão limpa da página pública de transparência (F4.8): esconde os
+   elementos marcados como no-print (cabeçalho fixo, botões) e neutraliza
+   sombras/bordas pesadas, garantindo papel branco e texto preto legível. */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .print-plain {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+}

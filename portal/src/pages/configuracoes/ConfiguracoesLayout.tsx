@@ -10,6 +10,9 @@ const baseTabs = [
   { to: "/configuracoes/chaves", label: "Chaves de instalação" },
   { to: "/configuracoes/categorias", label: "Categorias" },
   { to: "/configuracoes/privacidade", label: "Privacidade" },
+  // Organização: campos de transparência (finalidade, DPO, vigência). GET é
+  // PolicyAccess (qualquer papel lê); a edição é gated dentro da página.
+  { to: "/configuracoes/organizacao", label: "Organização" },
 ] as const;
 
 // Auditoria fica restrita a Owner/Admin (PolicyAdminPlus): o Viewer NÃO vê a aba
@@ -31,8 +34,8 @@ export function ConfiguracoesLayout() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Administração da organização: usuários do portal, chaves de instalação, categorias e
-          privacidade.
+          Administração da organização: usuários do portal, chaves de instalação, categorias,
+          privacidade e transparência.
         </p>
       </div>
       <nav className="flex flex-wrap gap-1 border-b" aria-label="Seções de configurações">
