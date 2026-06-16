@@ -19,7 +19,8 @@ import { AlertTriangle, Download, FileDown } from "lucide-react";
 import { api, apiDownload, ApiError } from "@/lib/api";
 import { ddmm, formatDayMonthTime, formatRelative } from "@/lib/format";
 import { genericErrorMessage } from "@/lib/messages";
-import type { ExportJobItem, ExportKind, ExportParams, ExportsResponse, MeResponse } from "@/lib/types";
+import type { ExportJobItem, ExportKind, ExportsResponse, MeResponse } from "@/lib/types";
+import { isDsrExportKind } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -28,6 +29,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 const KIND_LABELS: Record<ExportKind, string> = {
   jornada_csv: "Jornada (CSV)",
   usage_csv: "Uso de aplicativos (CSV)",
+  // Pacotes DSR/offboarding (F4.5): ZIP, solicitados em Privacidade, prazo de 72h.
+  dsr_subject: "Dados do titular (ZIP)",
+  dsr_device: "Dados do dispositivo (ZIP)",
+  tenant_full: "Acervo completo da organização (ZIP)",
 };
 
 /** Mesmos rótulos do seletor segmentado da tela de Uso. */
@@ -38,9 +43,22 @@ const GROUP_BY_LABELS: Record<string, string> = {
   device_user: "por pessoa",
 };
 
-/** Resumo legível dos filtros do job: período, devices e agrupamento. */
-function paramsSummary(params: ExportParams): string {
-  const parts = [`${ddmm(params.from)} a ${ddmm(params.to)}`];
+/**
+ * Resumo legível dos filtros do job. Para CSV de relatório: período, devices e
+ * agrupamento. Para pacotes DSR (F4.5) o alvo é o titular/dispositivo e não há
+ * filtro de período (o pacote é o acervo INTEIRO do titular) - mostramos um
+ * rótulo neutro do escopo em vez de inventar uma janela de datas.
+ */
+function paramsSummary(item: ExportJobItem): string {
+  const { kind, params } = item;
+  if (kind === "dsr_subject") return "Todos os dados do titular";
+  if (kind === "dsr_device") return "Todos os dados do dispositivo";
+  if (kind === "tenant_full") return "Acervo completo da organização";
+
+  const parts: string[] = [];
+  if (params.from !== undefined && params.to !== undefined) {
+    parts.push(`${ddmm(params.from)} a ${ddmm(params.to)}`);
+  }
   const n = params.device_ids?.length ?? 0;
   parts.push(n === 0 ? "todos os dispositivos" : n === 1 ? "1 dispositivo" : `${n} dispositivos`);
   if (params.group_by !== undefined && params.group_by in GROUP_BY_LABELS) {
@@ -49,7 +67,26 @@ function paramsSummary(params: ExportParams): string {
   return parts.join(" · ");
 }
 
-/** Status de UI: "Expirado" vence "Pronto" quando o prazo de 7 dias passou. */
+/**
+ * Nome de arquivo de fallback quando o backend não manda Content-Disposition.
+ * DSR/offboarding saem como .zip; CSV de relatório como .csv com o período.
+ */
+function downloadFallbackName(item: ExportJobItem): string {
+  if (isDsrExportKind(item.kind)) {
+    const target =
+      item.kind === "dsr_subject"
+        ? item.params.device_user_id
+        : item.kind === "dsr_device"
+          ? item.params.device_id
+          : "organizacao";
+    const prefix =
+      item.kind === "dsr_subject" ? "dsr_titular" : item.kind === "dsr_device" ? "dsr_dispositivo" : "acervo_tenant";
+    return `${prefix}_${target ?? item.id}.zip`;
+  }
+  return `${item.kind === "jornada_csv" ? "jornada" : "uso"}_${item.params.from}_${item.params.to}.csv`;
+}
+
+/** Status de UI: "Expirado" vence "Pronto" quando o prazo de retenção passou. */
 function uiStatus(item: ExportJobItem): "queued" | "running" | "done" | "failed" | "expired" {
   if (item.status === "done" && item.expired) return "expired";
   return item.status;
@@ -120,7 +157,9 @@ export function ExportacoesPage() {
       const { blob, filename } = await apiDownload(
         `/exports/${encodeURIComponent(item.id)}/download`,
       );
-      const fallbackName = `${item.kind === "jornada_csv" ? "jornada" : "uso"}_${item.params.from}_${item.params.to}.csv`;
+      // Nome sugerido: o backend manda no Content-Disposition; o fallback respeita
+      // a extensão real - .zip para os pacotes DSR/offboarding, .csv para relatório.
+      const fallbackName = downloadFallbackName(item);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -131,7 +170,11 @@ export function ExportacoesPage() {
       URL.revokeObjectURL(url);
     } catch (error) {
       if (error instanceof ApiError && error.status === 410) {
-        setDownloadError("Este arquivo expirou. Gere uma nova exportação no relatório.");
+        setDownloadError(
+          isDsrExportKind(item.kind)
+            ? "Este pacote expirou. Gere um novo em Configurações, Privacidade."
+            : "Este arquivo expirou. Gere uma nova exportação no relatório.",
+        );
         void exportsQuery.refetch();
       } else if (error instanceof ApiError && error.status === 409) {
         setDownloadError("A exportação ainda não foi concluída. Aguarde o status Pronto.");
@@ -148,8 +191,9 @@ export function ExportacoesPage() {
     <div>
       <h1 className="text-2xl font-semibold tracking-tight">Exportações</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Exportações CSV dos últimos 30 dias da organização: quem gerou, quando e com quais filtros.
-        Os arquivos ficam disponíveis por 7 dias após a geração.
+        Exportações dos últimos 30 dias da organização: quem gerou, quando e com quais filtros.
+        Os CSV de relatório ficam disponíveis por 7 dias; os pacotes de dados do titular (DSR),
+        por 72 horas após a geração.
       </p>
     </div>
   );
@@ -258,7 +302,7 @@ export function ExportacoesPage() {
                           )}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
-                          {paramsSummary(item.params)}
+                          {paramsSummary(item)}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2">
                           <StatusBadge item={item} />

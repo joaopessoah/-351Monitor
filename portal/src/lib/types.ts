@@ -510,18 +510,40 @@ export interface JornadaReportResponse {
   device_totals: JornadaDeviceTotals[];
 }
 
-/** Tipos de export do MVP - dsr_* são F4 (o backend rejeita com 400). */
-export type ExportKind = "usage_csv" | "jornada_csv";
+/**
+ * Tipos de export. usage_csv/jornada_csv (F3.5) são criados pelo POST /exports
+ * genérico; os pacotes DSR (F4.5) são criados pelos endpoints /privacy/* e NUNCA
+ * pelo POST /exports - mas a listagem e o download os servem (pacote ZIP, prazo
+ * de 72h em vez dos 7 dias do CSV de relatório).
+ */
+export type ExportKind = "usage_csv" | "jornada_csv" | "dsr_subject" | "dsr_device" | "tenant_full";
+
+/** Os pacotes DSR/offboarding (F4.5) saem como ZIP; o CSV de relatório como text/csv. */
+export const DSR_EXPORT_KINDS: ExportKind[] = ["dsr_subject", "dsr_device", "tenant_full"];
+
+export function isDsrExportKind(kind: ExportKind): boolean {
+  return DSR_EXPORT_KINDS.includes(kind);
+}
 
 export type ExportStatus = "queued" | "running" | "done" | "failed";
 
-/** Params do job - validados com os MESMOS validadores dos endpoints de leitura. */
+/**
+ * Params do job. Para usage_csv/jornada_csv: from/to (validados com os MESMOS
+ * validadores dos endpoints de leitura) e, no usage_csv, group_by. Para os
+ * pacotes DSR (F4.5) o backend grava o alvo: device_user_id (dsr_subject) ou
+ * device_id (dsr_device); tenant_full não tem alvo. Todos os campos são
+ * opcionais aqui porque um mesmo ExportJobItem pode ser de qualquer kind.
+ */
 export interface ExportParams {
-  from: string;
-  to: string;
+  from?: string;
+  to?: string;
   device_ids?: string[];
   /** Apenas usage_csv. */
   group_by?: "app" | "category" | "device" | "device_user";
+  /** dsr_subject: titular alvo do pacote. */
+  device_user_id?: string;
+  /** dsr_device: dispositivo alvo do pacote. */
+  device_id?: string;
 }
 
 /** Body de `POST /exports` (202 - o job entra na fila do worker). */
@@ -558,4 +580,68 @@ export interface ExportJobItem {
 
 export interface ExportsResponse {
   items: ExportJobItem[];
+}
+
+// =============================================================================
+// Contratos da F4.5: DSR completo (direitos do titular - LGPD art. 18/19).
+// O TITULAR é um device_user (NÃO um usuário do portal): as rotas usam
+// {deviceUserId}/{deviceId}. Endpoints (snake_case):
+//  - POST   /privacy/subjects/{deviceUserId}/export  (admin+owner) -> 202
+//  - DELETE /privacy/subjects/{deviceUserId}/data     (owner)       -> 200 recibo
+//  - POST   /privacy/devices/{deviceId}/export        (admin+owner) -> 202
+//  - DELETE /privacy/devices/{deviceId}/data          (owner)       -> 200 recibo
+//  - POST   /privacy/tenant/full-export               (owner)       -> 202
+// O export devolve um ExportCreateResponse (mesmo shape do POST /exports) com
+// kind dsr_subject/dsr_device/tenant_full; o download do pacote é ZIP, link
+// válido por 72h, acompanhado em /relatorios/exportacoes (F3.5).
+// =============================================================================
+
+/**
+ * Titular candidato a DSR: derivado do GET /reports/usage?group_by=device_user
+ * (não há endpoint de listagem dedicado - o portal reusa essa fonte). UUID zero
+ * = lane-máquina (sem usuário Windows): NÃO é um titular e fica fora da busca.
+ */
+export interface DsrSubject {
+  device_user_id: string;
+  device_id: string;
+  device_name: string;
+  /** Usuário Windows quando resolvível; null para titular já anonimizado por DSR. */
+  windows_user: string | null;
+  /** Nome de exibição JÁ resolvido pelo backend (nunca reimplementar no cliente). */
+  display_name: string;
+}
+
+/**
+ * Body de `DELETE /privacy/subjects/{deviceUserId}/data` e
+ * `DELETE /privacy/devices/{deviceId}/data`. confirmation deve bater com o valor
+ * de segurança exigido pelo backend (o windows_username/display_name do titular,
+ * ou o hostname do device); reason é obrigatório. confirmation/reason inválidos
+ * -> 400; titular/device de outro tenant -> 404. A operação é HARD DELETE
+ * IRREVERSÍVEL dos dados pessoais identificáveis.
+ */
+export interface DsrDeleteRequest {
+  confirmation: string;
+  reason: string;
+}
+
+/**
+ * Recibo de exclusão (LGPD art. 19): contagens do que foi apagado/anonimizado.
+ * raw_events_deleted/intervals_deleted: dados pessoais identificáveis apagados
+ * (hard delete). device_users_anonymized: linhas de titular cujo nome virou
+ * marcador neutro, preservando o device_user_id como chave. daily_rows_kept:
+ * agregados de equipe já computados, MANTIDOS sem identificar a pessoa (a
+ * exclusão do titular NÃO apaga agregados de equipe - decisão documentada no
+ * DPA, spec linha 995). O backend pode incluir campos extras (Record aberto).
+ */
+export interface DsrReceipt {
+  raw_events_deleted: number;
+  intervals_deleted: number;
+  device_users_anonymized: number;
+  daily_rows_kept: number;
+  [key: string]: number | string | boolean | null;
+}
+
+/** Resposta 200 de `DELETE /privacy/subjects|devices/.../data`. */
+export interface DsrDeleteResponse {
+  receipt: DsrReceipt;
 }

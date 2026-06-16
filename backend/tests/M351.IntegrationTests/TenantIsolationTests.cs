@@ -385,6 +385,37 @@ public class TenantIsolationTests(ApiTestFixture fixture) : IAsyncLifetime
         Assert.DoesNotContain(jobB, ids);
     }
 
+    // ------------------------------------------------------------ F4.5: DSR (privacy)
+    [Fact]
+    public async Task DsrExportSubjectDeOutroTenant_Retorna404()
+    {
+        // device_user do tenant B semeado direto; o gate e o lookup do {deviceUserId}
+        var deviceUserB = Uuid7.NewUuid7();
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString, """
+            INSERT INTO device_users (
+                id, tenant_id, device_id, windows_sid, windows_username, first_seen_at, last_seen_at)
+            VALUES (@id, @t, @d, 'S-1-5-21-DSR-ISO-B', @wu, now(), now())
+            """, ("id", deviceUserB), ("t", _deviceB.TenantId), ("d", _deviceB.Id), ("wu", "titular.b"));
+
+        // owner do tenant A nao enxerga titular nem device de B (export E delete)
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await SendAsync(HttpMethod.Post, $"/api/v1/privacy/subjects/{deviceUserB}/export")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await SendAsync(HttpMethod.Post, $"/api/v1/privacy/devices/{_deviceB.Id}/export")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await SendAsync(HttpMethod.Delete, $"/api/v1/privacy/subjects/{deviceUserB}/data",
+                new { confirmation = "titular.b", reason = "deveria falhar com 404" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await SendAsync(HttpMethod.Delete, $"/api/v1/privacy/devices/{_deviceB.Id}/data",
+                new { confirmation = "NB-TENANT-B", reason = "deveria falhar com 404" })).StatusCode);
+
+        // o titular de B segue intacto (nada apagado/anonimizado pela tentativa cross-tenant)
+        var existe = await TestDb.ScalarAsync<long>(fixture.Database.ConnectionString,
+            "SELECT count(*) FROM device_users WHERE id = @u AND windows_username = @wu",
+            ("u", deviceUserB), ("wu", "titular.b"));
+        Assert.Equal(1L, existe);
+    }
+
     // ------------------------------------------------------------ F3.7: PATCH device e billing
     [Fact]
     public async Task PatchDeviceDeOutroTenant_Retorna404_ESemEfeito()

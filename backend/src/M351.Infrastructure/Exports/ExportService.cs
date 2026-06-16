@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using M351.Infrastructure.Reports;
@@ -48,7 +49,7 @@ namespace M351.Infrastructure.Exports;
 /// API e worker podem montar o volume em caminhos diferentes — cada lado resolve contra a
 /// própria config Exports:Directory.
 /// </summary>
-public sealed class ExportService(
+public sealed partial class ExportService(
     NpgsqlDataSource dataSource,
     string exportsDirectory,
     ILogger<ExportService>? logger = null,
@@ -59,6 +60,18 @@ public sealed class ExportService(
 
     /// <summary>CSVs de relatório expiram em 7 dias (spec linha 738).</summary>
     public static readonly TimeSpan FileRetention = TimeSpan.FromDays(7);
+
+    /// <summary>
+    /// Pacotes DSR (dsr_subject/dsr_device/tenant_full) expiram em 72h (spec linha 738) — o
+    /// link de download de dado pessoal do titular vive bem menos que o CSV de relatório.
+    /// </summary>
+    public static readonly TimeSpan DsrFileRetention = TimeSpan.FromHours(72);
+
+    /// <summary>Kinds que geram um pacote ZIP (DSR/offboarding) em vez de um CSV de relatório.</summary>
+    private static readonly string[] ZipKinds = ["dsr_subject", "dsr_device", "tenant_full"];
+
+    /// <summary>true para os kinds de pacote DSR/offboarding (ZIP, retenção 72h).</summary>
+    private static bool IsZipKind(string kind) => ZipKinds.Contains(kind);
 
     /// <summary>
     /// Job em 'running' há mais que isto = worker morreu sem shutdown gracioso (kill -9,
@@ -118,8 +131,13 @@ public sealed class ExportService(
 
         if (job is null) return 0;
 
-        var relativePath = $"{job.TenantId}/{job.Id}.csv";
-        var absolutePath = Path.GetFullPath(Path.Combine(exportsDirectory, job.TenantId.ToString(), $"{job.Id}.csv"));
+        // pacotes DSR/offboarding são .zip com retenção 72h; CSVs de relatório, .csv com 7 dias
+        var zip = IsZipKind(job.Kind);
+        var extension = zip ? "zip" : "csv";
+        var retention = zip ? DsrFileRetention : FileRetention;
+
+        var relativePath = $"{job.TenantId}/{job.Id}.{extension}";
+        var absolutePath = Path.GetFullPath(Path.Combine(exportsDirectory, job.TenantId.ToString(), $"{job.Id}.{extension}"));
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
@@ -131,7 +149,7 @@ public sealed class ExportService(
                 WHERE id = @id
                 """,
                 [("path", relativePath), ("rows", rowCount), ("truncated", truncated),
-                 ("expires", DateTimeOffset.UtcNow + FileRetention), ("id", job.Id)], ct);
+                 ("expires", DateTimeOffset.UtcNow + retention), ("id", job.Id)], ct);
 
             logger?.LogInformation(
                 "Export {JobId} ({Kind}) concluído: {Rows} linha(s){Truncated}.",
@@ -159,16 +177,14 @@ public sealed class ExportService(
     // ------------------------------------------------------------ geração
     private async Task<(int Rows, bool Truncated)> GenerateAsync(ExportJobRow job, string absolutePath, CancellationToken ct)
     {
+        // pacotes DSR/offboarding: ZIP em STREAMING (ZipArchive sobre FileStream — jamais o
+        // ZIP inteiro em memória); CSVs de relatório: o caminho clássico StreamWriter
+        if (IsZipKind(job.Kind))
+            return await GenerateDsrZipAsync(job, absolutePath, ct);
+
         var p = ParseParams(job.ParamsJson);
 
-        string timezone;
-        await using (var connection = await dataSource.OpenConnectionAsync(ct))
-        await using (var command = new NpgsqlCommand("SELECT timezone FROM organizations WHERE id = @t", connection))
-        {
-            command.Parameters.AddWithValue("t", job.TenantId);
-            timezone = await command.ExecuteScalarAsync(ct) as string
-                ?? throw new InvalidOperationException($"Organização {job.TenantId} não encontrada.");
-        }
+        string timezone = await TenantTimezoneAsync(job.TenantId, ct);
 
         // BOM explícito (UTF8Encoding(true)) + CRLF determinístico (RFC 4180)
         await using var stream = new FileStream(absolutePath, FileMode.Create, FileAccess.Write, FileShare.None);
@@ -181,6 +197,15 @@ public sealed class ExportService(
             "usage_csv" => await WriteUsageAsync(writer, job.TenantId, p, ct),
             _ => throw new InvalidOperationException($"Kind de export não suportado: {job.Kind}."),
         };
+    }
+
+    private async Task<string> TenantTimezoneAsync(Guid tenantId, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var command = new NpgsqlCommand("SELECT timezone FROM organizations WHERE id = @t", connection);
+        command.Parameters.AddWithValue("t", tenantId);
+        return await command.ExecuteScalarAsync(ct) as string
+            ?? throw new InvalidOperationException($"Organização {tenantId} não encontrada.");
     }
 
     /// <summary>

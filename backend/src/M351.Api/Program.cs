@@ -42,6 +42,7 @@ builder.Services.AddSingleton(provider =>
         ?? throw new InvalidOperationException("ConnectionStrings:Default ausente.")));
 builder.Services.AddSingleton<AgentConfigService>();
 builder.Services.AddSingleton<RawEventPartitionManager>();
+builder.Services.AddSingleton<M351.Infrastructure.Privacy.DsrService>(); // F4.5 — exclusão DSR (sem estado por request)
 builder.Services.AddScoped<EnrollmentService>();
 builder.Services.AddScoped<IngestService>();
 builder.Services.AddRequestDecompression(); // Content-Encoding: gzip dos lotes (Seção 5.4)

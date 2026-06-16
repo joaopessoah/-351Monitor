@@ -41,6 +41,23 @@ public static class AuditActions
     /// publicada (move is_current sem redeploy), detail {channel, from_version, to_version}.
     /// </summary>
     public const string RollbackAgentRelease = "rollback_agent_release";
+
+    /// <summary>
+    /// Direito de ACESSO/PORTABILIDADE do titular (F4.5, Seção 9.3): solicitação de pacote DSR
+    /// — POST /privacy/subjects/{id}/export, /privacy/devices/{id}/export e
+    /// /privacy/tenant/full-export. detail {device_user_id} ou {device_id} ou {scope:"tenant"}
+    /// conforme o alvo. Insumo da resposta da controladora em 15 dias (art. 19 LGPD).
+    /// </summary>
+    public const string DsrExport = "dsr_export";
+
+    /// <summary>
+    /// Direito de EXCLUSÃO do titular (F4.5, Seção 9.3): hard delete irreversível dos dados
+    /// pessoais identificáveis — DELETE /privacy/subjects/{id}/data e
+    /// /privacy/devices/{id}/data. detail {device_user_id|device_id, reason, receipt} — o
+    /// motivo e o recibo de contagens ficam na trilha (a própria trilha NÃO é apagada: é a
+    /// evidência de que a exclusão ocorreu).
+    /// </summary>
+    public const string DsrDelete = "dsr_delete";
 }
 
 /// <summary>Tabela audit_log — append-only, particionada por mês, retenção 24 meses (N13).</summary>

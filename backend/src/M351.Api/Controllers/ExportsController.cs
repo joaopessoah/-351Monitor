@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Dapper;
+using M351.Api.Auth;
 using M351.Api.Contracts;
 using M351.Domain;
 using M351.Domain.Entities;
@@ -18,12 +19,21 @@ namespace M351.Api.Controllers;
 /// API+worker em staging — infra/docker-compose.staging.yml).
 ///
 /// Regras e decisões documentadas:
-///  - kinds do MVP: usage_csv | jornada_csv; dsr_* são F4 → 400;
+///  - kinds criados AQUI: usage_csv | jornada_csv. Pacotes DSR/offboarding
+///    (dsr_subject/dsr_device/tenant_full) NÃO nascem deste POST genérico (→ 400): são criados
+///    pelos endpoints /privacy/* (F4.5). A LISTAGEM e o DOWNLOAD os servem aqui — o download de
+///    pacote DSR é application/zip (.zip) e expira em 72h, não os 7d do CSV de relatório;
+///  - GATE DE PAPEL DOS PACOTES DSR (LGPD, Seção 7.4): o ZIP carrega window_title/eventos brutos
+///    do titular, então o ARTEFATO herda o mesmo papel da CRIAÇÃO em /privacy/*: dsr_subject /
+///    dsr_device exigem AdminPlus e tenant_full exige OwnerOnly. Papel insuficiente NÃO lista o
+///    job (GET /exports filtra os kinds DSR fora do alcance) nem o baixa (download/get → 404, não
+///    403 — Princípio 4: não confirmar a existência). Um Viewer jamais alcança um pacote DSR;
 ///  - params validados com os MESMOS validadores dos endpoints de leitura (régua de datas
 ///    do dashboard, group_by do usage, gate 404 de device_ids cross-tenant); group_by em
 ///    jornada_csv → 400 (não se aplica — decisão p/ silêncio da spec);
 ///  - GET /exports lista os últimos 30 dias DO TENANT, desc, máx. 100 — trilha "quem gerou,
-///    quando, com que filtros" (spec linha 949): todos os papéis veem os exports do tenant;
+///    quando, com que filtros" (spec linha 949): exports de relatório (CSV) para todos os papéis;
+///    pacotes DSR só para o papel que poderia criá-los;
 ///  - job de outro tenant → 404 (nunca 403 — Princípio 4);
 ///  - download: job não-done → 409; expirado (expires_at vencido OU arquivo removido pelo
 ///    sweep) → 410; senão stream text/csv; charset=utf-8 com Content-Disposition attachment;
@@ -52,7 +62,8 @@ public class ExportsController(
     {
         if (body?.Kind is null || !ValidKinds.Contains(body.Kind))
             return ProblemResponse(StatusCodes.Status400BadRequest,
-                "Parâmetro kind deve ser usage_csv ou jornada_csv (exports DSR chegam na F4).");
+                "Parâmetro kind deve ser usage_csv ou jornada_csv. "
+                + "Pacotes DSR (dsr_subject/dsr_device/tenant_full) são criados pelos endpoints /privacy/*.");
 
         if (body.Params is null)
             return ProblemResponse(StatusCodes.Status400BadRequest, "Parâmetro params é obrigatório.");
@@ -146,16 +157,24 @@ public class ExportsController(
     public async Task<IActionResult> List(CancellationToken ct)
     {
         var tenantId = Auth.CurrentUser.TenantId(User);
+        var role = Auth.CurrentUser.Role(User);
+
+        // Pacotes DSR (window_title/eventos brutos do titular) só aparecem para o papel que
+        // poderia criá-los: dsr_subject/dsr_device → Admin+; tenant_full → Owner. Demais kinds
+        // (usage_csv/jornada_csv) para todos. Filtra no SQL para não vazar nem o id/kind do job.
+        var allowedDsrKinds = AllowedDsrKindsFor(role);
 
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         var rows = (await connection.QueryAsync<JobRow>(new CommandDefinition(
             $"""
             {ItemSql}
             WHERE j.tenant_id = @TenantId AND j.created_at >= now() - interval '30 days'
+              AND (NOT (j.kind = ANY(@DsrKinds)) OR j.kind = ANY(@AllowedDsrKinds))
             ORDER BY j.created_at DESC
             LIMIT 100
             """,
-            new { TenantId = tenantId }, cancellationToken: ct))).ToList();
+            new { TenantId = tenantId, DsrKinds = DsrKinds, AllowedDsrKinds = allowedDsrKinds },
+            cancellationToken: ct))).ToList();
 
         var now = clock.GetUtcNow();
         return Ok(new ExportsResponse(rows.Select(r => ToItem(r, now)).ToList()));
@@ -166,7 +185,8 @@ public class ExportsController(
     public async Task<IActionResult> Get(Guid id, CancellationToken ct)
     {
         var row = await FindJobAsync(id, ct);
-        if (row is null) return NotFoundProblem();
+        // Papel insuficiente para um pacote DSR é indistinguível de inexistente (404 — Princípio 4)
+        if (row is null || !CanAccessKind(row.Kind)) return NotFoundProblem();
         return Ok(ToItem(row, clock.GetUtcNow()));
     }
 
@@ -175,7 +195,9 @@ public class ExportsController(
     public async Task<IActionResult> Download(Guid id, CancellationToken ct)
     {
         var row = await FindJobAsync(id, ct);
-        if (row is null) return NotFoundProblem();
+        // Gate de papel ANTES de qualquer 409/410: um pacote DSR fora do alcance do papel é
+        // indistinguível de inexistente (404 — Princípio 4: não confirma sequer a existência).
+        if (row is null || !CanAccessKind(row.Kind)) return NotFoundProblem();
 
         if (row.Status != "done")
             return ProblemResponse(StatusCodes.Status409Conflict,
@@ -187,9 +209,15 @@ public class ExportsController(
             || absolutePath is null || !System.IO.File.Exists(absolutePath))
             return ProblemResponse(StatusCodes.Status410Gone,
                 "Exportação expirada.",
-                detail: "O arquivo ficou disponível por 7 dias. Solicite uma nova exportação.");
+                detail: IsDsrPackage(row.Kind)
+                    ? "O pacote ficou disponível por 72 horas. Solicite uma nova exportação."
+                    : "O arquivo ficou disponível por 7 dias. Solicite uma nova exportação.");
 
-        return PhysicalFile(absolutePath, "text/csv; charset=utf-8", DownloadFileName(row));
+        // pacote DSR/offboarding = application/zip (.zip); CSV de relatório = text/csv
+        var (contentType, fileName) = IsDsrPackage(row.Kind)
+            ? ("application/zip", DownloadFileName(row))
+            : ("text/csv; charset=utf-8", DownloadFileName(row));
+        return PhysicalFile(absolutePath, contentType, fileName);
     }
 
     // ------------------------------------------------------------ helpers
@@ -221,9 +249,41 @@ public class ExportsController(
     private string AbsolutePath(string relativePath) =>
         Path.GetFullPath(Path.Combine(exportOptions.Value.Directory, relativePath));
 
-    /// <summary>Ex.: jornada_2026-06-01_2026-06-10.csv (uso_ para usage_csv — tela /relatorios/uso).</summary>
+    /// <summary>Pacote DSR/offboarding (dsr_subject/dsr_device/tenant_full): ZIP de 72h, não CSV de 7d.</summary>
+    private static bool IsDsrPackage(string kind) =>
+        kind is "dsr_subject" or "dsr_device" or "tenant_full";
+
+    /// <summary>Todos os kinds de pacote DSR — espelha IsDsrPackage para uso em parâmetro SQL.</summary>
+    private static readonly string[] DsrKinds = ["dsr_subject", "dsr_device", "tenant_full"];
+
+    /// <summary>
+    /// Pacotes DSR que o papel pode ALCANÇAR (listar/baixar), espelhando o gate de CRIAÇÃO em
+    /// /privacy/*: dsr_subject/dsr_device = AdminPlus (admin+owner); tenant_full = OwnerOnly.
+    /// Viewer não alcança nenhum. Kinds não-DSR (CSV) ficam fora desta régua (todos os papéis).
+    /// </summary>
+    private static string[] AllowedDsrKindsFor(UserRole role) => role switch
+    {
+        UserRole.Owner => ["dsr_subject", "dsr_device", "tenant_full"],
+        UserRole.Admin => ["dsr_subject", "dsr_device"],
+        _ => [],
+    };
+
+    /// <summary>
+    /// O papel atual pode acessar o ARTEFATO deste kind? CSV (não-DSR) sempre; pacote DSR só se
+    /// o papel poderia tê-lo criado (mesmo gate de /privacy/*). Usado no get/download (404 caso não).
+    /// </summary>
+    private bool CanAccessKind(string kind) =>
+        !IsDsrPackage(kind) || AllowedDsrKindsFor(Auth.CurrentUser.Role(User)).Contains(kind);
+
+    /// <summary>
+    /// CSV: jornada_2026-06-01_2026-06-10.csv (uso_ para usage_csv). Pacote DSR: dsr_subject_{id}.zip
+    /// (o id do job no nome basta — o conteúdo identifica o titular no manifest.json).
+    /// </summary>
     private static string DownloadFileName(JobRow row)
     {
+        if (IsDsrPackage(row.Kind))
+            return $"{row.Kind}_{row.Id}.zip";
+
         using var doc = JsonDocument.Parse(row.ParamsJson);
         var from = doc.RootElement.TryGetProperty("from", out var f) ? f.GetString() : null;
         var to = doc.RootElement.TryGetProperty("to", out var t) ? t.GetString() : null;
