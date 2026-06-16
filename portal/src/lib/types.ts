@@ -208,6 +208,19 @@ export interface DeviceItem {
   last_seen_at: string | null;
   tz_offset_min: number | null;
   clock_offset_ms: number;
+  /**
+   * F4.4 — saúde do agente. notice_acked_at: instante do primeiro NOTICE_ACK
+   * do device (granularidade por device; por usuário Windows é follow-up), null
+   * enquanto pendente. last_tamper_at/last_tamper_reason: último AGENT_TAMPER
+   * materializado na ingestão (raw_events expira em 90 dias; o portal só destaca
+   * os últimos 7). reason ∈ helper_killed | helper_killed_repeatedly | pipe_denied.
+   * agent_outdated: agent_version < min_version do release vigente do canal
+   * 'stable' — comparação SEMVER no BACKEND (o portal apenas exibe o booleano).
+   */
+  notice_acked_at: string | null;
+  last_tamper_at: string | null;
+  last_tamper_reason: string | null;
+  agent_outdated: boolean;
 }
 
 /**

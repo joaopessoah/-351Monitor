@@ -66,4 +66,5 @@ public sealed record ParsedEvent(
     string? WindowTitle,
     DateTimeOffset? LastInputAt,
     string? HeartbeatState,
-    int? AppliedConfigVersion);
+    int? AppliedConfigVersion,
+    string? TamperReason);

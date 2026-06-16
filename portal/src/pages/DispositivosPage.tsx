@@ -4,20 +4,26 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
   ArchiveRestore,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Ellipsis,
   MonitorSmartphone,
   Pencil,
   Search,
+  ShieldAlert,
   Tags,
   TriangleAlert,
+  WifiOff,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { formatRelative, stateLabels } from "@/lib/format";
+import { formatDateTime, formatRelative, stateLabels } from "@/lib/format";
+import { deriveDeviceHealth, tamperReasonLabel, type DeviceHealth } from "@/lib/deviceHealth";
 import { genericErrorMessage } from "@/lib/messages";
 import { isAdmin } from "@/lib/roles";
 import type {
+  BusinessHours,
   DeviceItem,
   DevicePatchRequest,
   MeResponse,
@@ -49,7 +55,6 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const PAGE_SIZE = 50;
-const CLOCK_SKEW_LIMIT_MS = 120_000; // Seção 8.7: |offset| > 2min = relógio dessincronizado.
 
 type DeviceStatus = DeviceItem["status"];
 type StatusFilter = DeviceStatus | "";
@@ -143,6 +148,121 @@ function PresenceStateCell({ presence }: { presence: PresenceItem | undefined })
   );
 }
 
+/**
+ * Badge de saúde NÃO-cromático (Seção 8.5): ícone lucide + rótulo textual
+ * sempre juntos — a cor é redundante, nunca o único portador da informação.
+ * `severe` apenas intensifica o realce do "sem comunicação" (vermelho), igual
+ * ao banner global da Seção 8.1.
+ */
+function HealthBadge({
+  icon: Icon,
+  label,
+  title,
+  severe = false,
+}: {
+  icon: typeof WifiOff;
+  label: string;
+  title?: string;
+  severe?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium",
+        severe ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800",
+      )}
+      title={title}
+    >
+      <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
+/**
+ * Coluna "Saúde": badges não-cromáticos das dimensões acionadas (F4.4). Device
+ * saudável mostra um traço esmaecido. "Relógio dessincronizado" inclui no
+ * tooltip a diferença em segundos (igual à coluna de relógio anterior).
+ */
+function HealthCell({ device, health }: { device: DeviceItem; health: DeviceHealth }) {
+  if (!health.hasAlert) {
+    return <span className="text-muted-foreground">-</span>;
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {health.offline && (
+        <HealthBadge
+          icon={WifiOff}
+          label="Sem comunicação"
+          severe={health.offlineSevere}
+          title={
+            device.last_seen_at === null
+              ? "O dispositivo nunca reportou ao servidor"
+              : health.offlineSevere
+                ? "Sem contato há mais de 30 minutos em horário de trabalho"
+                : "Sem contato há mais de 3 minutos"
+          }
+        />
+      )}
+      {health.clockSkewed && (
+        <HealthBadge
+          icon={TriangleAlert}
+          label="Relógio dessincronizado"
+          severe
+          title={`Diferença de ${Math.round(Math.abs(device.clock_offset_ms) / 1000)}s em relação ao servidor`}
+        />
+      )}
+      {health.outdated && (
+        <HealthBadge
+          icon={TriangleAlert}
+          label="Versão desatualizada"
+          title="Versão do agente abaixo da versão mínima do canal estável"
+        />
+      )}
+      {health.tampered && device.last_tamper_at !== null && (
+        <HealthBadge
+          icon={ShieldAlert}
+          label="Adulteração"
+          severe
+          title={`${tamperReasonLabel(device.last_tamper_reason)} (últimos 7 dias)`}
+        />
+      )}
+      {health.noticePending && (
+        <HealthBadge
+          icon={Clock}
+          label="Ciência pendente"
+          title="O aviso de coleta ainda não foi confirmado neste dispositivo"
+        />
+      )}
+    </span>
+  );
+}
+
+/**
+ * Coluna "Ciência" (NOTICE_ACK, Seção 8.1 / DoD F4): data do primeiro ack
+ * formatada em pt-BR (dd/mm/aaaa HH:mm) ou "Ciência pendente". Granularidade
+ * por device (por usuário Windows é follow-up).
+ */
+function NoticeCell({ device, timezone }: { device: DeviceItem; timezone: string | undefined }) {
+  if (device.notice_acked_at === null) {
+    return (
+      <span className="inline-flex items-center gap-1 whitespace-nowrap text-amber-800">
+        <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        Ciência pendente
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-1 whitespace-nowrap tabular-nums text-muted-foreground"
+      title="Aviso de coleta confirmado no dispositivo"
+    >
+      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden="true" />
+      {timezone !== undefined ? formatDateTime(device.notice_acked_at, timezone) : "-"}
+    </span>
+  );
+}
+
 const headerCell = "px-3 py-2 text-left font-medium";
 const bodyCell = "px-3 py-1.5 align-middle";
 
@@ -158,7 +278,8 @@ function TableHead({ showActions }: { showActions: boolean }) {
         <th className={headerCell}>Último contato</th>
         <th className={headerCell}>Versão</th>
         <th className={headerCell}>Fuso</th>
-        <th className={headerCell}>Relógio</th>
+        <th className={headerCell}>Saúde</th>
+        <th className={headerCell}>Ciência</th>
         <th className={headerCell}>Status</th>
         <th className={headerCell}>Tags</th>
         {showActions && <th className={cn(headerCell, "w-12 text-right")}>Ações</th>}
@@ -167,7 +288,7 @@ function TableHead({ showActions }: { showActions: boolean }) {
   );
 }
 
-const skeletonWidths = ["w-32", "w-24", "w-20", "w-20", "w-16", "w-12", "w-12", "w-24", "w-14", "w-20"];
+const skeletonWidths = ["w-32", "w-24", "w-20", "w-20", "w-16", "w-12", "w-12", "w-28", "w-28", "w-14", "w-20"];
 
 /**
  * Lista de dispositivos com saúde dos agentes (F2, Seção 8.7) + ações de
@@ -186,6 +307,10 @@ export function DispositivosPage() {
   const [tag, setTag] = useState("");
   const [status, setStatus] = useState<StatusFilter>("");
   const [includeArchived, setIncludeArchived] = useState(false);
+  // Toggle "Somente com alertas": filtro CLIENT-SIDE sobre a página corrente
+  // (a saúde é derivada no portal e não há parâmetro de query no backend para
+  // ela; documentado). Os contadores no topo refletem apenas a página visível.
+  const [onlyAlerts, setOnlyAlerts] = useState(false);
   const [page, setPage] = useState(1);
 
   // Ação aberta no momento (dialog) - as PRIMEIRAS mutações desta tela (F3.7).
@@ -259,6 +384,7 @@ export function DispositivosPage() {
   const admin = isAdmin(meQuery.data);
 
   const orgTimezone = meQuery.data?.organization.timezone;
+  const businessHours: BusinessHours | null = meQuery.data?.organization.business_hours ?? null;
   const orgOffsetMin = useMemo(
     () => (orgTimezone !== undefined ? timezoneOffsetMinutes(orgTimezone) : null),
     [orgTimezone],
@@ -268,7 +394,56 @@ export function DispositivosPage() {
   // exceto como fallback enquanto a presença não carregou).
   const referenceTime = presenceQuery.data?.server_time ?? new Date().toISOString();
 
-  const hasActiveFilters = q.length > 0 || tag.length > 0 || status.length > 0 || includeArchived;
+  const pageItems = useMemo(() => devicesQuery.data?.items ?? [], [devicesQuery.data]);
+
+  // Saúde derivada por device da PÁGINA corrente (a derivação é client-side;
+  // ver comentário do toggle onlyAlerts). Reusada nos contadores, no filtro e
+  // na ordenação "problemas primeiro".
+  const healthByDevice = useMemo(() => {
+    const map = new Map<string, DeviceHealth>();
+    for (const d of pageItems) {
+      map.set(d.id, deriveDeviceHealth(d, referenceTime, businessHours, orgTimezone));
+    }
+    return map;
+  }, [pageItems, referenceTime, businessHours, orgTimezone]);
+
+  // Contadores da página visível (a saúde é derivada por página — documentado).
+  const alertCounts = useMemo(() => {
+    const c = { withAlert: 0, offline: 0, clockSkewed: 0, outdated: 0, tampered: 0, noticePending: 0 };
+    for (const h of healthByDevice.values()) {
+      if (h.hasAlert) c.withAlert += 1;
+      if (h.offline) c.offline += 1;
+      if (h.clockSkewed) c.clockSkewed += 1;
+      if (h.outdated) c.outdated += 1;
+      if (h.tampered) c.tampered += 1;
+      if (h.noticePending) c.noticePending += 1;
+    }
+    return c;
+  }, [healthByDevice]);
+
+  // Linhas exibidas: filtro "Somente com alertas" + ordenação "problemas
+  // primeiro" (sem comunicação severa, depois com alerta, depois saudáveis;
+  // desempate por nome). Mantém a ordem do backend dentro de cada bucket.
+  const visibleItems = useMemo(() => {
+    const filtered = onlyAlerts
+      ? pageItems.filter((d) => healthByDevice.get(d.id)?.hasAlert === true)
+      : pageItems;
+    const rank = (d: DeviceItem): number => {
+      const h = healthByDevice.get(d.id);
+      if (h === undefined) return 2;
+      if (h.offlineSevere) return 0;
+      if (h.hasAlert) return 1;
+      return 2;
+    };
+    return [...filtered].sort((a, b) => {
+      const byRank = rank(a) - rank(b);
+      if (byRank !== 0) return byRank;
+      return (a.display_name ?? a.hostname).localeCompare(b.display_name ?? b.hostname, "pt-BR");
+    });
+  }, [pageItems, healthByDevice, onlyAlerts]);
+
+  const hasActiveFilters =
+    q.length > 0 || tag.length > 0 || status.length > 0 || includeArchived || onlyAlerts;
 
   function clearFilters() {
     setQInput("");
@@ -277,6 +452,7 @@ export function DispositivosPage() {
     setTag("");
     setStatus("");
     setIncludeArchived(false);
+    setOnlyAlerts(false);
     setPage(1);
   }
 
@@ -365,7 +541,77 @@ export function DispositivosPage() {
           />
           Incluir arquivados
         </label>
+        <label
+          className="flex h-9 cursor-pointer items-center gap-2 text-sm"
+          title="Mostra apenas os dispositivos com algum alerta de saúde nesta página"
+        >
+          <input
+            type="checkbox"
+            checked={onlyAlerts}
+            onChange={(e) => setOnlyAlerts(e.target.checked)}
+            className="h-4 w-4 accent-primary"
+          />
+          Somente com alertas
+        </label>
       </div>
+
+      {/* Resumo de saúde da página (a derivação é client-side; ver toggle). */}
+      {!devicesQuery.isPending && !devicesQuery.isError && total > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <button
+            type="button"
+            onClick={() => setOnlyAlerts((v) => !v)}
+            aria-pressed={onlyAlerts}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-medium transition-colors",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              alertCounts.withAlert > 0
+                ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                : "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100",
+              onlyAlerts && "ring-2 ring-amber-500/40",
+            )}
+          >
+            {alertCounts.withAlert > 0 ? (
+              <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            ) : (
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            )}
+            {alertCounts.withAlert > 0
+              ? `${alertCounts.withAlert} ${alertCounts.withAlert === 1 ? "dispositivo" : "dispositivos"} com alerta`
+              : "Nenhum alerta nesta página"}
+          </button>
+          {alertCounts.offline > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 tabular-nums text-secondary-foreground">
+              <WifiOff className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              {alertCounts.offline} sem comunicação
+            </span>
+          )}
+          {alertCounts.clockSkewed > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 tabular-nums text-secondary-foreground">
+              <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              {alertCounts.clockSkewed} com relógio dessincronizado
+            </span>
+          )}
+          {alertCounts.outdated > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 tabular-nums text-secondary-foreground">
+              <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              {alertCounts.outdated} com versão desatualizada
+            </span>
+          )}
+          {alertCounts.tampered > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 tabular-nums text-secondary-foreground">
+              <ShieldAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              {alertCounts.tampered} com adulteração
+            </span>
+          )}
+          {alertCounts.noticePending > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 tabular-nums text-secondary-foreground">
+              <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              {alertCounts.noticePending} com ciência pendente
+            </span>
+          )}
+        </div>
+      )}
 
       {presenceQuery.isError && presenceQuery.data === undefined && (
         <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
@@ -437,10 +683,22 @@ export function DispositivosPage() {
               >
                 <TableHead showActions={admin} />
                 <tbody>
-                  {(devices?.items ?? []).map((d) => {
+                  {visibleItems.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={admin ? 12 : 11}
+                        className="px-6 py-8 text-center text-sm text-muted-foreground"
+                      >
+                        Nenhum dispositivo com alerta nesta página.
+                      </td>
+                    </tr>
+                  ) : (
+                    visibleItems.map((d) => {
                     const p = presenceByDevice.get(d.id);
-                    const noData = p?.presence_state === "no_data";
-                    const clockSkewed = Math.abs(d.clock_offset_ms) > CLOCK_SKEW_LIMIT_MS;
+                    const health =
+                      healthByDevice.get(d.id) ??
+                      deriveDeviceHealth(d, referenceTime, businessHours, orgTimezone);
+                    const highlight = p?.presence_state === "no_data" || health.offlineSevere;
                     const tzDiverges =
                       d.tz_offset_min !== null &&
                       orgOffsetMin !== null &&
@@ -455,7 +713,7 @@ export function DispositivosPage() {
                         }}
                         className={cn(
                           "h-9 cursor-pointer border-b transition-colors last:border-0 focus-visible:outline-none",
-                          noData
+                          highlight
                             ? "bg-red-50 hover:bg-red-100/70 focus-visible:bg-red-100/70"
                             : "hover:bg-accent focus-visible:bg-accent",
                         )}
@@ -501,17 +759,10 @@ export function DispositivosPage() {
                           )}
                         </td>
                         <td className={bodyCell}>
-                          {clockSkewed ? (
-                            <span
-                              className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700"
-                              title={`Diferença de ${Math.round(Math.abs(d.clock_offset_ms) / 1000)}s em relação ao servidor`}
-                            >
-                              <TriangleAlert className="h-3 w-3 shrink-0" aria-hidden="true" />
-                              relógio dessincronizado
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
+                          <HealthCell device={d} health={health} />
+                        </td>
+                        <td className={cn(bodyCell, "text-xs")}>
+                          <NoticeCell device={d} timezone={orgTimezone} />
                         </td>
                         <td className={bodyCell}>
                           <span
@@ -558,7 +809,8 @@ export function DispositivosPage() {
                         )}
                       </tr>
                     );
-                  })}
+                    })
+                  )}
                 </tbody>
               </table>
             </div>

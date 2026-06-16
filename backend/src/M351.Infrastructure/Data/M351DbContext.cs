@@ -145,6 +145,8 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
             e.Property(x => x.TzIana).HasColumnName("tz_iana").HasColumnType("text");
             e.Property(x => x.SeqMax).HasColumnName("seq_max");
             e.Property(x => x.NoticeAckedAt).HasColumnName("notice_acked_at");
+            e.Property(x => x.LastTamperAt).HasColumnName("last_tamper_at");
+            e.Property(x => x.LastTamperReason).HasColumnName("last_tamper_reason").HasColumnType("text");
             e.HasOne<EnrollmentKey>().WithMany().HasForeignKey(x => x.EnrollmentKeyId);
             e.HasIndex(x => new { x.TenantId, x.MachineFingerprint }).IsUnique();
             e.HasIndex(x => new { x.TenantId, x.LastSeenAt }).HasDatabaseName("ix_devices_tenant_lastseen");

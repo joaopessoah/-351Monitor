@@ -30,6 +30,9 @@ public sealed class IngestService(
 
     private static readonly string[] HeartbeatStates = ["active", "idle", "locked", "no_session"];
 
+    // motivos canônicos do AGENT_TAMPER (N19) — só estes são materializados em devices (F4.4)
+    private static readonly string[] TamperReasons = ["helper_killed", "helper_killed_repeatedly", "pipe_denied"];
+
     public async Task<IngestAckResponse> ProcessAsync(
         Guid tenantId, Guid deviceId, IngestBatch batch, CancellationToken ct)
     {
@@ -185,6 +188,7 @@ public sealed class IngestService(
         DateTimeOffset? lastInputAt = null;
         string? heartbeatState = null;
         int? appliedConfigVersion = null;
+        string? tamperReason = null;
 
         if (hasData)
         {
@@ -211,6 +215,13 @@ public sealed class IngestService(
             {
                 appliedConfigVersion = (int)cv;
             }
+
+            // AGENT_TAMPER (N19): reason canônico de data.reason — saúde F4.4 (motivo desconhecido = ignora)
+            if (type == EventTypes.AgentTamper
+                && GetString(data, "reason") is { } reason && TamperReasons.Contains(reason))
+            {
+                tamperReason = reason;
+            }
         }
 
         parsed = new ParsedEvent(
@@ -229,7 +240,8 @@ public sealed class IngestService(
             WindowTitle: windowTitle,
             LastInputAt: lastInputAt,
             HeartbeatState: heartbeatState,
-            AppliedConfigVersion: appliedConfigVersion);
+            AppliedConfigVersion: appliedConfigVersion,
+            TamperReason: tamperReason);
 
         return ParseOutcome.Valid;
     }
@@ -322,6 +334,11 @@ public sealed class IngestService(
             .Where(v => v.Type == EventTypes.NoticeAck)
             .Select(v => (DateTimeOffset?)v.OccurredAt)
             .Max();
+        // tamper mais recente do lote (por occurred_at): timestamp + reason do MESMO evento, para o
+        // reason acompanhar o timestamp materializado (saúde F4.4, N19)
+        var latestTamper = valid
+            .Where(v => v.Type == EventTypes.AgentTamper && v.TamperReason is not null)
+            .MaxBy(v => v.OccurredAt);
         var appliedConfigVersion = valid
             .Where(v => v.Type == EventTypes.PolicyApplied && v.AppliedConfigVersion is not null)
             .Select(v => v.AppliedConfigVersion)
@@ -335,6 +352,8 @@ public sealed class IngestService(
         parameters.Add("MaxSeq", valid.Count > 0 ? valid.Max(v => v.Seq) : 0L, DbType.Int64);
         parameters.Add("Tz", lastBySeq?.TzOffsetMin, DbType.Int32);
         parameters.Add("NoticeAt", noticeAckedAt, DbType.DateTimeOffset);
+        parameters.Add("TamperAt", latestTamper?.OccurredAt, DbType.DateTimeOffset);
+        parameters.Add("TamperReason", latestTamper?.TamperReason, DbType.String);
         parameters.Add("AppliedConfigVersion", appliedConfigVersion, DbType.Int32);
         parameters.Add("Skew", skewMs, DbType.Int64);
 
@@ -346,6 +365,14 @@ public sealed class IngestService(
               seq_max = GREATEST(seq_max, @MaxSeq),
               tz_offset_min = COALESCE(@Tz, tz_offset_min),
               notice_acked_at = COALESCE(@NoticeAt, notice_acked_at),
+              -- tamper monotônico (N19/F4.4): GREATEST no timestamp; o reason só troca quando o
+              -- tamper do lote é mais recente que o já materializado (lote antigo não regride o reason)
+              last_tamper_at = GREATEST(last_tamper_at, @TamperAt),
+              last_tamper_reason = CASE
+                WHEN @TamperAt IS NULL THEN last_tamper_reason
+                WHEN last_tamper_at IS NULL OR @TamperAt > last_tamper_at THEN @TamperReason
+                ELSE last_tamper_reason
+              END,
               config_version = COALESCE(@AppliedConfigVersion, config_version),
               clock_offset_ms = CASE
                 WHEN @Skew IS NULL THEN clock_offset_ms

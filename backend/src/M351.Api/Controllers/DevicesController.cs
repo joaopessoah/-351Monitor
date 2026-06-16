@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Dapper;
+using M351.Api.Agent;
 using M351.Api.Auth;
 using M351.Api.Contracts;
 using M351.Api.Services;
@@ -9,14 +11,42 @@ using M351.Infrastructure.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace M351.Api.Controllers;
 
 [Route("api/v1/devices")]
 [Authorize] // Viewer+ (policy default exige token de acesso pleno)
-public class DevicesController(M351DbContext db, AuditWriter audit) : ApiControllerBase
+public class DevicesController(M351DbContext db, AuditWriter audit, NpgsqlDataSource dataSource) : ApiControllerBase
 {
     private const int MaxPageSize = 100;
+
+    /// <summary>
+    /// min_version do release current do canal 'stable' (F4.2) — lida UMA vez por request e
+    /// comparada em memória (SemVer no backend, sem confiar no portal). Null quando não há release
+    /// publicado: nesse caso nenhum device é "desatualizado".
+    /// </summary>
+    private async Task<string?> CurrentStableMinVersionAsync(CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        return await connection.ExecuteScalarAsync<string?>(new CommandDefinition(
+            "SELECT min_version FROM agent_releases WHERE channel = @Channel AND is_current",
+            new { Channel = AgentUpdateEndpoints.DefaultChannel }, cancellationToken: ct));
+    }
+
+    /// <summary>Projeção EF crua (sem semver): a flag agent_outdated é calculada em memória.</summary>
+    private sealed record DeviceRow(
+        Guid Id, string Hostname, string? DisplayName, string OsType, string? OsVersion,
+        string? AgentVersion, string Status, string[]? Tags, DateTimeOffset? LastSeenAt,
+        int? TzOffsetMin, long ClockOffsetMs, DateTimeOffset? NoticeAckedAt,
+        DateTimeOffset? LastTamperAt, string? LastTamperReason);
+
+    /// <summary>Monta o DeviceResponse aplicando o SemVer.IsOutdated com o min_version do request.</summary>
+    private static DeviceResponse ToResponse(DeviceRow d, string? minVersion) =>
+        new(d.Id, d.Hostname, d.DisplayName, d.OsType, d.OsVersion, d.AgentVersion,
+            d.Status, d.Tags, d.LastSeenAt, d.TzOffsetMin, d.ClockOffsetMs,
+            d.NoticeAckedAt, d.LastTamperAt, d.LastTamperReason,
+            AgentOutdated: SemVer.IsOutdated(d.AgentVersion, minVersion));
 
     /// <summary>
     /// Lista paginada de devices do tenant com filtros da F2 (Seção 7.4):
@@ -49,13 +79,18 @@ public class DevicesController(M351DbContext db, AuditWriter audit) : ApiControl
 
         var query = filtered.OrderBy(d => d.Hostname);
         var total = await query.CountAsync(ct);
-        var items = await query
+        var rows = await query
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(d => new DeviceResponse(
+            .Select(d => new DeviceRow(
                 d.Id, d.Hostname, d.DisplayName, d.OsType, d.OsVersion, d.AgentVersion,
-                d.Status, d.Tags, d.LastSeenAt, d.TzOffsetMin, d.ClockOffsetMs))
+                d.Status, d.Tags, d.LastSeenAt, d.TzOffsetMin, d.ClockOffsetMs,
+                d.NoticeAckedAt, d.LastTamperAt, d.LastTamperReason))
             .ToListAsync(ct);
+
+        // min_version lido UMA vez por request; agent_outdated comparado em memória (SemVer no backend)
+        var minVersion = await CurrentStableMinVersionAsync(ct);
+        var items = rows.Select(d => ToResponse(d, minVersion)).ToList();
 
         return Ok(new PagedResponse<DeviceResponse>(items, total, page, pageSize));
     }
@@ -63,14 +98,21 @@ public class DevicesController(M351DbContext db, AuditWriter audit) : ApiControl
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
-        var device = await db.Devices
+        var row = await db.Devices
             .Where(d => d.Id == id)
-            .Select(d => new DeviceResponse(
+            .Select(d => new DeviceRow(
                 d.Id, d.Hostname, d.DisplayName, d.OsType, d.OsVersion, d.AgentVersion,
-                d.Status, d.Tags, d.LastSeenAt, d.TzOffsetMin, d.ClockOffsetMs))
+                d.Status, d.Tags, d.LastSeenAt, d.TzOffsetMin, d.ClockOffsetMs,
+                d.NoticeAckedAt, d.LastTamperAt, d.LastTamperReason))
             .FirstOrDefaultAsync(ct);
 
-        return device is null ? NotFoundProblem() : Ok(device);
+        if (row is null)
+        {
+            return NotFoundProblem();
+        }
+
+        var minVersion = await CurrentStableMinVersionAsync(ct);
+        return Ok(ToResponse(row, minVersion));
     }
 
     private const int MaxDisplayNameLength = 200;
@@ -204,11 +246,14 @@ public class DevicesController(M351DbContext db, AuditWriter audit) : ApiControl
             await db.SaveChangesAsync(ct);
         }
 
-        // mesmo shape do GET {id}
-        return Ok(new DeviceResponse(
+        // mesmo shape do GET {id} (inclui as dimensões de saúde da F4.4)
+        var minVersion = await CurrentStableMinVersionAsync(ct);
+        var row = new DeviceRow(
             device.Id, device.Hostname, device.DisplayName, device.OsType, device.OsVersion,
             device.AgentVersion, device.Status, device.Tags, device.LastSeenAt,
-            device.TzOffsetMin, device.ClockOffsetMs));
+            device.TzOffsetMin, device.ClockOffsetMs, device.NoticeAckedAt,
+            device.LastTamperAt, device.LastTamperReason);
+        return Ok(ToResponse(row, minVersion));
     }
 
     /// <summary>null e lista vazia são equivalentes (sem tags): troca entre eles não é mudança.</summary>

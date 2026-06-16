@@ -132,3 +132,18 @@ export function formatDayMonthTime(iso: string, timezone: string): string {
   const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? "";
   return `${get("day")}/${get("month")} ${get("hour")}:${get("minute")}`;
 }
+
+/** "10/06/2026 14:32" (dd/mm/aaaa HH:mm) de um instante ISO no fuso do tenant. */
+export function formatDateTime(iso: string, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: timezone,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(iso));
+  const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("day")}/${get("month")}/${get("year")} ${get("hour")}:${get("minute")}`;
+}

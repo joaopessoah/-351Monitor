@@ -28,6 +28,10 @@ public class TimelineEndpointTests(ApiTestFixture fixture)
     /// <summary>Dia local (America/Sao_Paulo, GMT-3) de um instante UTC.</summary>
     private static string LocalDate(DateTimeOffset utc) => utc.AddHours(-3).ToString("yyyy-MM-dd");
 
+    /// <summary>Meia-noite local (GMT-3) do dia de um instante UTC, como DateTimeOffset.</summary>
+    private static DateTimeOffset MeiaNoiteLocal(DateTimeOffset utc) =>
+        new(utc.AddHours(-3).Date, TimeSpan.FromHours(-3));
+
     private async Task<(HttpClient Client, EnrolledDevice Device, string Token)> SetupAsync(string hostname)
     {
         var org = await fixture.CreateOrganizationAsync($"Timeline {Guid.NewGuid():N}"[..20]);
@@ -214,14 +218,22 @@ public class TimelineEndpointTests(ApiTestFixture fixture)
     {
         var (client, device, token) = await SetupAsync("NB-TL-CAUDA");
         var now = DateTimeOffset.UtcNow;
+        // A atividade precisa cair no dia LOCAL corrente (a timeline de hoje so sintetiza cauda
+        // viva para o dia atual). Na primeira hora apos a meia-noite local, now-40/now-31 cairiam
+        // em ONTEM (local) e a timeline de hoje ficaria sem atividade — ancora apos a meia-noite
+        // local para o cenario ser deterministico em qualquer horario. O silencio vem do override
+        // de last_contact_at abaixo (absoluto), nao do espacamento dos eventos.
+        var meiaNoite = MeiaNoiteLocal(now);
+        var ativo = now.AddMinutes(-40) < meiaNoite ? meiaNoite.AddSeconds(1) : now.AddMinutes(-40);
+        var heartbeat = now.AddMinutes(-31) <= ativo ? ativo.AddSeconds(30) : now.AddMinutes(-31);
         var factory = new EventFactory();
         var ack = await AgentClient.SendBatchAsync(client, device.DeviceToken, new[]
         {
-            factory.Event("ACTIVE_WINDOW_CHANGED", now.AddMinutes(-40), new Dictionary<string, object?>
+            factory.Event("ACTIVE_WINDOW_CHANGED", ativo, new Dictionary<string, object?>
             {
                 ["process_name"] = "chrome.exe",
             }),
-            factory.Event("HEARTBEAT", now.AddMinutes(-31), new Dictionary<string, object?> { ["state"] = "active" }),
+            factory.Event("HEARTBEAT", heartbeat, new Dictionary<string, object?> { ["state"] = "active" }),
         });
         (await AgentClient.ReadAckAsync(ack)).Dispose();
         await RunPipelineAsync();
@@ -244,14 +256,19 @@ public class TimelineEndpointTests(ApiTestFixture fixture)
     {
         var (client, device, token) = await SetupAsync("NB-TL-CAUDA-OFF");
         var now = DateTimeOffset.UtcNow;
+        // Mesma borda de meia-noite do cenario de no_data: a atividade + suspensao precisam cair
+        // no dia local de hoje (ancora apos a meia-noite local na primeira hora do dia).
+        var meiaNoite = MeiaNoiteLocal(now);
+        var ativo = now.AddMinutes(-20) < meiaNoite ? meiaNoite.AddSeconds(1) : now.AddMinutes(-20);
+        var suspend = now.AddMinutes(-15) <= ativo ? ativo.AddSeconds(30) : now.AddMinutes(-15);
         var factory = new EventFactory();
         var ack = await AgentClient.SendBatchAsync(client, device.DeviceToken, new[]
         {
-            factory.Event("ACTIVE_WINDOW_CHANGED", now.AddMinutes(-20), new Dictionary<string, object?>
+            factory.Event("ACTIVE_WINDOW_CHANGED", ativo, new Dictionary<string, object?>
             {
                 ["process_name"] = "chrome.exe",
             }),
-            factory.Event("SYSTEM_SUSPEND", now.AddMinutes(-15),
+            factory.Event("SYSTEM_SUSPEND", suspend,
                 windowsSid: null, windowsUser: null, sessionId: null),
         });
         (await AgentClient.ReadAckAsync(ack)).Dispose();

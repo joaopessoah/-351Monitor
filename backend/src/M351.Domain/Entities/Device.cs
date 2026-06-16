@@ -28,4 +28,10 @@ public class Device : ITenantEntity
     public string? TzIana { get; set; }
     public long SeqMax { get; set; }
     public DateTimeOffset? NoticeAckedAt { get; set; }
+
+    /// <summary>Ultimo AGENT_TAMPER materializado na ingestao (monotonico, igual ao notice_acked_at) — saude F4.4.</summary>
+    public DateTimeOffset? LastTamperAt { get; set; }
+
+    /// <summary>Motivo do tamper mais recente: helper_killed | helper_killed_repeatedly | pipe_denied (N19).</summary>
+    public string? LastTamperReason { get; set; }
 }
