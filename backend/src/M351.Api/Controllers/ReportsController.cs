@@ -1,9 +1,8 @@
 using System.Text.Json;
 using Dapper;
+using M351.Api.Auditing;
 using M351.Api.Contracts;
-using M351.Api.Services;
 using M351.Domain.Entities;
-using M351.Infrastructure.Data;
 using M351.Infrastructure.Reports;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -26,8 +25,7 @@ namespace M351.Api.Controllers;
 [Authorize] // Viewer+
 public class ReportsController(
     NpgsqlDataSource dataSource,
-    M351DbContext db,
-    AuditWriter audit) : ApiControllerBase
+    AuditReadContext readAudit) : ApiControllerBase
 {
     public const int DefaultPageSize = 50;
     public const int MaxPageSize = 100;
@@ -39,6 +37,7 @@ public class ReportsController(
     private static readonly Guid MachineLane = Guid.Empty;
 
     [HttpGet("usage")]
+    [AuditRead] // DoD 11.3: view_report CONDICIONAL (device/device_user/device_ids) via AuditReadFilter
     public async Task<IActionResult> Usage(
         [FromQuery(Name = "from")] string? from,
         [FromQuery(Name = "to")] string? to,
@@ -109,15 +108,16 @@ public class ReportsController(
 
         // DoD 11.3: por device/device_user (ou com filtro de devices) é dado pessoal
         // identificável → view_report. Alvo: o device quando o filtro é um só; senão "team"
-        // (mesma convenção do timeline/team — o tenant já está em tenant_id).
+        // (mesma convenção do timeline/team — o tenant já está em tenant_id). Gravação consolidada
+        // no AuditReadFilter (após o 2xx, com actor_ip); CONDICIONAL: só registra quando o recorte
+        // é pessoal (app/category sem filtro são agregados de equipe e não auditam).
         if (groupBy is "device" or "device_user" || deviceIds is { Length: > 0 })
         {
-            audit.Add(tenantId, AuditActions.ViewReport,
-                actorUserId: Auth.CurrentUser.UserId(User),
+            readAudit.Record(tenantId, AuditActions.ViewReport,
+                Auth.CurrentUser.UserId(User),
                 targetType: deviceIds is { Length: 1 } ? "device" : "team",
                 targetId: deviceIds is { Length: 1 } ? deviceIds[0] : null,
                 detailJson: JsonSerializer.Serialize(new { from, to, group_by = groupBy, device_ids = deviceIds }));
-            await db.SaveChangesAsync(ct);
         }
 
         return Ok(response);
@@ -139,6 +139,7 @@ public class ReportsController(
     ///  - device_totals respondem pelo range inteiro, independente da página.
     /// </summary>
     [HttpGet("jornada")]
+    [AuditRead] // DoD 11.3: jornada é SEMPRE dado pessoal — view_report incondicional via AuditReadFilter
     public async Task<IActionResult> Jornada(
         [FromQuery(Name = "from")] string? from,
         [FromQuery(Name = "to")] string? to,
@@ -212,13 +213,13 @@ public class ReportsController(
                 t.DeviceId, t.DeviceName, t.SecondsOn, t.SecondsActive, t.SecondsIdle,
                 t.SecondsLocked, t.DaysWithData)).ToList());
 
-        // DoD 11.3: jornada é SEMPRE dado pessoal → view_report incondicional
-        audit.Add(tenantId, AuditActions.ViewReport,
-            actorUserId: Auth.CurrentUser.UserId(User),
+        // DoD 11.3: jornada é SEMPRE dado pessoal → view_report incondicional. Gravação
+        // consolidada no AuditReadFilter (após o 2xx, com actor_ip preenchido).
+        readAudit.Record(tenantId, AuditActions.ViewReport,
+            Auth.CurrentUser.UserId(User),
             targetType: deviceIds is { Length: 1 } ? "device" : "team",
             targetId: deviceIds is { Length: 1 } ? deviceIds[0] : null,
             detailJson: JsonSerializer.Serialize(new { from, to, device_ids = deviceIds }));
-        await db.SaveChangesAsync(ct);
 
         return Ok(response);
     }

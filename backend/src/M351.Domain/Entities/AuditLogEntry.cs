@@ -14,6 +14,14 @@ public static class AuditActions
     public const string ViewReport = "view_report";
 
     /// <summary>
+    /// Visualização da linha do tempo (F3.4, Seção 7.4): GET /timeline/device (alvo device) e
+    /// /timeline/team (dado pessoal de VÁRIAS pessoas — target_type "team", sem alvo individual).
+    /// Era gravado como string literal "view_timeline" nos controllers (F3.4); F4.7 promove a
+    /// constante e CONSOLIDA a gravação no filter de auditoria de leitura (AuditReadFilter).
+    /// </summary>
+    public const string ViewTimeline = "view_timeline";
+
+    /// <summary>
     /// Mudança de categorização que dispara a reagregação de 30 dias (F3.3): PATCH de categoria
     /// com troca de classification, DELETE de categoria e PUT de mapeamento app→categoria.
     /// </summary>

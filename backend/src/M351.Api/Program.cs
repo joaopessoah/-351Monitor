@@ -36,6 +36,12 @@ builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddScoped<AuthFlowService>();
 builder.Services.AddScoped<AuditWriter>();
 
+// F4.7 — auditoria de leitura: contexto por-request (o controller descreve o que foi acessado)
+// + filter que grava a linha em audit_log APÓS a resposta 2xx (consolida view_timeline/view_report
+// incondicionais; actor_ip sempre preenchido). Filter scoped pois usa AuditWriter/DbContext scoped.
+builder.Services.AddScoped<M351.Api.Auditing.AuditReadContext>();
+builder.Services.AddScoped<M351.Api.Auditing.AuditReadFilter>();
+
 // F1 — ingestão (hot path em Dapper/Npgsql — Seção 7) e enrollment
 builder.Services.AddSingleton(provider =>
     NpgsqlDataSource.Create(provider.GetRequiredService<IConfiguration>().GetConnectionString("Default")
@@ -63,7 +69,12 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
         System.Net.IPAddress.Parse("172.16.0.0"), 12));
 });
 
-builder.Services.AddControllers().AddJsonOptions(options =>
+builder.Services.AddControllers(options =>
+{
+    // F4.7 — filter global de auditoria de leitura: inerte exceto nas ações que preenchem o
+    // AuditReadContext (anotadas [AuditRead]); grava a trilha só em 2xx (ver AuditReadFilter).
+    options.Filters.AddService<M351.Api.Auditing.AuditReadFilter>();
+}).AddJsonOptions(options =>
 {
     options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
     options.JsonSerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.SnakeCaseLower;

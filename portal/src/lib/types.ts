@@ -645,3 +645,56 @@ export interface DsrReceipt {
 export interface DsrDeleteResponse {
   receipt: DsrReceipt;
 }
+
+// =============================================================================
+// Contratos da F4.7: auditoria de acesso (GET /audit-logs) e a listagem de
+// usuários (GET /users) usada para o filtro por ator. PolicyAdminPlus
+// (Owner+Admin) — o Viewer NÃO acessa nenhum dos dois. JSON snake_case.
+// =============================================================================
+
+/**
+ * Item de `GET /users` (já existente no backend, PolicyAdminPlus). Aqui só nos
+ * interessam id/nome/e-mail para popular o filtro por ator da auditoria; o
+ * restante do shape (status, mfa, etc.) é ignorado por este consumidor.
+ */
+export interface UserListItem {
+  id: string;
+  email: string;
+  display_name: string;
+  role: Role;
+}
+
+export interface UsersResponse {
+  items: UserListItem[];
+}
+
+/**
+ * Linha de `GET /audit-logs` (PolicyAdminPlus, Owner+Admin). A própria leitura
+ * de /audit-logs NÃO é auditada (evita recursão). actor_name é o
+ * display_name/e-mail resolvido pelo backend via join em users; null para ações
+ * de SISTEMA (ex.: tokens de serviço, jobs). actor_ip é texto (inet) ou null
+ * (ações sem IP, como gravações em transação). detail é o jsonb cru da ação
+ * (período/filtros/alvo) — o portal resume os campos conhecidos.
+ */
+export interface AuditLogItem {
+  id: string;
+  occurred_at: string;
+  actor_user_id: string | null;
+  actor_name: string | null;
+  actor_ip: string | null;
+  /** Verbo da ação no vocabulário do backend (ex.: "view_timeline", "export_csv"). */
+  action: string;
+  /** Tipo do alvo (ex.: "device", "team", "report", "user") — null para ações sem alvo. */
+  target_type: string | null;
+  /** Id do alvo (UUID, slug, etc.) — null para ações sem alvo. */
+  target_id: string | null;
+  /** jsonb cru da ação: período (from/to), filtros aplicados, etc. — pode ser null. */
+  detail: Record<string, unknown> | null;
+}
+
+export interface AuditLogsResponse {
+  items: AuditLogItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}

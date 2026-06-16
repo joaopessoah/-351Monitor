@@ -138,6 +138,7 @@ public class ExportsController(
             await AuditWriter.AddInTransactionAsync(
                 connection, tx, tenantId, AuditActions.ExportCsv,
                 actorUserId: userId,
+                actorIp: HttpContext.Connection.RemoteIpAddress,
                 targetType: "export_job", targetId: jobId,
                 detailJson: JsonSerializer.Serialize(new Dictionary<string, object?>
                 {

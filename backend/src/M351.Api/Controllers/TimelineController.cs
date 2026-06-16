@@ -2,10 +2,10 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Dapper;
+using M351.Api.Auditing;
 using M351.Api.Auth;
 using M351.Api.Contracts;
-using M351.Api.Services;
-using M351.Infrastructure.Data;
+using M351.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
@@ -32,8 +32,7 @@ namespace M351.Api.Controllers;
 [Authorize] // Viewer+
 public class TimelineController(
     NpgsqlDataSource dataSource,
-    M351DbContext db,
-    AuditWriter audit,
+    AuditReadContext readAudit,
     TimeProvider clock) : ApiControllerBase
 {
     public const int ResolutionSec = 60;     // N21
@@ -41,6 +40,7 @@ public class TimelineController(
     private static readonly TimeSpan GapThreshold = TimeSpan.FromSeconds(600); // N7
 
     [HttpGet("device")]
+    [AuditRead] // DoD 11.3: leitura de dado pessoal — view_timeline gravado pelo AuditReadFilter (2xx)
     public async Task<IActionResult> Device(
         [FromQuery(Name = "device_id")] Guid? deviceId,
         [FromQuery(Name = "date")] string? date,
@@ -130,12 +130,13 @@ public class TimelineController(
             intervals,
             summary);
 
-        // DoD 11.3: toda visualização de dado pessoal gera linha em audit_log
-        audit.Add(tenantId, "view_timeline",
-            actorUserId: Auth.CurrentUser.UserId(User),
+        // DoD 11.3: toda visualização de dado pessoal gera linha em audit_log. A gravação é
+        // CONSOLIDADA no AuditReadFilter (grava view_timeline com actor_ip APÓS o 2xx — não audita
+        // o 304 de cache-hit, em que nenhum dado é entregue). Aqui só descrevemos o alvo/detalhe.
+        readAudit.Record(tenantId, AuditActions.ViewTimeline,
+            Auth.CurrentUser.UserId(User),
             targetType: "device", targetId: deviceId,
             detailJson: JsonSerializer.Serialize(new { date = response.Date }));
-        await db.SaveChangesAsync(ct);
 
         // dias passados são imutáveis → ETag/304; hoje muda a cada ciclo do worker
         if (!isToday && windowEnd <= now)
@@ -170,6 +171,7 @@ public class TimelineController(
     /// excede o teto e truncated jamais sai false ao truncar.
     /// </summary>
     [HttpGet("team")]
+    [AuditRead] // DoD 11.3: leitura de dado pessoal de VÁRIAS pessoas — view_timeline (target team) via filter
     public async Task<IActionResult> Team([FromQuery(Name = "date")] string? date, CancellationToken ct)
     {
         if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", out var day))
@@ -261,12 +263,12 @@ public class TimelineController(
 
         // DoD 11.3: visualização de dado pessoal de VÁRIAS pessoas — target_id é nullable no
         // schema (target_type text, target_id uuid), então "team" sem alvo individual (o
-        // tenant já está em tenant_id; repetir o tenant em target_id seria ruído) + detail {date}
-        audit.Add(tenantId, "view_timeline",
-            actorUserId: Auth.CurrentUser.UserId(User),
+        // tenant já está em tenant_id; repetir o tenant em target_id seria ruído) + detail {date}.
+        // Gravação consolidada no AuditReadFilter (após o 2xx, com actor_ip; sem auditar o 304).
+        readAudit.Record(tenantId, AuditActions.ViewTimeline,
+            Auth.CurrentUser.UserId(User),
             targetType: "team", targetId: null,
             detailJson: JsonSerializer.Serialize(new { date = response.Date }));
-        await db.SaveChangesAsync(ct);
 
         // dias passados são imutáveis → ETag/304; hoje muda a cada ciclo do worker
         if (!isToday && windowEnd <= now)

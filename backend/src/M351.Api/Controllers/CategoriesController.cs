@@ -149,6 +149,7 @@ public class CategoriesController(NpgsqlDataSource dataSource) : ApiControllerBa
             // trilha na MESMA transação da mutação: a mudança jamais persiste sem audit
             await AuditWriter.AddInTransactionAsync(connection, tx, tenantId, AuditActions.UpdateCategory,
                 actorUserId: Auth.CurrentUser.UserId(User),
+                actorIp: HttpContext.Connection.RemoteIpAddress,
                 targetType: "category", targetId: id,
                 detailJson: JsonSerializer.Serialize(new
                 {
@@ -196,6 +197,7 @@ public class CategoriesController(NpgsqlDataSource dataSource) : ApiControllerBa
         // trilha na MESMA transação da mutação: a exclusão jamais persiste sem audit
         await AuditWriter.AddInTransactionAsync(connection, tx, tenantId, AuditActions.UpdateCategory,
             actorUserId: Auth.CurrentUser.UserId(User),
+            actorIp: HttpContext.Connection.RemoteIpAddress,
             targetType: "category", targetId: id,
             detailJson: JsonSerializer.Serialize(new
             {

@@ -1065,6 +1065,12 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
     /// <summary>
     /// Apaga TODOS os dados do tenant demo na ordem certa de FKs — toda query com tenant_id;
     /// JAMAIS toca em dados de outros tenants (app_catalog é global e fica intacto).
+    ///
+    /// EXCEÇÃO DEMO (append-only F4.7): audit_log tem trigger que barra DELETE de linha (trilha
+    /// imutável). A reseed de um tenant SINTÉTICO/descartável é a única operação legítima que
+    /// precisa apagar a trilha — feita com session_replication_role='replica' (bypassa triggers de
+    /// usuário), exige conexão OWNER (a CLI backoffice conecta assim) e fica ISOLADA a este reset
+    /// de demo. NÃO há caminho equivalente no app de produção: a trilha de tenants reais é só-append.
     /// </summary>
     private async Task ResetTenantAsync(NpgsqlConnection conn, Guid tenantId, CancellationToken ct)
     {
@@ -1085,7 +1091,6 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
             "DELETE FROM categories WHERE tenant_id = @t",
             "DELETE FROM tenant_agent_configs WHERE tenant_id = @t",
             "DELETE FROM export_jobs WHERE tenant_id = @t",
-            "DELETE FROM audit_log WHERE tenant_id = @t",
             "DELETE FROM refresh_tokens WHERE tenant_id = @t",
             "DELETE FROM invitations WHERE tenant_id = @t",
             "DELETE FROM users WHERE tenant_id = @t",
@@ -1094,6 +1099,17 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
         foreach (var sql in deletes)
         {
             await ExecAsync(conn, sql, [("t", tenantId)], ct);
+        }
+
+        // audit_log: bypass do trigger append-only SÓ para a reseed do tenant demo (ver doc acima)
+        await ExecAsync(conn, "SET session_replication_role = 'replica'", [], ct);
+        try
+        {
+            await ExecAsync(conn, "DELETE FROM audit_log WHERE tenant_id = @t", [("t", tenantId)], ct);
+        }
+        finally
+        {
+            await ExecAsync(conn, "SET session_replication_role = 'origin'", [], ct);
         }
     }
 

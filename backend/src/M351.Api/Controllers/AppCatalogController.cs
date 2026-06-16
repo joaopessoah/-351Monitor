@@ -1,11 +1,11 @@
 using System.Text.Json;
 using Dapper;
+using M351.Api.Auditing;
 using M351.Api.Auth;
 using M351.Api.Contracts;
 using M351.Api.Services;
 using M351.Domain.Entities;
 using M351.Infrastructure.Aggregation;
-using M351.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
@@ -27,8 +27,7 @@ namespace M351.Api.Controllers;
 [Authorize] // Viewer+ nas leituras; o PUT exige AdminPlus
 public class AppCatalogController(
     NpgsqlDataSource dataSource,
-    M351DbContext db,
-    AuditWriter audit,
+    AuditReadContext readAudit,
     TimeProvider clock) : ApiControllerBase
 {
     /// <summary>Teto da listagem (decisão documentada: a tela tem busca; paginação fica para v1.1).</summary>
@@ -184,6 +183,7 @@ public class AppCatalogController(
         // trilha na MESMA transação da mutação: o mapeamento jamais persiste sem audit
         await AuditWriter.AddInTransactionAsync(connection, tx, tenantId, AuditActions.UpdateCategory,
             actorUserId: Auth.CurrentUser.UserId(User),
+            actorIp: HttpContext.Connection.RemoteIpAddress,
             targetType: "app", targetId: appId,
             detailJson: JsonSerializer.Serialize(new
             {
@@ -211,6 +211,7 @@ public class AppCatalogController(
     /// drill-down parte). SEMPRE audita view_report (dado pessoal, spec linha 1004).
     /// </summary>
     [HttpGet("{appId:guid}/titles")]
+    [AuditRead] // DoD 11.3 / spec linha 1004: drill-down é dado pessoal — view_report via AuditReadFilter
     public async Task<IActionResult> Titles(
         Guid appId,
         [FromQuery(Name = "from")] string? from,
@@ -272,12 +273,12 @@ public class AppCatalogController(
             new { TenantId = tenantId, AppId = appId, Start = windowStart, End = windowEnd, Limit = TopTitles },
             cancellationToken: ct))).ToList();
 
-        // DoD 11.3 / spec linha 1004: drill-down de apps é dado pessoal — audita SEMPRE
-        audit.Add(tenantId, AuditActions.ViewReport,
-            actorUserId: Auth.CurrentUser.UserId(User),
+        // DoD 11.3 / spec linha 1004: drill-down de apps é dado pessoal — audita SEMPRE.
+        // Gravação consolidada no AuditReadFilter (após o 2xx, com actor_ip preenchido).
+        readAudit.Record(tenantId, AuditActions.ViewReport,
+            Auth.CurrentUser.UserId(User),
             targetType: "app", targetId: appId,
             detailJson: JsonSerializer.Serialize(new { app_id = appId, from, to }));
-        await db.SaveChangesAsync(ct);
 
         return Ok(new AppTitlesResponse(
             rows.Select(r => new AppTitleResponse(r.WindowTitle, r.SecondsActive)).ToList(),

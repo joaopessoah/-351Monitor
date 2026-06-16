@@ -187,7 +187,8 @@ public class PrivacyController(
 
             await AuditWriter.AddInTransactionAsync(
                 connection, tx, tenantId, AuditActions.DsrExport,
-                actorUserId: userId, targetType: targetType, targetId: targetId,
+                actorUserId: userId, actorIp: HttpContext.Connection.RemoteIpAddress,
+                targetType: targetType, targetId: targetId,
                 detailJson: JsonSerializer.Serialize(new Dictionary<string, object?>(auditDetail) { ["kind"] = kind }),
                 ct: ct);
 
@@ -225,7 +226,8 @@ public class PrivacyController(
 
             await AuditWriter.AddInTransactionAsync(
                 connection, tx, tenantId, AuditActions.DsrDelete,
-                actorUserId: userId, targetType: targetType, targetId: targetId,
+                actorUserId: userId, actorIp: HttpContext.Connection.RemoteIpAddress,
+                targetType: targetType, targetId: targetId,
                 detailJson: JsonSerializer.Serialize(detail), ct: ct);
 
             await tx.CommitAsync(ct);
