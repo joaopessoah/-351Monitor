@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  +351 Monitor — Instalador MSI do agente Windows (F4.1).
+  WiX v5 (wixext WixToolset.Util). MSI PER-MACHINE, x64.
+
+  IMUTAVEL: o UpgradeCode abaixo identifica o produto entre versoes e NUNCA pode mudar.
+  Trocar o UpgradeCode quebra o upgrade (passa a instalar lado-a-lado em vez de atualizar).
+  Gerado uma unica vez na F4.1 e fixado: 4C39283C-17E3-4721-A547-5ED897AF23C1.
+
+  Code signing Authenticode dos exes e do MSI fica para a F5 (so o gancho no build-agent-msi.ps1).
+
+  Variaveis injetadas pelo build (wix build -d ...):
+    PublishDir   = pasta com os 2 exes publicados (single-file win-x64)
+    ProductVersion = versao do agente (AgentVersionInfo.Current, ex.: 1.0.0)
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package Name="+351 Monitor Agent"
+           Manufacturer="M351"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="4C39283C-17E3-4721-A547-5ED897AF23C1"
+           Scope="perMachine"
+           Compressed="yes"
+           InstallerVersion="500">
+
+    <!-- Single package, sem mídia externa. -->
+    <MediaTemplate EmbedCab="yes" />
+
+    <!--
+      Major upgrade: ao instalar versao nova, remove a antiga DEPOIS de instalar os arquivos
+      novos (AfterInstallExecute). Bloqueia downgrade com mensagem clara. Os dados em
+      %ProgramData% (fila/identidade/logs) NAO sao tocados pelo upgrade — componentes que
+      criam o diretorio de dados sao Permanent e nunca apagam o conteudo.
+    -->
+    <MajorUpgrade DowngradeErrorMessage="Uma versao mais recente do +351 Monitor Agent ja esta instalada."
+                  Schedule="afterInstallExecute" />
+
+    <!-- ================== PROPRIEDADES PUBLICAS (Secao 6.6) ================== -->
+    <!--
+      UPPERCASE = propriedades publicas, passaveis na linha de comando do msiexec e
+      visiveis na sequencia de execucao. Secure="yes" permite que sobrevivam a transicao
+      da sequencia de UI (impersonada) para a custom action deferida (elevada/SYSTEM).
+    -->
+    <Property Id="ENROLLKEY" Secure="yes" />
+    <Property Id="SERVERURL" Secure="yes" />
+    <Property Id="PROXYURL" Secure="yes" />
+    <Property Id="NOENROLL" Secure="yes" />
+
+    <!-- Icone na lista de Programas e Recursos (sem icone proprio na F4.1). -->
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPNOREPAIR" Value="0" />
+
+    <!-- ================== ESTRUTURA DE DIRETORIOS ================== -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="VENDORFOLDER" Name="M351">
+        <Directory Id="INSTALLFOLDER" Name="MonitorAgent" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- %ProgramData%\M351\MonitorAgent\ e logs\ : dados/fila/logs (mesmo caminho que o agente ja usa). -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="DATAVENDORFOLDER" Name="M351">
+        <Directory Id="DATAFOLDER" Name="MonitorAgent">
+          <Directory Id="DATALOGSFOLDER" Name="logs" />
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- ================== FEATURE ================== -->
+    <Feature Id="Main" Title="+351 Monitor Agent" Level="1" AllowAbsent="no">
+      <ComponentGroupRef Id="BinComponents" />
+      <ComponentRef Id="DataDirComponent" />
+      <ComponentRef Id="LogsDirComponent" />
+    </Feature>
+
+    <!-- ================== AGENDAMENTO DAS CUSTOM ACTIONS ================== -->
+    <!--
+      Ordem na InstallExecuteSequence:
+        - SetUninstallFlag (imediata): no uninstall, grava a sentinela .uninstall ANTES de
+          o ServiceControl parar o servico, para o AGENT_STOP sair com reason=uninstall.
+        - WriteInstallConfig (deferida/elevada): grava install.json com SERVERURL/PROXYURL
+          e, se NOENROLL=1, a enrollment key pendente (enroll no primeiro boot).
+        - EnrollDevice (deferida/elevada): so na instalacao normal (NOT NOENROLL) e com
+          ENROLLKEY presente; roda APOS o servico instalado, invocando o modo enroll do exe.
+    -->
+    <InstallExecuteSequence>
+      <!-- Sentinela de uninstall: so quando o produto esta sendo removido por completo. -->
+      <Custom Action="SetUninstallFlag"
+              Before="WriteUninstallFlag"
+              Condition="(REMOVE=&quot;ALL&quot;) AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="WriteUninstallFlag"
+              Before="StopServices"
+              Condition="(REMOVE=&quot;ALL&quot;) AND NOT UPGRADINGPRODUCTCODE" />
+
+      <!-- Grava config do instalador apos os arquivos, so em install/upgrade (nao no uninstall). -->
+      <Custom Action="WriteInstallConfig"
+              After="InstallFiles"
+              Condition="NOT Installed OR REINSTALL" />
+      <Custom Action="SetWriteInstallConfig"
+              Before="WriteInstallConfig"
+              Condition="NOT Installed OR REINSTALL" />
+
+      <!-- Recovery do SCM (10/60/300 s) via sc failure: apos os servicos instalados. -->
+      <Custom Action="SetConfigureRecovery"
+              Before="ConfigureRecovery"
+              Condition="NOT Installed OR REINSTALL" />
+      <Custom Action="ConfigureRecovery"
+              After="InstallServices"
+              Condition="NOT Installed OR REINSTALL" />
+
+      <!-- Enroll apos o servico existir; condicional a NOT NOENROLL e ENROLLKEY presente. -->
+      <Custom Action="SetEnrollDevice"
+              Before="EnrollDevice"
+              Condition="(NOT Installed) AND ENROLLKEY AND (NOT NOENROLL OR NOENROLL=&quot;0&quot;)" />
+      <Custom Action="EnrollDevice"
+              After="StartServices"
+              Condition="(NOT Installed) AND ENROLLKEY AND (NOT NOENROLL OR NOENROLL=&quot;0&quot;)" />
+    </InstallExecuteSequence>
+
+    <!-- ================== CUSTOM ACTIONS ================== -->
+    <!--
+      WriteUninstallFlag: grava a sentinela %ProgramData%\M351\MonitorAgent\.uninstall ANTES de
+      StopServices, para o servico distinguir uninstall (AGENT_STOP{reason:"uninstall"}). Deferida/
+      elevada (SYSTEM) — o diretorio so da escrita a SYSTEM/Administrators. A acao Set* (type 51)
+      monta a linha de comando do cmd.exe (com o caminho ja resolvido) e passa por CustomActionData.
+      Return=ignore: falha ao gravar a sentinela apenas degrada para AGENT_STOP{service_stop}.
+    -->
+    <CustomAction Id="SetUninstallFlag"
+                  Property="WriteUninstallFlag"
+                  Value="&quot;[SystemFolder]cmd.exe&quot; /c echo uninstall&gt; &quot;[DATAFOLDER].uninstall&quot;" />
+    <CustomAction Id="WriteUninstallFlag"
+                  BinaryRef="Wix4UtilCA_X64"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!--
+      WriteInstallConfig: o proprio servico materializa install.json (geracao de JSON em C#,
+      escapamento correto). A acao deferida roda SYSTEM e nao enxerga propriedades do installer,
+      logo a linha de comando inteira (exe + args) e montada pela acao Set* (type 51) na
+      propriedade homonima e lida por WixQuietExec64. [#FileServiceExe] = caminho do exe instalado.
+    -->
+    <CustomAction Id="SetWriteInstallConfig"
+                  Property="WriteInstallConfig"
+                  Value="&quot;[#FileServiceExe]&quot; --write-install-config --data-dir &quot;[DATAFOLDER]&quot; --server &quot;[SERVERURL]&quot; --proxy &quot;[PROXYURL]&quot; --enroll-key &quot;[ENROLLKEY]&quot; --noenroll &quot;[NOENROLL]&quot;" />
+    <CustomAction Id="WriteInstallConfig"
+                  BinaryRef="Wix4UtilCA_X64"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!--
+      ConfigureRecovery: 'sc failure' com os 3 tempos distintos (10 s / 60 s / 300 s) e reset de
+      1 dia (86400 s). Deferida/elevada (SYSTEM). O par Set* monta a linha de comando completa
+      (sc.exe do SystemFolder) e WixQuietExec64 a executa. Return=ignore: falha aqui nao reverte
+      a instalacao (o servico ja sobe; o recovery e politica do SCM, nao requisito de boot).
+      Sintaxe do sc: 'actions=' usa o separador '/'; cada par e tipo/delay_em_ms.
+    -->
+    <CustomAction Id="SetConfigureRecovery"
+                  Property="ConfigureRecovery"
+                  Value="&quot;[SystemFolder]sc.exe&quot; failure MonitorAgentService reset= 86400 actions= restart/10000/restart/60000/restart/300000" />
+    <CustomAction Id="ConfigureRecovery"
+                  BinaryRef="Wix4UtilCA_X64"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!--
+      EnrollDevice: invoca o proprio servico em modo enroll, elevado. Usa SERVERURL/ENROLLKEY.
+      Return=ignore: uma falha de rede no enroll NAO deve reverter a instalacao do agente
+      (o servico re-enrolla — N15 — e/ou o primeiro boot reentra). O caminho do exe e
+      resolvido por [#FileServiceExe] (o File key do MonitorAgentService.exe).
+    -->
+    <CustomAction Id="SetEnrollDevice"
+                  Property="EnrollDevice"
+                  Value="&quot;[#FileServiceExe]&quot; --enroll &quot;[ENROLLKEY]&quot; --server &quot;[SERVERURL]&quot;" />
+    <CustomAction Id="EnrollDevice"
+                  BinaryRef="Wix4UtilCA_X64"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+  </Package>
+
+  <!-- ================== COMPONENTES ================== -->
+  <Fragment>
+    <ComponentGroup Id="BinComponents" Directory="INSTALLFOLDER">
+
+      <!-- MonitorAgentService.exe + ServiceInstall + recovery do SCM + ServiceControl. -->
+      <Component Id="ServiceExeComponent" Bitness="always64">
+        <File Id="FileServiceExe"
+              Source="$(var.PublishDir)\MonitorAgentService.exe"
+              KeyPath="yes" />
+
+        <!--
+          Servico LocalSystem, Automatic (Delayed Start). Sem args (o servico decide o modo
+          pelo ambiente: nao-interativo => ServiceBase). ErrorControl normal.
+        -->
+        <ServiceInstall Id="MonitorAgentServiceInstall"
+                        Name="MonitorAgentService"
+                        DisplayName="+351 Monitor Agent"
+                        Description="Coleta de presenca/atividade do +351 Monitor (monitoramento corporativo)."
+                        Type="ownProcess"
+                        Start="auto"
+                        Account="LocalSystem"
+                        ErrorControl="normal"
+                        Vital="yes">
+          <!-- Automatic (Delayed Start): reduz contencao no boot (Secao 6.6). -->
+          <ServiceConfig DelayedAutoStart="yes" OnInstall="yes" OnReinstall="yes" />
+
+          <!--
+            Recovery do SCM com OS TRES TEMPOS DISTINTOS (10 s / 60 s / 300 s) exigidos pela
+            Secao 6.6. DECISAO: util:ServiceConfig expressa um unico RestartServiceDelayInSeconds
+            (aplicado as 3 acoes), entao NAO consegue 10/60/300 distintos. Usamos a alternativa
+            prevista na tarefa: 'sc failure' via custom action deferida/elevada (ConfigureRecovery,
+            abaixo), agendada apos InstallServices. reset= 86400 (1 dia).
+          -->
+        </ServiceInstall>
+
+        <!-- Start no install; stop+remove no uninstall. Espera ate o estado mudar. -->
+        <ServiceControl Id="MonitorAgentServiceControl"
+                        Name="MonitorAgentService"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="yes" />
+      </Component>
+
+      <!-- MonitorAgentSession.exe (helper de sessao). -->
+      <Component Id="SessionExeComponent" Bitness="always64">
+        <File Id="FileSessionExe"
+              Source="$(var.PublishDir)\MonitorAgentSession.exe"
+              KeyPath="yes" />
+      </Component>
+
+    </ComponentGroup>
+  </Fragment>
+
+  <!-- ================== DIRETORIO DE DADOS + ACL ================== -->
+  <Fragment>
+    <!--
+      Cria %ProgramData%\M351\MonitorAgent\ com ACL restrita: SYSTEM + Administrators Full,
+      sem usuarios comuns. PermissionEx (util) com NonInheritable: substitui a heranca padrao
+      do ProgramData (que daria leitura a Users) pelas ACEs declaradas.
+      Permanent + NeverOverwrite: o uninstall NAO apaga a fila/identidade automaticamente
+      (limpeza de dados e decisao explicita do operador); o major-upgrade preserva os dados.
+      CreateFolder com KeyPath dummy via RegistryValue (componente sem arquivo).
+    -->
+    <Component Id="DataDirComponent" Directory="DATAFOLDER" Guid="*" Bitness="always64" Permanent="yes" NeverOverwrite="yes">
+      <CreateFolder>
+        <util:PermissionEx User="SYSTEM" GenericAll="yes" Inheritable="yes" />
+        <util:PermissionEx User="Administrators" GenericAll="yes" Inheritable="yes" />
+      </CreateFolder>
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\M351\MonitorAgent"
+                     Name="DataDir"
+                     Type="string"
+                     Value="[DATAFOLDER]"
+                     KeyPath="yes" />
+    </Component>
+
+    <Component Id="LogsDirComponent" Directory="DATALOGSFOLDER" Guid="*" Bitness="always64" Permanent="yes" NeverOverwrite="yes">
+      <CreateFolder>
+        <util:PermissionEx User="SYSTEM" GenericAll="yes" Inheritable="yes" />
+        <util:PermissionEx User="Administrators" GenericAll="yes" Inheritable="yes" />
+      </CreateFolder>
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\M351\MonitorAgent"
+                     Name="LogsDir"
+                     Type="string"
+                     Value="[DATALOGSFOLDER]"
+                     KeyPath="yes" />
+    </Component>
+  </Fragment>
+</Wix>

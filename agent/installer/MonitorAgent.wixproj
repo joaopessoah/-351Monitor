@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Projeto WiX v5 (SDK-style) do instalador do agente +351 Monitor.
+
+  Caminho de build OFICIAL (script + CI): agent/installer/build-agent-msi.ps1, que publica os 2
+  exes e roda 'wix build' (CLI) com as variaveis PublishDir/ProductVersion. Este .wixproj existe
+  para abrir/buildar no Visual Studio / 'dotnet build' quando os exes ja estao publicados em
+  ./publish (definido por PublishDir). Em ambos os caminhos a fonte e o MESMO Package.wxs.
+
+  Para buildar via MSBuild com os exes ja em ./publish:
+    dotnet build agent/installer/MonitorAgent.wixproj -p:PublishDir=<abs>\publish -p:ProductVersion=1.0.0
+-->
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <OutputName>MonitorAgent</OutputName>
+    <!-- x64: os exes sao win-x64 self-contained. -->
+    <Platform>x64</Platform>
+    <!-- Suprime WIX1149: ServiceConfig nativo usado SO p/ delayed-auto-start (ver Package.wxs). -->
+    <SuppressSpecificWarnings>1149</SuppressSpecificWarnings>
+  </PropertyGroup>
+
+  <!-- Default da versao quando nao injetada (o script/CI sempre injeta a real). -->
+  <PropertyGroup Condition="'$(ProductVersion)' == ''">
+    <ProductVersion>1.0.0</ProductVersion>
+  </PropertyGroup>
+  <!-- Default do PublishDir: ./publish ao lado do projeto (o script publica aqui). -->
+  <PropertyGroup Condition="'$(PublishDir)' == ''">
+    <PublishDir>$(MSBuildProjectDirectory)\publish</PublishDir>
+  </PropertyGroup>
+
+  <!-- Variaveis de pre-processador consumidas pelo Package.wxs ($(var.PublishDir)/$(var.ProductVersion)). -->
+  <PropertyGroup>
+    <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(ProductVersion)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+  </ItemGroup>
+
+</Project>

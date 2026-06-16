@@ -35,6 +35,11 @@ public sealed class SqliteEventQueue : IDisposable
         _conn.Open();
         Exec("PRAGMA journal_mode=WAL;");
         Exec("PRAGMA synchronous=NORMAL;");
+        // busy_timeout: a CA EnrollDevice (msiexec) roda 'MonitorAgentService.exe --enroll' DEPOIS
+        // de StartServices (Package.wxs), abrindo ESTA mesma queue.db num 2o processo enquanto o
+        // servico ja enfileira eventos. WAL permite 1 writer; sem timeout, a 2a escrita concorrente
+        // retornaria SQLITE_BUSY de imediato. 5 s de espera tornam o write do enroll robusto.
+        Exec("PRAGMA busy_timeout=5000;");
         Exec("""
             CREATE TABLE IF NOT EXISTS events(
               seq INTEGER PRIMARY KEY AUTOINCREMENT,

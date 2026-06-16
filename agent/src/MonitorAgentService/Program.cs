@@ -15,6 +15,10 @@ public static class Program
 {
     public static int Main(string[] args)
     {
+        // --write-install-config usa pares --chave valor (inclusive valores opcionais); parser dedicado.
+        if (args.Length > 0 && args[0] == "--write-install-config")
+            return InstallConfigCommand.Run(ParseKeyValueArgs(args.AsSpan(1)));
+
         string? enrollKey = null;
         string? serverUrl = null;
         var consoleMode = false;
@@ -58,6 +62,23 @@ public static class Program
 
         PrintUsage();
         return 1;
+    }
+
+    /// <summary>Pares "--chave valor" → dicionario (chave sem o "--"). Flags sem valor viram "1".</summary>
+    private static Dictionary<string, string> ParseKeyValueArgs(ReadOnlySpan<string> args)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < args.Length; i++)
+        {
+            var token = args[i];
+            if (!token.StartsWith("--", StringComparison.Ordinal)) continue;
+            var key = token[2..];
+            if (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                map[key] = args[++i];
+            else
+                map[key] = "1";
+        }
+        return map;
     }
 
     private static void PrintUsage()

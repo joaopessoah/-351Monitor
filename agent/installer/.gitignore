@@ -1,0 +1,7 @@
+# Saidas de build do instalador — nunca commitar (exes publicados + MSI + intermediarios WiX)
+publish/
+bin/
+obj/
+*.msi
+*.wixpdb
+*.cab

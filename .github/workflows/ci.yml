@@ -123,6 +123,43 @@ jobs:
           cache-from: type=gha,scope=worker
           cache-to: type=gha,scope=worker,mode=max
 
+  agent-msi:
+    name: agent-msi (build do instalador WiX)
+    # Independente dos demais jobs (sem needs): roda em todo push/PR e publica o MSI como artifact.
+    runs-on: windows-latest
+    env:
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      # WiX v5 fixo: o v6/v7 exige aceite da EULA OSMF (Open Source Maintenance Fee) e trava o build.
+      WIX_VERSION: "5.0.2"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Instalar WiX v5 (dotnet tool) + extensao Util
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version $env:WIX_VERSION
+          # Garante que o tool global esta no PATH desta etapa e das seguintes.
+          $toolsPath = Join-Path $env:USERPROFILE ".dotnet\tools"
+          echo $toolsPath | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          & "$toolsPath\wix.exe" extension add --global WixToolset.Util.wixext/$env:WIX_VERSION
+
+      - name: Build do MSI (publica os 2 exes + wix build; code signing pulado na F5)
+        shell: pwsh
+        run: agent/installer/build-agent-msi.ps1
+
+      - name: Upload do MonitorAgent.msi como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MonitorAgent-msi
+          path: agent/installer/bin/MonitorAgent.msi
+          if-no-files-found: error
+
   deploy-staging:
     name: deploy-staging (SSH)
     needs: docker

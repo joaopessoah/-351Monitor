@@ -18,6 +18,7 @@ public sealed class AgentWindowsService : ServiceBase
     private CancellationTokenSource? _cts;
     private ILogSink _log = new NullLogSink();
     private DateTimeOffset? _suspendedAt;
+    private string? _dataDir;
 
     public AgentWindowsService()
     {
@@ -35,9 +36,22 @@ public sealed class AgentWindowsService : ServiceBase
         _log = new FileLogSink(Path.Combine(dataDir, "logs"), "service");
         _log.Info("Serviço iniciando…");
 
+        _dataDir = dataDir;
+
+        // Higiene de sentinela: um start normal NUNCA e um uninstall. Se uma sentinela .uninstall
+        // sobrou de um ciclo anterior (ex.: o servico foi parado sem passar pelo OnStop, ou o
+        // uninstall foi abortado apos a sentinela ser gravada), descarta-la aqui evita que um stop
+        // futuro reporte AGENT_STOP{uninstall} incorretamente apos um reinstall.
+        if (UninstallFlag.Consume(dataDir, _log))
+            _log.Warn("Sentinela de uninstall orfa encontrada no start — descartada (start nao e uninstall).");
+
         _runtime = AgentRuntime.Create(_log, dataDir);
         _cts = new CancellationTokenSource();
         _sessions = new SessionManager(_runtime, _log);
+
+        // F4.1: aplica config do MSI (SERVERURL/PROXYURL) e, em golden image (NOENROLL=1),
+        // faz o enroll no primeiro boot real com a key pendente gravada pelo instalador.
+        ApplyInstallConfigAndEnroll(dataDir);
 
         // Task.Run: o loop de envio do BatchSender nunca pode bloquear em IPC — um push
         // sincrono de config ao helper (pipe) congelou a cadencia de 30 s no aceite F1
@@ -141,9 +155,74 @@ public sealed class AgentWindowsService : ServiceBase
         return true;
     }
 
-    protected override void OnStop() => ShutdownCore("service_stop");
+    protected override void OnStop() => ShutdownCore(ResolveStopReason());
 
     protected override void OnShutdown() => ShutdownCore("shutdown");
+
+    /// <summary>
+    /// Distingue um stop de DESINSTALACAO de um stop normal do SCM (Secao 6.6). O MSI grava a
+    /// sentinela .uninstall em %ProgramData% antes de mandar o SCM parar o servico no uninstall;
+    /// sem ela, um stop e service_stop comum (parada manual, reboot agendado etc.).
+    /// </summary>
+    private string ResolveStopReason()
+    {
+        if (_dataDir is not null && UninstallFlag.Consume(_dataDir, _log))
+        {
+            _log.Info("Sentinela de uninstall detectada — AGENT_STOP sera emitido com reason=uninstall.");
+            return "uninstall";
+        }
+        return "service_stop";
+    }
+
+    /// <summary>
+    /// F4.1 — entrega do instalador. Persiste SERVERURL/PROXYURL do install.json onde o agente os
+    /// le (State.ServerUrl) e, se houver enrollment key pendente (golden image / NOENROLL=1) e o
+    /// device ainda nao estiver registrado, faz o enroll no primeiro boot real. Best-effort: falha
+    /// de rede aqui nao impede o servico de subir — o re-enroll (N15) e o boot seguinte reentram.
+    /// </summary>
+    private void ApplyInstallConfigAndEnroll(string dataDir)
+    {
+        if (_runtime is null) return;
+        var cfg = InstallConfig.TryLoad(dataDir, _log);
+        if (cfg is null) return;
+
+        if (!string.IsNullOrWhiteSpace(cfg.ServerUrl) && _runtime.State.ServerUrl is null)
+        {
+            _runtime.State.ServerUrl = cfg.ServerUrl;
+            _log.Info($"SERVERURL do instalador aplicado: {cfg.ServerUrl}.");
+        }
+
+        var pendingKey = cfg.PendingEnrollKey;
+        if (string.IsNullOrWhiteSpace(pendingKey) || _runtime.State.IsEnrolled) return;
+
+        var serverUrl = cfg.ServerUrl ?? _runtime.State.ServerUrl;
+        if (string.IsNullOrWhiteSpace(serverUrl))
+        {
+            _log.Warn("Enroll de primeiro boot pulado: sem SERVERURL no install.json.");
+            return;
+        }
+
+        try
+        {
+            _log.Info("Golden image: enroll no primeiro boot real…");
+            var ok = _runtime.Enrollment.EnrollAsync(serverUrl, pendingKey!, _cts?.Token ?? CancellationToken.None)
+                .GetAwaiter().GetResult();
+            if (ok)
+            {
+                // Consome a key pendente: o re-enroll futuro (N15) usa a enrollment key cifrada na fila.
+                (cfg with { PendingEnrollKey = null }).Save(dataDir, _log);
+                _log.Info("Enroll de primeiro boot concluido; key pendente removida do install.json.");
+            }
+            else
+            {
+                _log.Warn("Enroll de primeiro boot falhou — sera retentado no proximo boot/re-enroll.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Error("Falha no enroll de primeiro boot.", ex);
+        }
+    }
 
     private void ShutdownCore(string reason)
     {
