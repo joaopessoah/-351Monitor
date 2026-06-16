@@ -23,20 +23,21 @@ piloto marcada.
 
 | Opção | Custo | Modelo | Observações |
 |---|---|---|---|
-| **Azure Trusted Signing** (renomeado "Azure Artifact Signing" em jan/2026) | **~US$ 9,99/mês** (até 5.000 assinaturas) | **Mensal — paga só quando usa** | Mais barato e moderno; reputação SmartScreen imediata (é Microsoft); HSM gerenciado embutido; assina no CI via `azuresigntool`. **Pegadinha de elegibilidade** (ver abaixo). |
+| ~~**Azure Trusted Signing**~~ | ~~US$ 9,99/mês~~ | — | ❌ **INDISPONÍVEL NO BRASIL** (cobre só org EUA/Canadá e org UE/UK; pedidos de validação de empresa brasileira foram recusados). Mais barato no papel, mas fora de alcance daqui. |
 | **Certum Cloud Code Signing** | **~US$ 108/ano** (~€100) | Anual, cloud (sem token físico) | Mais barato em modelo anual; CA reconhecida. |
 | **Sectigo OV** via revendedor (SSL2BUY, SignMyCode, CheapSSLShop) | **~US$ 215–226/ano** (~€200) | Anual, token HSM | Padrão de mercado; mais barato que comprar da CA direto. |
 | **DigiCert direto** | **~€71/mês (~€850/ano)** | Anual | Premium — caro demais para a sua fase, sem vantagem funcional sobre os acima. |
 
-### Recomendação para você (PT, fase de dev, custo sensível)
+### Recomendação para você (empresa BRASILEIRA, fase de dev, custo sensível)
 
 1. **Agora:** não compre. Siga com MSI não-assinado.
-2. **No piloto:** **Azure Trusted Signing (~€9/mês)** é a melhor escolha — é mensal (você pausa
-   quando não precisa, em vez de €71/mês fixos), tem reputação SmartScreen imediata e assina no
-   CI. Cobre **organizações na UE** (a empresa `+351`/PT qualifica geograficamente).
-3. **Se a empresa tiver < 3 anos** (a Azure exige org com ≥ 3 anos para validação "Organization"):
-   ou usar a **validação "Individual"** da Azure (estava em rollout em 2025 — confirmar se já
-   abriu para PT) **ou** ir de **Certum Cloud (~€100/ano)**, que não tem esse requisito de idade.
+2. **Azure Trusted Signing está FORA** (não atende o Brasil). Não perca tempo com ela.
+3. **No piloto, a opção mais barata é Certum Cloud Code Signing (~US$ 108/ano)** — cloud (sem
+   token físico), valida empresa brasileira por CNPJ, sem requisito de idade da organização.
+   Comprável via revendedores (ex.: SSLmentor) que faturam internacionalmente.
+4. **Alternativa nacional: Sectigo OV via Sectigo Brasil** (sectigo.com.br) — valida pelo CNPJ
+   na Receita Federal, **faturável em R$**, ~US$ 220/ano. Bom se preferir suporte/nota em pt-BR.
+5. DigiCert (~€71/mês) continua caro demais, sem vantagem funcional.
 
 ## OV vs EV — qual comprar (se for de certificado tradicional, não Azure)
 
