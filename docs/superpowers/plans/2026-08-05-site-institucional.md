@@ -27,9 +27,9 @@
 **Interfaces:**
 - Produces: árvore `site/` que todas as tasks seguintes editam (caminho canônico daqui em diante).
 
-- [ ] **Step 1:** Copiar a árvore do scratchpad para `C:\dev\351-monitor\site\` (excluir a pasta `shots/`).
-- [ ] **Step 2:** Verificar: `site/index.html` abre no navegador com fontes e favicon carregando (caminhos relativos intactos).
-- [ ] **Step 3:** Commit: `feat(site): landing institucional aprovada (design dark + pulso da marca)`
+- [x] **Step 1:** Copiar a árvore do scratchpad para `C:\dev\351-monitor\site\` (excluir a pasta `shots/`).
+- [x] **Step 2:** Verificar: `site/index.html` abre no navegador com fontes e favicon carregando (caminhos relativos intactos).
+- [x] **Step 3:** Commit: `feat(site): landing institucional aprovada (design dark + pulso da marca)`
 
 ### Task 2: Página `privacidade.html`
 
@@ -57,10 +57,10 @@ Conteúdo (derivado de `docs/design/04-lgpd-seguranca.md`, nesta ordem):
 13. "Contato do Encarregado (DPO)" — bruna@mais351monitor.com.br.
 14. Rodapé de aviso: "Esta página descreve o produto; a relação contratual é regida pelos Termos e pelo DPA. Sujeita a revisão jurídica antes da disponibilidade geral."
 
-- [ ] **Step 1:** Escrever `privacidade.html` com nav simplificada (logo + link "← voltar ao site") e footer completo iguais aos da landing.
-- [ ] **Step 2:** Acrescentar CSS `.page-hero`/`.prose` (títulos h2 com âncora, listas, tabela com bordas `--border-soft`, `max-width` 780px).
-- [ ] **Step 3:** Verificar: screenshot headless sem sobreposições; link do footer da landing → página abre; link "voltar" → landing.
-- [ ] **Step 4:** Commit: `feat(site): página pública de privacidade (LGPD §3.3)`
+- [x] **Step 1:** Escrever `privacidade.html` com nav simplificada (logo + link "← voltar ao site") e footer completo iguais aos da landing.
+- [x] **Step 2:** Acrescentar CSS `.page-hero`/`.prose` (títulos h2 com âncora, listas, tabela com bordas `--border-soft`, `max-width` 780px).
+- [x] **Step 3:** Verificar: screenshot headless sem sobreposições; link do footer da landing → página abre; link "voltar" → landing.
+- [x] **Step 4:** Commit: `feat(site): página pública de privacidade (LGPD §3.3)`
 
 ### Task 3: `404.html` + `.htaccess`
 
@@ -70,8 +70,8 @@ Conteúdo (derivado de `docs/design/04-lgpd-seguranca.md`, nesta ordem):
 **Interfaces:**
 - Produces: `ErrorDocument 404 /404.html` referenciado pelo `.htaccess`.
 
-- [ ] **Step 1:** `404.html`: tela dark centrada, símbolo do monitor com linha achatada (flatline — piada visual da marca), "404 — Perdemos o sinal desta página.", botão "Voltar ao início" e link WhatsApp.
-- [ ] **Step 2:** `.htaccess` exatamente:
+- [x] **Step 1:** `404.html`: tela dark centrada, símbolo do monitor com linha achatada (flatline — piada visual da marca), "404 — Perdemos o sinal desta página.", botão "Voltar ao início" e link WhatsApp.
+- [x] **Step 2:** `.htaccess` exatamente:
 
 ```apache
 AddDefaultCharset utf-8
@@ -87,8 +87,8 @@ ErrorDocument 404 /404.html
 </IfModule>
 ```
 
-- [ ] **Step 3:** Verificar 404.html no navegador (headless screenshot).
-- [ ] **Step 4:** Commit: `feat(site): página 404 e .htaccess (charset, cache, error page)`
+- [x] **Step 3:** Verificar 404.html no navegador (headless screenshot).
+- [x] **Step 4:** Commit: `feat(site): página 404 e .htaccess (charset, cache, error page)`
 
 ### Task 4: Assets sociais — `og.png`, `favicon-32.png`, `apple-touch-icon.png`
 
@@ -101,18 +101,18 @@ ErrorDocument 404 /404.html
 - Consumes: tokens/SVG da marca.
 - Produces: caminhos `assets/img/og.png`, `assets/img/favicon-32.png`, `assets/img/apple-touch-icon.png` referenciados nos `<head>`.
 
-- [ ] **Step 1:** `og-template.html` (1200×630, body sem margem): fundo `#0B0F1A` com grade sutil, lockup horizontal (símbolo 120px + "+351 Monitor"), tagline "PRODUTIVIDADE EM TEMPO REAL" em verde espaçado, linha de pulso atravessando, url `mais351monitor.com.br` no rodapé.
-- [ ] **Step 2:** Screenshot Edge headless `--window-size=1200,630` → `og.png`; conferir visualmente.
-- [ ] **Step 3:** `icon-template.html`: quadrado cheio `#0B0F1A` com símbolo centralizado (78% da área); screenshots `--window-size=180,180` → `apple-touch-icon.png` e `--window-size=32,32` → `favicon-32.png`.
-- [ ] **Step 4:** Adicionar aos dois `<head>`: `<link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">` e `<link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">` e `<meta name="theme-color" content="#0B0F1A">`.
-- [ ] **Step 5:** Commit: `feat(site): og image e ícones png gerados da marca`
+- [x] **Step 1:** `og-template.html` (1200×630, body sem margem): fundo `#0B0F1A` com grade sutil, lockup horizontal (símbolo 120px + "+351 Monitor"), tagline "PRODUTIVIDADE EM TEMPO REAL" em verde espaçado, linha de pulso atravessando, url `mais351monitor.com.br` no rodapé.
+- [x] **Step 2:** Screenshot Edge headless `--window-size=1200,630` → `og.png`; conferir visualmente.
+- [x] **Step 3:** `icon-template.html`: quadrado cheio `#0B0F1A` com símbolo centralizado (78% da área); screenshots `--window-size=180,180` → `apple-touch-icon.png` e `--window-size=32,32` → `favicon-32.png`.
+- [x] **Step 4:** Adicionar aos dois `<head>`: `<link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">` e `<link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">` e `<meta name="theme-color" content="#0B0F1A">`.
+- [x] **Step 5:** Commit: `feat(site): og image e ícones png gerados da marca`
 
 ### Task 5: `robots.txt` + `sitemap.xml`
 
 **Files:**
 - Create: `site/robots.txt`, `site/sitemap.xml`
 
-- [ ] **Step 1:** `robots.txt`:
+- [x] **Step 1:** `robots.txt`:
 
 ```
 User-agent: *
@@ -121,22 +121,22 @@ Allow: /
 Sitemap: https://www.mais351monitor.com.br/sitemap.xml
 ```
 
-- [ ] **Step 2:** `sitemap.xml` com `https://www.mais351monitor.com.br/` (priority 1.0) e `https://www.mais351monitor.com.br/privacidade.html` (0.5), `lastmod` 2026-08-05.
-- [ ] **Step 3:** Commit: `feat(site): robots.txt e sitemap.xml`
+- [x] **Step 2:** `sitemap.xml` com `https://www.mais351monitor.com.br/` (priority 1.0) e `https://www.mais351monitor.com.br/privacidade.html` (0.5), `lastmod` 2026-08-05.
+- [x] **Step 3:** Commit: `feat(site): robots.txt e sitemap.xml`
 
 ### Task 6: `DEPLOY.md` — passo a passo Hostinger
 
 **Files:**
 - Create: `site/DEPLOY.md`
 
-- [ ] **Step 1:** Escrever guia: (1) hPanel → Sites → mais351monitor.com.br → Gerenciador de arquivos; (2) limpar `public_html` (remover `default.php` da página estacionada); (3) upload do conteúdo de `site/` (zip → extrair, sem a pasta-mãe; excluir `DEPLOY.md`); (4) ativar SSL/forçar HTTPS no hPanel; (5) testar `https://www.mais351monitor.com.br`, `/privacidade.html`, uma URL inexistente (404) e o preview de compartilhamento no WhatsApp; (6) alternativa via FTP (host, porta 21, credenciais do hPanel).
-- [ ] **Step 2:** Commit: `docs(site): guia de publicação na Hostinger`
+- [x] **Step 1:** Escrever guia: (1) hPanel → Sites → mais351monitor.com.br → Gerenciador de arquivos; (2) limpar `public_html` (remover `default.php` da página estacionada); (3) upload do conteúdo de `site/` (zip → extrair, sem a pasta-mãe; excluir `DEPLOY.md`); (4) ativar SSL/forçar HTTPS no hPanel; (5) testar `https://www.mais351monitor.com.br`, `/privacidade.html`, uma URL inexistente (404) e o preview de compartilhamento no WhatsApp; (6) alternativa via FTP (host, porta 21, credenciais do hPanel).
+- [x] **Step 2:** Commit: `docs(site): guia de publicação na Hostinger`
 
 ### Task 7: Verificação final
 
-- [ ] **Step 1:** Grep em `site/*.html`: nenhuma ocorrência de `brun@` (só `bruna@`), nenhum `http://` externo, todos os `wa.me/5511992209235`.
-- [ ] **Step 2:** Screenshots headless finais: landing desktop completa, landing mobile completa, privacidade desktop, 404 — inspecionar cada uma.
-- [ ] **Step 3:** Abrir `site/index.html` no navegador do usuário para aceite final.
+- [x] **Step 1:** Grep em `site/*.html`: nenhuma ocorrência de `brun@` (só `bruna@`), nenhum `http://` externo, todos os `wa.me/5511992209235`.
+- [x] **Step 2:** Screenshots headless finais: landing desktop completa, landing mobile completa, privacidade desktop, 404 — inspecionar cada uma.
+- [x] **Step 3:** Abrir `site/index.html` no navegador do usuário para aceite final.
 
 ## Self-review
 
