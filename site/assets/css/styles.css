@@ -1042,6 +1042,84 @@ details[open] .faq-icon::after { transform: rotate(90deg); }
 }
 .footer-legal p { margin: 0; font-size: 0.85rem; color: var(--ink-3); }
 
+/* ---------- Página de conteúdo (privacidade etc.) ---------- */
+.page-hero {
+  padding-top: calc(var(--nav-h) + clamp(3rem, 7vw, 5rem));
+  padding-bottom: clamp(2rem, 4vw, 3rem);
+}
+.page-hero h1 {
+  font-size: clamp(2.1rem, 4.6vw, 3.4rem);
+  font-weight: 700;
+  max-width: 720px;
+}
+.page-meta {
+  font-size: 0.9rem;
+  color: var(--ink-3);
+  margin-top: 0.8rem;
+}
+.page-note {
+  margin-top: 1.6rem;
+  max-width: 720px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--green);
+  border-radius: var(--radius-sm);
+  padding: 16px 20px;
+  font-size: 0.95rem;
+}
+
+.prose {
+  max-width: 780px;
+  padding-bottom: clamp(4rem, 8vw, 6rem);
+}
+.prose h2 {
+  font-size: 1.5rem;
+  margin-top: 2.8em;
+  padding-top: 1.2em;
+  border-top: 1px solid var(--border-soft);
+}
+.prose h2:first-child { margin-top: 0; border-top: none; padding-top: 0; }
+.prose ul { padding-left: 1.2em; margin: 0 0 1.2em; }
+.prose li { margin-bottom: 0.55em; }
+.prose li::marker { color: var(--green); }
+
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.4em 0;
+  font-size: 0.95rem;
+}
+.prose th, .prose td {
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  vertical-align: top;
+}
+.prose th {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 0.88rem;
+}
+.prose td { color: var(--ink-2); }
+.prose td strong { color: var(--ink); }
+
+.prose .lgpd-cols { margin: 1.6rem 0; }
+
+.nav-back {
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--ink-2);
+}
+.nav-back:hover { color: var(--ink); }
+
+@media (max-width: 640px) {
+  .prose table { display: block; overflow-x: auto; }
+}
+
 /* ---------- Responsivo ---------- */
 @media (max-width: 1040px) {
   .cards-4 { grid-template-columns: repeat(2, 1fr); }
