@@ -1,0 +1,32 @@
+name: Deploy site institucional
+
+on:
+  push:
+    branches: [main]
+    paths: ['site/**']
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-site
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Enviar site/ para a Hostinger via FTP
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sincronizar site/ com public_html
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.SITE_FTP_HOST }}
+          username: ${{ secrets.SITE_FTP_USER }}
+          password: ${{ secrets.SITE_FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: site/
+          server-dir: public_html/
+          exclude: |
+            DEPLOY.md
+            **/.git*
+            **/.git*/**

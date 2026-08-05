@@ -1,6 +1,10 @@
 AddDefaultCharset utf-8
 ErrorDocument 404 /404.html
 
+<Files ".ftp-deploy-sync-state.json">
+  Require all denied
+</Files>
+
 <IfModule mod_expires.c>
   ExpiresActive On
   ExpiresByType text/css "access plus 7 days"

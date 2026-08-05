@@ -28,6 +28,22 @@ assets/  (css, js, fonts, img)
 1. hPanel → **Arquivos → Contas FTP**: anote host (`ftp.mais351monitor.com.br` ou IP), usuário e senha (crie uma conta se não houver).
 2. Com FileZilla/WinSCP: conecte na porta 21, navegue até `public_html`, apague o conteúdo antigo e arraste o conteúdo de `site/`.
 
+## Opção C — Automático via GitHub Actions (configurado)
+
+O workflow `.github/workflows/deploy-site.yml` envia a pasta `site/` para `public_html` por FTPS **a cada push na `main` que altere `site/**`** (ou manualmente em GitHub → Actions → "Deploy site institucional" → Run workflow).
+
+Configuração única (uma vez):
+
+1. Crie o site no hPanel (**Site PHP/HTML personalizado**, domínio mais351monitor.com.br) — o hosting precisa existir.
+2. hPanel → **Arquivos → Contas FTP**: anote o **host** (IP ou `ftp.mais351monitor.com.br`) e o **usuário** principal, e defina/anote a **senha**.
+3. No GitHub, no repositório: **Settings → Secrets and variables → Actions → New repository secret**, crie os três:
+   - `SITE_FTP_HOST` — o host do passo 2 (sem `ftp://`)
+   - `SITE_FTP_USER` — o usuário
+   - `SITE_FTP_PASSWORD` — a senha
+4. Primeira publicação: apague o placeholder da Hostinger em `public_html` (File Manager) e rode o workflow manualmente (Actions → Run workflow). Nas seguintes, é só dar push.
+
+Notas: o workflow usa espelhamento incremental (só envia o que mudou) e mantém um arquivo de estado `.ftp-deploy-sync-state.json` no servidor — o `.htaccess` já bloqueia acesso público a ele. Se a conexão FTPS falhar na sua conta, troque `protocol: ftps` por `ftp` no workflow.
+
 ## Depois de subir — checklist
 
 1. hPanel → **Segurança → SSL**: confirme certificado ativo para o domínio e **ative "Forçar HTTPS"**.
