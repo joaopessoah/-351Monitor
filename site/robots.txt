@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
+Disallow: /crm/
 
 Sitemap: https://www.mais351monitor.com.br/sitemap.xml

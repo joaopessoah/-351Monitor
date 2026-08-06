@@ -1167,3 +1167,67 @@ details[open] .faq-icon::after { transform: rotate(90deg); }
   .btn, .card, .segments-list li { transition: none; }
   .pulse-path, .pulse-path-2, .pulse-path-3 { stroke-dasharray: none !important; stroke-dashoffset: 0 !important; animation: none !important; }
 }
+
+/* ---------- Formulário de contato (#contato) ---------- */
+.contato { padding-top: 0; }
+.contato-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 6px);
+  padding: clamp(32px, 5vw, 56px) clamp(20px, 5vw, 64px);
+}
+.contato-panel h2 { font-size: clamp(1.6rem, 3vw, 2.2rem); }
+.contato-lead { max-width: 560px; margin-bottom: 2rem; }
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.field input {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--ink);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 0.98rem;
+  width: 100%;
+}
+.field input:focus {
+  outline: none;
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px var(--green-soft);
+}
+.field-error { color: var(--warn); font-size: 0.82rem; }
+
+/* Honeypot: fora da tela (não display:none — pega mais bots) */
+.hp-field { position: absolute; left: -9999px; top: -9999px; height: 1px; overflow: hidden; }
+
+.form-actions { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.form-consent { font-size: 0.82rem; color: var(--ink-3); margin: 0; }
+.form-consent a { color: var(--ink-2); text-decoration: underline; }
+
+.form-msg { margin-top: 16px; font-size: 0.95rem; border-radius: var(--radius-sm); padding: 12px 16px; border: 1px solid; }
+.form-msg--erro { color: var(--warn); border-color: rgba(245, 168, 84, 0.4); background: rgba(245, 168, 84, 0.08); }
+.form-success {
+  color: var(--ink);
+  font-size: 1.05rem;
+  border: 1px solid var(--green-line);
+  background: var(--green-soft);
+  border-radius: var(--radius-sm);
+  padding: 18px 20px;
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .form-grid { grid-template-columns: 1fr; }
+}
