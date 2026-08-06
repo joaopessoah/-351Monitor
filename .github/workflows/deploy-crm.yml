@@ -1,0 +1,38 @@
+name: Deploy CRM
+
+on:
+  push:
+    branches: [main]
+    paths: ['crm/**']
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-crm
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Enviar crm/ para a Hostinger via FTP
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint PHP
+        run: find crm -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null && echo "PHP OK"
+
+      # Mesmo destino FTP do site, mas server-dir e state file próprios:
+      # a action só apaga o que ela mesma subiu, então os dois deploys não se tocam.
+      - name: Sincronizar crm/ com public_html/crm
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.SITE_FTP_HOST }}
+          username: ${{ secrets.SITE_FTP_USER }}
+          password: ${{ secrets.SITE_FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: crm/
+          server-dir: public_html/crm/
+          state-name: .ftp-deploy-sync-state-crm.json
+          exclude: |
+            README.md
+            **/.git*
+            **/.git*/**
