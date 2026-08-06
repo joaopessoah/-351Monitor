@@ -22,15 +22,16 @@ jobs:
 
       # Diagnóstico temporário: lista os diretórios no servidor FTP para
       # conferir onde o deploy está aterrissando (remover depois de estabilizar).
+      # -k: o certificado FTPS da Hostinger não bate com o hostname do secret.
       - name: Diagnostico FTP (listagem de diretorios)
         env:
           FTP_HOST: ${{ secrets.SITE_FTP_HOST }}
           FTP_USER: ${{ secrets.SITE_FTP_USER }}
           FTP_PASS: ${{ secrets.SITE_FTP_PASSWORD }}
         run: |
-          for dir in "/" "/public_html/" "/public_html/crm/"; do
+          for dir in "/" "/public_html/" "/public_html/crm/" "/domains/"; do
             echo "=== listando: $dir ==="
-            curl -sS --ssl-reqd --user "$FTP_USER:$FTP_PASS" "ftp://$FTP_HOST$dir" --list-only || echo "(falhou: $dir)"
+            curl -k -sS --ssl-reqd --user "$FTP_USER:$FTP_PASS" "ftp://$FTP_HOST$dir" || echo "(falhou: $dir)"
           done
 
       # Mesmo destino FTP do site, mas server-dir e state file próprios:
