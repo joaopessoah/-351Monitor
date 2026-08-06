@@ -20,6 +20,19 @@ jobs:
       - name: Lint PHP
         run: find crm -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null && echo "PHP OK"
 
+      # Diagnóstico temporário: lista os diretórios no servidor FTP para
+      # conferir onde o deploy está aterrissando (remover depois de estabilizar).
+      - name: Diagnostico FTP (listagem de diretorios)
+        env:
+          FTP_HOST: ${{ secrets.SITE_FTP_HOST }}
+          FTP_USER: ${{ secrets.SITE_FTP_USER }}
+          FTP_PASS: ${{ secrets.SITE_FTP_PASSWORD }}
+        run: |
+          for dir in "/" "/public_html/" "/public_html/crm/"; do
+            echo "=== listando: $dir ==="
+            curl -sS --ssl-reqd --user "$FTP_USER:$FTP_PASS" "ftp://$FTP_HOST$dir" --list-only || echo "(falhou: $dir)"
+          done
+
       # Mesmo destino FTP do site, mas server-dir e state file próprios:
       # a action só apaga o que ela mesma subiu, então os dois deploys não se tocam.
       - name: Sincronizar crm/ com public_html/crm
