@@ -20,20 +20,6 @@ jobs:
       - name: Lint PHP
         run: find crm -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null && echo "PHP OK"
 
-      # Limpeza única: remove a pasta public_html/ extraviada que os primeiros
-      # deploys criaram DENTRO do docroot (o root do FTP é o próprio docroot).
-      # Remover este passo depois que rodar uma vez com sucesso.
-      - name: Limpeza da pasta extraviada (public_html/ dentro do docroot)
-        env:
-          FTP_HOST: ${{ secrets.SITE_FTP_HOST }}
-          FTP_USER: ${{ secrets.SITE_FTP_USER }}
-          FTP_PASS: ${{ secrets.SITE_FTP_PASSWORD }}
-        run: |
-          sudo apt-get install -y -q lftp > /dev/null
-          lftp -u "$FTP_USER","$FTP_PASS" -e "set ftp:ssl-force true; set ssl:verify-certificate no; rm -r /public_html || echo 'nada para limpar'; bye" "$FTP_HOST"
-          echo "=== raiz apos a limpeza ==="
-          curl -k -sS --ssl-reqd --user "$FTP_USER:$FTP_PASS" "ftp://$FTP_HOST/"
-
       # ATENÇÃO: o root deste usuário FTP é o PRÓPRIO docroot do site
       # (não a pasta que contém public_html) — por isso server-dir: crm/.
       # A action só apaga o que ela mesma subiu (state file próprio), então
