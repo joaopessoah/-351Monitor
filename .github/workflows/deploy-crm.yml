@@ -20,23 +20,25 @@ jobs:
       - name: Lint PHP
         run: find crm -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null && echo "PHP OK"
 
-      # Diagnóstico temporário: lista os diretórios no servidor FTP para
-      # conferir onde o deploy está aterrissando (remover depois de estabilizar).
-      # -k: o certificado FTPS da Hostinger não bate com o hostname do secret.
-      - name: Diagnostico FTP (listagem de diretorios)
+      # Limpeza única: remove a pasta public_html/ extraviada que os primeiros
+      # deploys criaram DENTRO do docroot (o root do FTP é o próprio docroot).
+      # Remover este passo depois que rodar uma vez com sucesso.
+      - name: Limpeza da pasta extraviada (public_html/ dentro do docroot)
         env:
           FTP_HOST: ${{ secrets.SITE_FTP_HOST }}
           FTP_USER: ${{ secrets.SITE_FTP_USER }}
           FTP_PASS: ${{ secrets.SITE_FTP_PASSWORD }}
         run: |
-          for dir in "/" "/public_html/" "/public_html/crm/" "/domains/"; do
-            echo "=== listando: $dir ==="
-            curl -k -sS --ssl-reqd --user "$FTP_USER:$FTP_PASS" "ftp://$FTP_HOST$dir" || echo "(falhou: $dir)"
-          done
+          sudo apt-get install -y -q lftp > /dev/null
+          lftp -u "$FTP_USER","$FTP_PASS" -e "set ftp:ssl-force true; set ssl:verify-certificate no; rm -r /public_html || echo 'nada para limpar'; bye" "$FTP_HOST"
+          echo "=== raiz apos a limpeza ==="
+          curl -k -sS --ssl-reqd --user "$FTP_USER:$FTP_PASS" "ftp://$FTP_HOST/"
 
-      # Mesmo destino FTP do site, mas server-dir e state file próprios:
-      # a action só apaga o que ela mesma subiu, então os dois deploys não se tocam.
-      - name: Sincronizar crm/ com public_html/crm
+      # ATENÇÃO: o root deste usuário FTP é o PRÓPRIO docroot do site
+      # (não a pasta que contém public_html) — por isso server-dir: crm/.
+      # A action só apaga o que ela mesma subiu (state file próprio), então
+      # este deploy e o do site não se tocam.
+      - name: Sincronizar crm/ com o docroot/crm
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.SITE_FTP_HOST }}
@@ -44,7 +46,7 @@ jobs:
           password: ${{ secrets.SITE_FTP_PASSWORD }}
           protocol: ftps
           local-dir: crm/
-          server-dir: public_html/crm/
+          server-dir: crm/
           state-name: .ftp-deploy-sync-state-crm.json
           exclude: |
             README.md

@@ -17,7 +17,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sincronizar site/ com public_html
+      # ATENÇÃO: o root deste usuário FTP é o PRÓPRIO docroot do site
+      # (public_html) — por isso server-dir: ./ . Com "public_html/" aqui,
+      # o deploy cria uma subpasta public_html DENTRO do docroot (aconteceu
+      # em 2026-08-06 quando o root do usuário FTP mudou no hPanel).
+      - name: Sincronizar site/ com o docroot
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.SITE_FTP_HOST }}
@@ -25,8 +29,10 @@ jobs:
           password: ${{ secrets.SITE_FTP_PASSWORD }}
           protocol: ftps
           local-dir: site/
-          server-dir: public_html/
+          server-dir: ./
           exclude: |
             DEPLOY.md
             **/.git*
             **/.git*/**
+          # O crm/ é publicado pelo workflow proprio (deploy-crm.yml) com
+          # state file separado; este deploy nunca o remove.
