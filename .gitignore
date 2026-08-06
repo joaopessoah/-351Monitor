@@ -21,6 +21,7 @@ dist/
 appsettings.*.Local.json
 *.pfx
 *.snk
+/crm_config.php
 
 # Dev
 .dev-mail/

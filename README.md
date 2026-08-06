@@ -12,6 +12,7 @@ SaaS B2B brasileiro de **monitoramento transparente de estações Windows** para
 | `portal/` | SPA React + TypeScript + Vite (Tailwind, shadcn/ui, TanStack Query) |
 | `agent/` | Agente Windows .NET 8 (serviço + helper de sessão) — implementação na F1 |
 | `infra/` | Docker Compose (caddy, api, worker, seq), scripts de deploy/backup |
+| `crm/` | CRM de leads interno (PHP + MySQL na hospedagem do site) — fora do spec do produto |
 | `docs/` | Especificação canônica e análises de design |
 | `.github/workflows/` | CI: build + testes + gate de isolamento multi-tenant |
 

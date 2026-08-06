@@ -1,0 +1,21 @@
+AddDefaultCharset utf-8
+Options -Indexes
+DirectoryIndex index.php
+
+# Ferramenta interna: fora de qualquer índice de busca
+<IfModule mod_headers.c>
+  Header set X-Robots-Tag "noindex, nofollow"
+</IfModule>
+
+# Repassa o header Authorization ao PHP (Bearer da API)
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+
+# Estado do deploy FTP nunca é servido
+<FilesMatch "^\.ftp-deploy-sync-state.*\.json$">
+  Require all denied
+</FilesMatch>
+
+# Migrations e docs não são servidos
+<FilesMatch "\.(sql|md)$">
+  Require all denied
+</FilesMatch>

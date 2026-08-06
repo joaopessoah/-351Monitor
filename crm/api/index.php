@@ -1,0 +1,268 @@
+<?php
+/**
+ * API do CRM para o Claude (assistente do time) tratar leads em sessões futuras.
+ * Auth: Authorization: Bearer <token> (fallback X-Api-Key), tokens no crm_config.php.
+ * Rotas via ?r= — GET leitura, POST escrita (body JSON). Erros: {"error":{code,message}}.
+ *
+ * Exemplos:
+ *   curl -H "Authorization: Bearer $T" ".../crm/api/index.php?r=leads&status=novo"
+ *   curl -H "Authorization: Bearer $T" -X POST -d '{"lead_id":1,"type":"demo","summary":"Demo feita"}' ".../crm/api/index.php?r=interactions"
+ */
+
+require dirname(__DIR__) . '/lib/bootstrap.php';
+
+security_headers(false);
+header('Content-Type: application/json; charset=utf-8');
+
+function api_out(int $code, array $body): never
+{
+    http_response_code($code);
+    echo json_encode($body, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+function api_err(int $http, string $code, string $msg): never
+{
+    api_out($http, ['error' => ['code' => $code, 'message' => $msg]]);
+}
+
+// ---------- Autenticação por token ----------
+$authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+$token = '';
+if (preg_match('/^Bearer\s+(.+)$/i', $authHeader, $m)) {
+    $token = trim($m[1]);
+}
+if ($token === '') {
+    $token = trim($_SERVER['HTTP_X_API_KEY'] ?? '');
+}
+$tokenOk = false;
+foreach ((array) cfg('api_tokens') as $t) {
+    if (is_string($t) && strlen($t) >= 32 && $token !== '' && hash_equals($t, $token)) {
+        $tokenOk = true;
+        break;
+    }
+}
+if (!$tokenOk) {
+    api_err(401, 'unauthorized', 'Token inválido.');
+}
+
+$ip = client_ip();
+if (throttle_blocked('api', $ip, 120, 1)) {
+    api_err(429, 'rate_limited', 'Limite de requisições excedido (120/min).');
+}
+throttle_add('api', $ip);
+
+// ---------- Roteamento ----------
+$r = (string) ($_GET['r'] ?? '');
+$method = $_SERVER['REQUEST_METHOD'];
+$body = [];
+if ($method === 'POST') {
+    $raw = (string) file_get_contents('php://input');
+    $body = $raw === '' ? [] : json_decode($raw, true);
+    if (!is_array($body)) {
+        api_err(400, 'bad_json', 'Body JSON inválido.');
+    }
+}
+
+/** DATETIME local (-03:00 fixo) → ISO 8601 com offset explícito. */
+function api_dt(?string $s): ?string
+{
+    return $s === null ? null : str_replace(' ', 'T', $s) . '-03:00';
+}
+
+function api_lead_row(array $l): array
+{
+    return [
+        'id'                   => (int) $l['id'],
+        'company'              => $l['company'],
+        'contact_name'         => $l['contact_name'],
+        'email'                => $l['email'],
+        'whatsapp'             => $l['whatsapp'],
+        'status'               => $l['status'],
+        'lost_reason'          => $l['lost_reason'],
+        'source'               => $l['source'],
+        'plan_interest'        => $l['plan_interest'],
+        'estimated_devices'    => $l['estimated_devices'] !== null ? (int) $l['estimated_devices'] : null,
+        'next_action_at'       => api_dt($l['next_action_at']),
+        'next_action_note'     => $l['next_action_note'],
+        'duplicate_of_lead_id' => $l['duplicate_of_lead_id'] !== null ? (int) $l['duplicate_of_lead_id'] : null,
+        'created_at'           => api_dt($l['created_at']),
+        'updated_at'           => api_dt($l['updated_at']),
+    ];
+}
+
+try {
+    switch ($method . ' ' . $r) {
+        case 'GET leads': {
+            $res = leads_search([
+                'status'      => $_GET['status'] ?? '',
+                'source'      => $_GET['source'] ?? '',
+                'q'           => norm_text($_GET['q'] ?? '', 120),
+                'so_vencidos' => !empty($_GET['so_vencidos']),
+            ], max(1, (int) ($_GET['page'] ?? 1)));
+            api_out(200, [
+                'items' => array_map('api_lead_row', $res['items']),
+                'page'  => $res['page'],
+                'total' => $res['total'],
+            ]);
+        }
+        case 'GET lead': {
+            $id = (int) ($_GET['id'] ?? 0);
+            $l = row('SELECT * FROM leads WHERE id = ?', [$id]);
+            if ($l === null) {
+                api_err(404, 'not_found', 'Lead não encontrado.');
+            }
+            $out = api_lead_row($l);
+            $out['notes'] = $l['notes'];
+            $out['utm'] = ['source' => $l['utm_source'], 'medium' => $l['utm_medium'], 'campaign' => $l['utm_campaign']];
+            $out['interactions'] = array_map(fn ($i) => [
+                'id' => (int) $i['id'], 'type' => $i['type'], 'summary' => $i['summary'],
+                'occurred_at' => api_dt($i['occurred_at']), 'user' => $i['user_name'],
+            ], rows('SELECT i.*, u.name AS user_name FROM interactions i LEFT JOIN users u ON u.id = i.user_id WHERE i.lead_id = ? ORDER BY i.occurred_at DESC', [$id]));
+            $out['tasks'] = array_map(fn ($t) => [
+                'id' => (int) $t['id'], 'title' => $t['title'],
+                'due_at' => api_dt($t['due_at']), 'done_at' => api_dt($t['done_at']),
+            ], rows('SELECT * FROM tasks WHERE lead_id = ? ORDER BY due_at', [$id]));
+            $out['history'] = array_map(fn ($h) => [
+                'from' => $h['from_status'], 'to' => $h['to_status'], 'changed_at' => api_dt($h['changed_at']),
+            ], rows('SELECT * FROM lead_status_history WHERE lead_id = ? ORDER BY changed_at DESC', [$id]));
+            api_out(200, $out);
+        }
+        case 'POST leads': {
+            $company = norm_text($body['company'] ?? '', 160);
+            if (mb_strlen($company) < 2) {
+                api_err(422, 'invalid', 'company é obrigatório (mínimo 2 caracteres).');
+            }
+            $email = norm_email($body['email'] ?? '');
+            if ($email === false) {
+                api_err(422, 'invalid', 'email inválido.');
+            }
+            $fone = norm_whatsapp($body['whatsapp'] ?? '');
+            if ($fone === false) {
+                api_err(422, 'invalid', 'whatsapp inválido.');
+            }
+            $est = norm_int($body['estimated_devices'] ?? null, 1, 10000);
+            if ($est === false) {
+                api_err(422, 'invalid', 'estimated_devices inválido.');
+            }
+            $na = norm_dt_api($body['next_action_at'] ?? '');
+            if ($na === false) {
+                api_err(422, 'invalid', 'next_action_at inválido (use YYYY-MM-DD HH:MM).');
+            }
+            $res = lead_create([
+                'company'           => $company,
+                'contact_name'      => norm_text($body['contact_name'] ?? '', 120),
+                'email'             => $email,
+                'whatsapp'          => $fone,
+                'estimated_devices' => $est,
+                'source'            => in_enum($body['source'] ?? null, LEAD_SOURCES, 'outro'),
+                'plan_interest'     => in_enum($body['plan_interest'] ?? null, LEAD_PLANS, 'indefinido'),
+                'next_action_at'    => $na,
+                'next_action_note'  => norm_text($body['next_action_note'] ?? '', 255) ?: null,
+                'notes'             => trim((string) ($body['notes'] ?? '')) ?: null,
+            ], null, 'api');
+            api_out(200, ['id' => $res['id'], 'duplicate_of_lead_id' => $res['duplicate_of_lead_id']]);
+        }
+        case 'POST lead-update': {
+            $id = (int) ($body['id'] ?? 0);
+            if (row('SELECT id FROM leads WHERE id = ?', [$id]) === null) {
+                api_err(404, 'not_found', 'Lead não encontrado.');
+            }
+            $d = [];
+            if (array_key_exists('company', $body)) {
+                $c = norm_text($body['company'], 160);
+                if (mb_strlen($c) < 2) {
+                    api_err(422, 'invalid', 'company inválido.');
+                }
+                $d['company'] = $c;
+            }
+            if (array_key_exists('contact_name', $body)) {
+                $d['contact_name'] = norm_text($body['contact_name'], 120);
+            }
+            if (array_key_exists('email', $body)) {
+                $e = norm_email($body['email']);
+                if ($e === false) {
+                    api_err(422, 'invalid', 'email inválido.');
+                }
+                $d['email'] = $e;
+            }
+            if (array_key_exists('whatsapp', $body)) {
+                $w = norm_whatsapp($body['whatsapp']);
+                if ($w === false) {
+                    api_err(422, 'invalid', 'whatsapp inválido.');
+                }
+                $d['whatsapp'] = $w;
+            }
+            if (array_key_exists('estimated_devices', $body)) {
+                $n = norm_int($body['estimated_devices'], 1, 10000);
+                if ($n === false) {
+                    api_err(422, 'invalid', 'estimated_devices inválido.');
+                }
+                $d['estimated_devices'] = $n;
+            }
+            if (array_key_exists('plan_interest', $body)) {
+                $d['plan_interest'] = in_enum($body['plan_interest'], LEAD_PLANS, 'indefinido');
+            }
+            if (array_key_exists('source', $body)) {
+                $d['source'] = in_enum($body['source'], LEAD_SOURCES, 'outro');
+            }
+            if (array_key_exists('next_action_at', $body)) {
+                $na = norm_dt_api($body['next_action_at']);
+                if ($na === false) {
+                    api_err(422, 'invalid', 'next_action_at inválido.');
+                }
+                $d['next_action_at'] = $na;
+            }
+            if (array_key_exists('next_action_note', $body)) {
+                $d['next_action_note'] = norm_text($body['next_action_note'], 255) ?: null;
+            }
+            if (array_key_exists('notes', $body)) {
+                $d['notes'] = trim((string) $body['notes']) ?: null;
+            }
+            lead_update($id, $d);
+            api_out(200, ['ok' => true]);
+        }
+        case 'POST lead-status': {
+            lead_set_status((int) ($body['id'] ?? 0), (string) ($body['status'] ?? ''), $body['lost_reason'] ?? null, null);
+            api_out(200, ['ok' => true]);
+        }
+        case 'POST interactions': {
+            $oc = norm_dt_api($body['occurred_at'] ?? '');
+            if ($oc === false) {
+                api_err(422, 'invalid', 'occurred_at inválido (use YYYY-MM-DD HH:MM).');
+            }
+            $id = interaction_add((int) ($body['lead_id'] ?? 0), (string) ($body['type'] ?? ''), (string) ($body['summary'] ?? ''), $oc, null);
+            api_out(200, ['id' => $id]);
+        }
+        case 'GET tasks': {
+            $due = in_enum($_GET['due'] ?? null, ['hoje', 'atrasadas', 'abertas'], 'abertas');
+            api_out(200, ['items' => array_map(fn ($t) => [
+                'id'      => (int) $t['id'],
+                'lead_id' => $t['lead_id'] !== null ? (int) $t['lead_id'] : null,
+                'company' => $t['company'],
+                'title'   => $t['title'],
+                'due_at'  => api_dt($t['due_at']),
+            ], tasks_lista($due))]);
+        }
+        case 'POST tasks': {
+            $due = norm_dt_api($body['due_at'] ?? '');
+            if ($due === null || $due === false) {
+                api_err(422, 'invalid', 'due_at é obrigatório (YYYY-MM-DD HH:MM).');
+            }
+            $leadId = isset($body['lead_id']) && $body['lead_id'] !== null ? (int) $body['lead_id'] : null;
+            $id = task_add($leadId, (string) ($body['title'] ?? ''), $due, null, null);
+            api_out(200, ['id' => $id]);
+        }
+        case 'POST task-done': {
+            task_done((int) ($body['id'] ?? 0));
+            api_out(200, ['ok' => true]);
+        }
+        default:
+            api_err(404, 'not_found', 'Rota desconhecida. Rotas: leads, lead, lead-update, lead-status, interactions, tasks, task-done.');
+    }
+} catch (InvalidArgumentException $e) {
+    api_err(422, 'invalid', $e->getMessage());
+} catch (Throwable $e) {
+    error_log('api: ' . $e->getMessage());
+    api_err(500, 'internal', 'Erro interno.');
+}
