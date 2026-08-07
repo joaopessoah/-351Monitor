@@ -121,6 +121,21 @@ code { background: var(--surface-2); border: 1px solid var(--border); border-rad
 .rf-list li { padding: 3px 0; border-bottom: 1px solid var(--border-soft); }
 .rf-list li strong { color: var(--ink); }
 
+/* ---------- Novo lead: começar pelo CNPJ ---------- */
+.cnpj-start { display: flex; gap: 10px; flex-wrap: wrap; }
+.cnpj-start input {
+  flex: 1;
+  min-width: 220px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--ink);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 0.95rem;
+}
+.cnpj-start input:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+
 /* ---------- Tabelas ---------- */
 .table-wrap { overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }

@@ -92,6 +92,9 @@ curl -s -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json
 
 ## CNPJ e enriquecimento (Receita Federal)
 
+- **Fluxo recomendado de cadastro**: na tela "Novo lead", comece pelo CNPJ ("Buscar na Receita") —
+  o formulário volta preenchido (empresa = nome fantasia ou razão social) com o resumo da RFB;
+  se o CNPJ não constar na base pública, o cadastro segue manual com o CNPJ preservado.
 - O CNPJ do lead é validado por dígito verificador (`norm_cnpj`), já com suporte ao
   **CNPJ alfanumérico** emitido pela RFB desde jul/2026. Dedupe considera CNPJ além de e-mail/fone.
 - "Consultar na Receita" (detalhe do lead, API `cnpj-enrich`) busca **dados abertos da RFB**

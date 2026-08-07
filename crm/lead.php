@@ -61,12 +61,33 @@ function lead_form_validate(array $in): array
 $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 $errors = [];
 $old = [];
+$prefill = null;      // dados da RFB para o resumo do fluxo "começar pelo CNPJ"
+$prefillMiss = false; // CNPJ válido, mas não encontrado/consulta indisponível
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $action = $_POST['action'] ?? '';
     try {
-        if ($action === 'create') {
+        if ($action === 'cnpj_prefill' && $id === 0) {
+            // Fluxo recomendado: começa pelo CNPJ e o cadastro vem preenchido.
+            $c = norm_cnpj($_POST['cnpj'] ?? '');
+            if ($c === null || $c === false) {
+                flash_set('erro', 'Informe um CNPJ válido para buscar.');
+                redirect('lead.php');
+            }
+            $prefill = cnpj_lookup($c);
+            if ($prefill === null) {
+                $prefillMiss = true;
+                $old = ['cnpj' => cnpj_format($c)];
+            } else {
+                // Razão social sempre: o nome_fantasia da RFB é irregular ("MATRIZ", "DIRECAO GERAL"...).
+                $old = [
+                    'cnpj'    => cnpj_format($c),
+                    'company' => $prefill['razao_social'],
+                ];
+            }
+            // sem redirect: cai na renderização do form de criação já preenchido
+        } elseif ($action === 'create') {
             [$d, $errors] = lead_form_validate($_POST);
             if (!$errors) {
                 $res = lead_create($d, $userId, 'ui');
@@ -177,6 +198,42 @@ if ($errors) {
 
 <?php if ($isNew): ?>
   <h1 class="page-title">Novo lead</h1>
+
+  <?php if (!$old && !$errors): ?>
+    <div class="card">
+      <h2 class="card-title">Começar pelo CNPJ <span class="muted">(recomendado)</span></h2>
+      <p class="muted">Digite o CNPJ e buscamos razão social e situação direto na Receita — o cadastro já vem preenchido.
+        Sem o CNPJ agora? Preencha os dados manualmente logo abaixo.</p>
+      <form method="post" class="cnpj-start">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="cnpj_prefill">
+        <input name="cnpj" type="text" maxlength="18" placeholder="00.000.000/0000-00" autofocus>
+        <button class="btn btn-primary" type="submit">Buscar na Receita</button>
+      </form>
+    </div>
+  <?php endif; ?>
+
+  <?php if ($prefill !== null): ?>
+    <div class="card">
+      <h2 class="card-title">Encontrado na Receita
+        <?php if ($prefill['situacao'] !== ''): ?>
+          <span class="badge <?= stripos($prefill['situacao'], 'ativa') !== false ? 'badge-rf-ok' : 'badge-rf-alerta' ?>"><?= esc($prefill['situacao']) ?></span>
+        <?php endif; ?>
+      </h2>
+      <ul class="rf-list">
+        <li><strong><?= esc($prefill['razao_social']) ?></strong><?php if ($prefill['nome_fantasia'] !== ''): ?> <span class="muted">(<?= esc($prefill['nome_fantasia']) ?>)</span><?php endif; ?></li>
+        <?php if ($prefill['cnae'] !== ''): ?><li>CNAE: <?= esc($prefill['cnae']) ?></li><?php endif; ?>
+        <?php if ($prefill['porte'] !== ''): ?><li>Porte: <?= esc($prefill['porte']) ?></li><?php endif; ?>
+        <?php if ($prefill['municipio'] !== ''): ?><li>Local: <?= esc($prefill['municipio']) ?><?= $prefill['uf'] !== '' ? '/' . esc($prefill['uf']) : '' ?></li><?php endif; ?>
+        <?php if ($prefill['abertura'] !== ''): ?><li>Abertura: <?= esc(fmt_date($prefill['abertura'])) ?></li><?php endif; ?>
+        <?php if ($prefill['socios']): ?><li>Sócios: <?= esc(implode(' · ', $prefill['socios'])) ?></li><?php endif; ?>
+      </ul>
+      <p class="muted">Confira e complete o cadastro abaixo — ao criar, a consulta completa fica salva no lead.</p>
+    </div>
+  <?php elseif ($prefillMiss): ?>
+    <div class="flash flash-aviso">CNPJ válido, mas ainda não consta na base pública da Receita (empresas novas demoram
+      algumas semanas para aparecer) — ou a consulta está fora do ar. Siga com o cadastro manual; o CNPJ já ficou preenchido.</div>
+  <?php endif; ?>
 <?php else: ?>
   <div class="lead-head">
     <h1><?= esc($lead['company']) ?></h1>
