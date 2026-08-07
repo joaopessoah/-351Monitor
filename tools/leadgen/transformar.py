@@ -3,11 +3,16 @@
 Filtros aplicados aqui (ver README): CNAE principal ∈ config.CNAES, situação
 ATIVA (02), só matriz, idade ≥ 2 anos, exclui MEI e administração pública,
 porte EPP/DEMAIS (ME/N.I. só com capital ≥ R$ 100 mil), tem e-mail ou fone.
+
+A ingestão é ARQUIVO A ARQUIVO (CREATE + INSERTs): no modo econômico
+(--economizar-disco, usado no GitHub Actions) cada zip é baixado, extraído,
+ingerido e apagado na sequência — pico de disco ~11 GB em vez de ~30 GB.
 """
 
 import duckdb
 
 import config
+import rfb
 
 
 def _cols_sql(nomes: list[str]) -> str:
@@ -15,16 +20,33 @@ def _cols_sql(nomes: list[str]) -> str:
     return "{" + ", ".join(f"'{c}': 'VARCHAR'" for c in nomes) + "}"
 
 
-def _read_csv(caminho_glob: str, cols: list[str]) -> str:
+def _read_csv(caminho: str, cols: list[str]) -> str:
     # CP1252 (não latin-1): os dumps da RFB trazem bytes 0x80-0x9F, que o
     # decodificador latin-1 estrito do DuckDB rejeita. Usa a extensão 'encodings'.
     return (
-        f"read_csv('{caminho_glob}', delim=';', quote='\"', header=false, "
+        f"read_csv('{caminho}', delim=';', quote='\"', header=false, "
         f"encoding='CP1252', ignore_errors=true, columns={_cols_sql(cols)})"
     )
 
 
-def transformar(mes: str, refazer: bool = False) -> str:
+def _ingerir_familia(con, mes: str, familia: str, cols: list[str],
+                     tabela: str, corpo_select: str, economizar: bool) -> None:
+    """Cria `tabela` a partir dos arquivos da família (ex.: Estabelecimentos0-9),
+    um por vez. `corpo_select` usa o marcador {FONTE} no lugar do read_csv."""
+    arquivos = [a for a in config.ARQUIVOS if a.startswith(familia)]
+    for i, nome in enumerate(arquivos):
+        csv = rfb.garantir_csv(mes, nome, economizar)
+        select = corpo_select.replace("{FONTE}", _read_csv(csv.as_posix(), cols))
+        if i == 0:
+            con.execute(f"CREATE OR REPLACE TABLE {tabela} AS {select}")
+        else:
+            con.execute(f"INSERT INTO {tabela} {select}")
+        if economizar:
+            csv.unlink(missing_ok=True)
+        print(f"      {nome} ok ({i + 1}/{len(arquivos)})")
+
+
+def transformar(mes: str, refazer: bool = False, economizar: bool = False) -> str:
     """Gera data/<mes>/base_filtrada.parquet e devolve o caminho."""
     dir_mes = config.DIR_DATA / mes
     parquet = dir_mes / "base_filtrada.parquet"
@@ -32,7 +54,6 @@ def transformar(mes: str, refazer: bool = False) -> str:
         print(f"  [cache] {parquet.name} ja existe (use --refazer para reprocessar)")
         return str(parquet)
 
-    dir_csv = (dir_mes / "csv").as_posix()
     dir_tmp = dir_mes / "tmp"
     dir_tmp.mkdir(parents=True, exist_ok=True)
 
@@ -48,8 +69,8 @@ def transformar(mes: str, refazer: bool = False) -> str:
     con.execute("SET preserve_insertion_order=false")
 
     print("  [1/5] Estabelecimentos (filtro precoce na tabela grande)...")
-    con.execute(f"""
-        CREATE TABLE est_alvo AS
+    _ingerir_familia(con, mes, "Estabelecimentos", config.COLS_ESTABELECIMENTOS,
+                     "est_alvo", f"""
         SELECT cnpj_basico,
                lpad(cnpj_basico, 8, '0') || lpad(cnpj_ordem, 4, '0')
                  || lpad(cnpj_dv, 2, '0')                          AS cnpj14,
@@ -64,7 +85,7 @@ def transformar(mes: str, refazer: bool = False) -> str:
                               '[^0-9]', '', 'g')                   AS fone2,
                lower(trim(split_part(coalesce(correio_eletronico, ''), ';', 1)))
                                                                    AS email
-        FROM {_read_csv(dir_csv + '/Estabelecimentos*.csv', config.COLS_ESTABELECIMENTOS)}
+        FROM {{FONTE}}
         WHERE situacao_cadastral = '02'
           AND identificador_matriz_filial = '1'
           AND cnae_fiscal_principal IN ({cnaes})
@@ -72,56 +93,56 @@ def transformar(mes: str, refazer: bool = False) -> str:
                 <= now() - INTERVAL {config.IDADE_MINIMA_ANOS} YEAR
           AND (coalesce(correio_eletronico, '') LIKE '%@%'
                OR length(regexp_replace(coalesce(telefone_1, ''), '[^0-9]', '', 'g')) >= 8)
-    """)
+    """, economizar)
 
     print("  [2/5] Empresas (porte, capital, natureza)...")
-    con.execute(f"""
-        CREATE TABLE emp_alvo AS
+    _ingerir_familia(con, mes, "Empresas", config.COLS_EMPRESAS, "emp_alvo", f"""
         SELECT cnpj_basico, razao_social, natureza_juridica,
                CAST(replace(coalesce(capital_social, '0'), ',', '.') AS DOUBLE) AS capital,
                coalesce(porte_empresa, '00') AS porte
-        FROM {_read_csv(dir_csv + '/Empresas*.csv', config.COLS_EMPRESAS)}
+        FROM {{FONTE}}
         WHERE cnpj_basico IN (SELECT cnpj_basico FROM est_alvo)
           AND natureza_juridica NOT LIKE '1%'
           AND (coalesce(porte_empresa, '00') IN ('03', '05')
                OR (coalesce(porte_empresa, '00') IN ('01', '00')
                    AND CAST(replace(coalesce(capital_social, '0'), ',', '.') AS DOUBLE)
                          >= {config.CAPITAL_MINIMO_ME}))
-    """)
+    """, economizar)
 
     print("  [3/5] Simples (excluir MEI)...")
-    con.execute(f"""
-        CREATE TABLE mei AS
+    _ingerir_familia(con, mes, "Simples", config.COLS_SIMPLES, "mei", """
         SELECT cnpj_basico
-        FROM {_read_csv(dir_csv + '/Simples.csv', config.COLS_SIMPLES)}
+        FROM {FONTE}
         WHERE opcao_mei = 'S'
           AND cnpj_basico IN (SELECT cnpj_basico FROM est_alvo)
-    """)
+    """, economizar)
 
     print("  [4/5] Socios (contato = 1o socio-administrador PF, com qualificacao)...")
+    _ingerir_familia(con, mes, "Socios", config.COLS_SOCIOS, "socios_alvo", f"""
+        SELECT cnpj_basico, nome_socio_razao_social, qualificacao_socio,
+               data_entrada_sociedade
+        FROM {{FONTE}}
+        WHERE identificador_socio = '2'
+          AND qualificacao_socio IN ({quals})
+          AND cnpj_basico IN (SELECT cnpj_basico FROM est_alvo)
+    """, economizar)
     con.execute(f"""
-        CREATE TABLE contato AS
+        CREATE OR REPLACE TABLE contato AS
         SELECT cnpj_basico, nome_socio_razao_social AS contato,
                qualificacao_socio AS contato_qual
         FROM (
-            SELECT s.cnpj_basico, s.nome_socio_razao_social, s.qualificacao_socio,
-                   row_number() OVER (
-                       PARTITION BY s.cnpj_basico
-                       ORDER BY CASE s.qualificacao_socio {prioridade_qual} ELSE 9 END,
-                                s.data_entrada_sociedade
+            SELECT s.*, row_number() OVER (
+                       PARTITION BY cnpj_basico
+                       ORDER BY CASE qualificacao_socio {prioridade_qual} ELSE 9 END,
+                                data_entrada_sociedade
                    ) AS rn
-            FROM {_read_csv(dir_csv + '/Socios*.csv', config.COLS_SOCIOS)} s
-            WHERE s.identificador_socio = '2'
-              AND s.qualificacao_socio IN ({quals})
-              AND s.cnpj_basico IN (SELECT cnpj_basico FROM est_alvo)
+            FROM socios_alvo s
         ) WHERE rn = 1
     """)
 
-    print("  [5/5] Base final -> parquet...")
-    con.execute(f"""
-        CREATE TABLE munic AS
-        SELECT codigo, descricao FROM {_read_csv(dir_csv + '/Municipios.csv', config.COLS_REFERENCIA)}
-    """)
+    print("  [5/5] Referencias e base final -> parquet...")
+    _ingerir_familia(con, mes, "Municipios", config.COLS_REFERENCIA, "munic",
+                     "SELECT codigo, descricao FROM {FONTE}", economizar)
     con.execute(f"""
         COPY (
             SELECT e.cnpj14, e.cnpj_basico, e.nome_fantasia, e.cnae, e.inicio,

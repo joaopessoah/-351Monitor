@@ -27,13 +27,19 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r tools/leadgen/requirements.txt
 
-      # O disco raiz do runner (~20-30 GB livres) nao comporta os ~30 GB de
-      # pico (zips + CSVs); /mnt tem espaco de sobra.
       - name: Preparar area de dados em /mnt
-        run: sudo mkdir -p /mnt/leadgen-data && sudo chown "$USER" /mnt/leadgen-data
+        run: |
+          sudo mkdir -p /mnt/leadgen-data && sudo chown "$USER" /mnt/leadgen-data
+          echo "== disco disponivel ==" && df -h / /mnt || true
 
+      # --economizar-disco: baixa/extrai/ingere/apaga arquivo a arquivo
+      # (pico ~11 GB; o disco do runner nao comporta os ~30 GB do modo normal).
       - name: Gerar e enviar a fila
         env:
           MAIS351_CRM_TOKEN: ${{ secrets.MAIS351_CRM_TOKEN }}
           LEADGEN_DATA_DIR: /mnt/leadgen-data
-        run: cd tools/leadgen && python gerar.py --enviar-pool
+        run: cd tools/leadgen && python gerar.py --enviar-pool --economizar-disco
+
+      - name: Disco apos a execucao
+        if: always()
+        run: df -h / /mnt || true

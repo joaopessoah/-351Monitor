@@ -45,6 +45,9 @@ def main() -> int:
                         "(sem CSV e sem histórico — a reconciliação acontece na puxada)")
     p.add_argument("--pool-tamanho", type=int, default=config.POOL_TAMANHO,
                    help=f"tamanho da fila no modo --enviar-pool (padrão {config.POOL_TAMANHO})")
+    p.add_argument("--economizar-disco", action="store_true",
+                   help="baixa/extrai/apaga arquivo a arquivo (pico ~11 GB em vez de ~30 GB; "
+                        "usado no GitHub Actions)")
     args = p.parse_args()
 
     inicio = time.time()
@@ -58,12 +61,15 @@ def main() -> int:
 
     parquet = config.DIR_DATA / mes / "base_filtrada.parquet"
     if not parquet.exists() or args.refazer:
-        print("[2] Download dos arquivos da RFB (retomável; pula os completos)...")
-        rfb.baixar_mes(mes)
-        print("[3] Extração dos CSVs...")
-        rfb.extrair_mes(mes)
+        if args.economizar_disco:
+            print("[2-3] Modo econômico: download/extração arquivo a arquivo, apagando após uso.")
+        else:
+            print("[2] Download dos arquivos da RFB (retomável; pula os completos)...")
+            rfb.baixar_mes(mes)
+            print("[3] Extração dos CSVs...")
+            rfb.extrair_mes(mes)
         print("[4] Transformação (DuckDB)...")
-        transformar.transformar(mes, refazer=args.refazer)
+        transformar.transformar(mes, refazer=args.refazer, economizar=args.economizar_disco)
     else:
         print("[2-4] Base do mês já processada (cache); use --refazer para reprocessar.")
 

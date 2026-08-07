@@ -90,27 +90,50 @@ def baixar_mes(mes: str, apenas_faltantes: bool = True) -> Path:
     return dir_zips
 
 
-def extrair_mes(mes: str) -> Path:
-    """Extrai cada zip renomeando o membro interno (nome críptico da RFB)
+def extrair_um(mes: str, nome_zip: str) -> Path:
+    """Extrai um zip renomeando o membro interno (nome críptico da RFB)
     para um nome previsível: Empresas0.csv, Estabelecimentos3.csv, ...
-    """
-    dir_zips = config.DIR_DATA / mes / "zips"
+    Idempotente: se o CSV já existe, só devolve o caminho."""
     dir_csv = config.DIR_DATA / mes / "csv"
     dir_csv.mkdir(parents=True, exist_ok=True)
+    alvo = dir_csv / (Path(nome_zip).stem + ".csv")
+    if alvo.exists() and alvo.stat().st_size > 0:
+        return alvo
+    caminho_zip = config.DIR_DATA / mes / "zips" / nome_zip
+    with zipfile.ZipFile(caminho_zip) as z:
+        membros = z.namelist()
+        if not membros:
+            raise RuntimeError(f"{nome_zip}: zip vazio.")
+        with z.open(membros[0]) as origem, open(alvo, "wb") as destino:
+            while True:
+                pedaco = origem.read(1024 * 1024 * 8)
+                if not pedaco:
+                    break
+                destino.write(pedaco)
+    return alvo
+
+
+def extrair_mes(mes: str) -> Path:
+    """Extrai todos os zips do mês (modo padrão, com disco de sobra)."""
     for nome in config.ARQUIVOS:
-        alvo = dir_csv / (Path(nome).stem + ".csv")
-        if alvo.exists() and alvo.stat().st_size > 0:
-            continue
-        caminho_zip = dir_zips / nome
-        with zipfile.ZipFile(caminho_zip) as z:
-            membros = z.namelist()
-            if not membros:
-                raise RuntimeError(f"{nome}: zip vazio.")
-            with z.open(membros[0]) as origem, open(alvo, "wb") as destino:
-                while True:
-                    pedaco = origem.read(1024 * 1024 * 8)
-                    if not pedaco:
-                        break
-                    destino.write(pedaco)
-        print(f"  [extraido] {alvo.name}")
-    return dir_csv
+        extrair_um(mes, nome)
+        print(f"  [extraido] {Path(nome).stem}.csv")
+    return config.DIR_DATA / mes / "csv"
+
+
+def garantir_csv(mes: str, nome_zip: str, economizar: bool = False) -> Path:
+    """Garante o CSV de um arquivo: baixa o zip se preciso, extrai e, no modo
+    econômico, apaga o zip logo após a extração (pico de disco mínimo)."""
+    dir_zips = config.DIR_DATA / mes / "zips"
+    dir_zips.mkdir(parents=True, exist_ok=True)
+    csv_alvo = config.DIR_DATA / mes / "csv" / (Path(nome_zip).stem + ".csv")
+    if csv_alvo.exists() and csv_alvo.stat().st_size > 0:
+        return csv_alvo
+    caminho_zip = dir_zips / nome_zip
+    if not caminho_zip.exists() or caminho_zip.stat().st_size == 0:
+        base = config.URL_ESPELHO.rstrip("/") + f"/{mes}/"
+        baixar_arquivo(base + nome_zip, caminho_zip)
+    alvo = extrair_um(mes, nome_zip)
+    if economizar:
+        caminho_zip.unlink(missing_ok=True)
+    return alvo
