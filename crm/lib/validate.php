@@ -34,6 +34,35 @@ function norm_whatsapp(?string $s)
     return false;
 }
 
+/**
+ * CNPJ: 14 posições — desde jul/2026 as 12 primeiras podem ser alfanuméricas,
+ * os 2 dígitos verificadores continuam numéricos (valor do char = ASCII - 48).
+ */
+function norm_cnpj(?string $s)
+{
+    $c = strtoupper(preg_replace('/[^0-9A-Za-z]+/', '', (string) $s));
+    if ($c === '') {
+        return null;
+    }
+    if (!preg_match('/^[0-9A-Z]{12}[0-9]{2}$/', $c) || preg_match('/^(.)\1{13}$/', $c)) {
+        return false;
+    }
+    $dv = function (string $base): int {
+        $sum = 0;
+        $peso = 2;
+        for ($i = strlen($base) - 1; $i >= 0; $i--) {
+            $sum += (ord($base[$i]) - 48) * $peso;
+            $peso = $peso === 9 ? 2 : $peso + 1;
+        }
+        $r = $sum % 11;
+        return $r < 2 ? 0 : 11 - $r;
+    };
+    if ((int) $c[12] !== $dv(substr($c, 0, 12)) || (int) $c[13] !== $dv(substr($c, 0, 13))) {
+        return false;
+    }
+    return $c;
+}
+
 function norm_int($v, int $min, int $max)
 {
     if ($v === null || $v === '') {

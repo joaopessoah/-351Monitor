@@ -19,11 +19,13 @@ if (isset($_GET['export'])) {
     header('Content-Disposition: attachment; filename="leads-' . date('Ymd-Hi') . '.csv"');
     echo "\xEF\xBB\xBF";
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['id', 'empresa', 'contato', 'email', 'whatsapp', 'status', 'motivo_perda', 'origem',
+    fputcsv($out, ['id', 'empresa', 'cnpj', 'razao_social_receita', 'situacao_receita',
+        'contato', 'email', 'whatsapp', 'status', 'motivo_perda', 'origem',
         'estacoes', 'plano', 'proxima_acao', 'nota_proxima_acao', 'observacoes',
         'utm_source', 'utm_medium', 'utm_campaign', 'criado_em', 'atualizado_em'], ';');
     foreach ($res['items'] as $l) {
-        fputcsv($out, [$l['id'], $l['company'], $l['contact_name'], $l['email'], $l['whatsapp'],
+        fputcsv($out, [$l['id'], $l['company'], cnpj_format($l['cnpj']), $l['cnpj_razao_social'], $l['cnpj_situacao'],
+            $l['contact_name'], $l['email'], $l['whatsapp'],
             STATUS_LABELS[$l['status']] ?? $l['status'], $l['lost_reason'],
             SOURCE_LABELS[$l['source']] ?? $l['source'], $l['estimated_devices'],
             PLAN_LABELS[$l['plan_interest']] ?? $l['plan_interest'],

@@ -64,13 +64,15 @@ Base: `https://www.mais351monitor.com.br/crm/api/index.php`
 |---|---|---|---|
 | `?r=leads` | GET | `status`, `source`, `q`, `so_vencidos=1`, `page` | `{items, page, total}` (25/pág) |
 | `?r=lead&id=N` | GET | — | lead completo + `interactions` + `tasks` + `history` |
-| `?r=leads` | POST | `{company*, contact_name, email, whatsapp, source, estimated_devices, plan_interest, next_action_at, next_action_note, notes}` | `{id, duplicate_of_lead_id}` |
+| `?r=leads` | POST | `{company*, cnpj, contact_name, email, whatsapp, source, estimated_devices, plan_interest, next_action_at, next_action_note, notes}` | `{id, duplicate_of_lead_id}` |
 | `?r=lead-update` | POST | `{id*, ...campos acima}` | `{ok}` |
 | `?r=lead-status` | POST | `{id*, status*, lost_reason (se perdido)}` | `{ok}` |
 | `?r=interactions` | POST | `{lead_id*, type*, summary*, occurred_at}` | `{id}` |
 | `?r=tasks` | GET | `due=hoje\|atrasadas\|abertas` | `{items}` |
 | `?r=tasks` | POST | `{title*, due_at*, lead_id}` | `{id}` |
 | `?r=task-done` | POST | `{id*}` | `{ok}` |
+| `?r=cnpj-lookup&cnpj=` | GET | consulta pura, não grava | `{cnpj, data}` |
+| `?r=cnpj-enrich` | POST | `{lead_id*}` — consulta e grava no lead | `{ok, data}` |
 
 Enums — status: `novo, contato_feito, demo_agendada, demo_realizada, trial, cliente, perdido` ·
 origem: `site, whatsapp, email, indicacao, lista_50, outro` · interação: `whatsapp, email, ligacao,
@@ -87,6 +89,17 @@ curl -s -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json
   -d '{"lead_id":1,"type":"demo","summary":"Demo de 10min no WhatsApp. Interessados no Essencial."}' \
   "https://www.mais351monitor.com.br/crm/api/index.php?r=interactions"
 ```
+
+## CNPJ e enriquecimento (Receita Federal)
+
+- O CNPJ do lead é validado por dígito verificador (`norm_cnpj`), já com suporte ao
+  **CNPJ alfanumérico** emitido pela RFB desde jul/2026. Dedupe considera CNPJ além de e-mail/fone.
+- "Consultar na Receita" (detalhe do lead, API `cnpj-enrich`) busca **dados abertos da RFB**
+  via fontes públicas gratuitas, sempre **server-side**: BrasilAPI → fallback minhareceita.org
+  (`crm/lib/cnpj.php`). Traz razão social, situação cadastral, CNAE, porte, município/UF,
+  abertura, capital social e sócios; snapshot fica em `leads.cnpj_json` + colunas de exibição.
+- CNPJ recém-emitido pode demorar a aparecer nas bases públicas (dumps mensais da RFB).
+- Import CSV: coluna opcional `cnpj` no fim (`empresa;contato;email;whatsapp;estacoes;origem;observacoes;cnpj`).
 
 ## Segurança e LGPD (resumo)
 

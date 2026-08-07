@@ -75,6 +75,9 @@ function api_lead_row(array $l): array
     return [
         'id'                   => (int) $l['id'],
         'company'              => $l['company'],
+        'cnpj'                 => $l['cnpj'],
+        'cnpj_razao_social'    => $l['cnpj_razao_social'],
+        'cnpj_situacao'        => $l['cnpj_situacao'],
         'contact_name'         => $l['contact_name'],
         'email'                => $l['email'],
         'whatsapp'             => $l['whatsapp'],
@@ -115,6 +118,8 @@ try {
             $out = api_lead_row($l);
             $out['notes'] = $l['notes'];
             $out['utm'] = ['source' => $l['utm_source'], 'medium' => $l['utm_medium'], 'campaign' => $l['utm_campaign']];
+            $out['cnpj_data'] = $l['cnpj_json'] !== null ? json_decode((string) $l['cnpj_json'], true) : null;
+            $out['cnpj_checked_at'] = api_dt($l['cnpj_checked_at']);
             $out['interactions'] = array_map(fn ($i) => [
                 'id' => (int) $i['id'], 'type' => $i['type'], 'summary' => $i['summary'],
                 'occurred_at' => api_dt($i['occurred_at']), 'user' => $i['user_name'],
@@ -132,6 +137,10 @@ try {
             $company = norm_text($body['company'] ?? '', 160);
             if (mb_strlen($company) < 2) {
                 api_err(422, 'invalid', 'company é obrigatório (mínimo 2 caracteres).');
+            }
+            $cnpj = norm_cnpj($body['cnpj'] ?? '');
+            if ($cnpj === false) {
+                api_err(422, 'invalid', 'cnpj inválido.');
             }
             $email = norm_email($body['email'] ?? '');
             if ($email === false) {
@@ -151,6 +160,7 @@ try {
             }
             $res = lead_create([
                 'company'           => $company,
+                'cnpj'              => $cnpj,
                 'contact_name'      => norm_text($body['contact_name'] ?? '', 120),
                 'email'             => $email,
                 'whatsapp'          => $fone,
@@ -178,6 +188,13 @@ try {
             }
             if (array_key_exists('contact_name', $body)) {
                 $d['contact_name'] = norm_text($body['contact_name'], 120);
+            }
+            if (array_key_exists('cnpj', $body)) {
+                $c = norm_cnpj($body['cnpj']);
+                if ($c === false) {
+                    api_err(422, 'invalid', 'cnpj inválido.');
+                }
+                $d['cnpj'] = $c;
             }
             if (array_key_exists('email', $body)) {
                 $e = norm_email($body['email']);
@@ -257,8 +274,25 @@ try {
             task_done((int) ($body['id'] ?? 0));
             api_out(200, ['ok' => true]);
         }
+        case 'GET cnpj-lookup': {
+            // Consulta pura (não grava nada) — útil para checar uma empresa antes de criar o lead.
+            $c = norm_cnpj($_GET['cnpj'] ?? '');
+            if ($c === null || $c === false) {
+                api_err(422, 'invalid', 'Informe um CNPJ válido em ?cnpj=.');
+            }
+            $data = cnpj_lookup($c);
+            if ($data === null) {
+                api_err(404, 'not_found', 'CNPJ não encontrado na base pública (ou consulta indisponível).');
+            }
+            api_out(200, ['cnpj' => $c, 'data' => $data]);
+        }
+        case 'POST cnpj-enrich': {
+            // Consulta o CNPJ já salvo no lead e grava o snapshot no cadastro.
+            $data = lead_enrich_cnpj((int) ($body['lead_id'] ?? 0));
+            api_out(200, ['ok' => true, 'data' => $data]);
+        }
         default:
-            api_err(404, 'not_found', 'Rota desconhecida. Rotas: leads, lead, lead-update, lead-status, interactions, tasks, task-done.');
+            api_err(404, 'not_found', 'Rota desconhecida. Rotas: leads, lead, lead-update, lead-status, interactions, tasks, task-done, cnpj-lookup, cnpj-enrich.');
     }
 } catch (InvalidArgumentException $e) {
     api_err(422, 'invalid', $e->getMessage());

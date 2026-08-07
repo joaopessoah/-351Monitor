@@ -18,6 +18,12 @@ function lead_form_validate(array $in): array
     if (mb_strlen($d['company']) < 2) {
         $errors['company'] = 'Informe a empresa (mínimo 2 caracteres).';
     }
+    $cnpj = norm_cnpj($in['cnpj'] ?? '');
+    if ($cnpj === false) {
+        $errors['cnpj'] = 'CNPJ inválido — confira os dígitos.';
+    } else {
+        $d['cnpj'] = $cnpj;
+    }
     $d['contact_name'] = norm_text($in['contact_name'] ?? '', 120);
 
     $email = norm_email($in['email'] ?? '');
@@ -64,6 +70,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             [$d, $errors] = lead_form_validate($_POST);
             if (!$errors) {
                 $res = lead_create($d, $userId, 'ui');
+                if (!empty($d['cnpj'])) {
+                    try {
+                        lead_enrich_cnpj($res['id']); // melhor esforço: falha não bloqueia a criação
+                    } catch (Throwable $e) {
+                    }
+                }
                 if ($res['duplicate_of_lead_id']) {
                     flash_set('aviso', 'Lead criado, mas parece duplicado do lead #' . $res['duplicate_of_lead_id'] . '.');
                 } else {
@@ -114,6 +126,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($action === 'task_done' && $id > 0) {
             task_done((int) ($_POST['task_id'] ?? 0));
             flash_set('ok', 'Tarefa concluída.');
+            redirect('lead.php?id=' . $id);
+        } elseif ($action === 'cnpj_lookup' && $id > 0) {
+            lead_enrich_cnpj($id);
+            flash_set('ok', 'Dados da Receita atualizados.');
             redirect('lead.php?id=' . $id);
         } elseif ($action === 'delete' && $id > 0) {
             lead_delete($id);
@@ -191,6 +207,10 @@ if ($errors) {
           <input id="company" name="company" type="text" maxlength="160" required value="<?= esc($v('company')) ?>">
         </div>
         <div class="field">
+          <label for="cnpj">CNPJ</label>
+          <input id="cnpj" name="cnpj" type="text" maxlength="18" placeholder="00.000.000/0000-00" value="<?= esc($v('cnpj')) ?>">
+        </div>
+        <div class="field">
           <label for="contact_name">Contato</label>
           <input id="contact_name" name="contact_name" type="text" maxlength="120" value="<?= esc($v('contact_name')) ?>">
         </div>
@@ -265,6 +285,37 @@ if ($errors) {
         </div>
         <button class="btn btn-ghost" type="submit">Salvar status</button>
       </form>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">Receita Federal</h2>
+      <?php if (!$lead['cnpj']): ?>
+        <p class="muted">Preencha o CNPJ em Dados e salve para habilitar a consulta.</p>
+      <?php else: ?>
+        <p>
+          <code><?= esc(cnpj_format($lead['cnpj'])) ?></code>
+          <?php if ($lead['cnpj_situacao']): ?>
+            <span class="badge <?= stripos($lead['cnpj_situacao'], 'ativa') !== false ? 'badge-rf-ok' : 'badge-rf-alerta' ?>"><?= esc($lead['cnpj_situacao']) ?></span>
+          <?php endif; ?>
+        </p>
+        <?php if ($lead['cnpj_checked_at']): $rf = json_decode((string) $lead['cnpj_json'], true) ?: []; ?>
+          <ul class="rf-list">
+            <li><strong><?= esc($lead['cnpj_razao_social'] ?? '') ?></strong><?php if (!empty($rf['nome_fantasia'])): ?> <span class="muted">(<?= esc($rf['nome_fantasia']) ?>)</span><?php endif; ?></li>
+            <?php if (!empty($rf['cnae'])): ?><li>CNAE: <?= esc($rf['cnae']) ?></li><?php endif; ?>
+            <?php if (!empty($rf['porte'])): ?><li>Porte: <?= esc($rf['porte']) ?></li><?php endif; ?>
+            <?php if (!empty($rf['municipio'])): ?><li>Local: <?= esc($rf['municipio']) ?><?= !empty($rf['uf']) ? '/' . esc($rf['uf']) : '' ?></li><?php endif; ?>
+            <?php if (!empty($rf['abertura'])): ?><li>Abertura: <?= esc(fmt_date($rf['abertura'])) ?></li><?php endif; ?>
+            <?php if (!empty($rf['capital_social'])): ?><li>Capital social: R$ <?= esc(number_format((float) $rf['capital_social'], 2, ',', '.')) ?></li><?php endif; ?>
+            <?php if (!empty($rf['socios'])): ?><li>Sócios: <?= esc(implode(' · ', $rf['socios'])) ?></li><?php endif; ?>
+          </ul>
+          <p class="muted">Consulta em <?= esc(fmt_dt($lead['cnpj_checked_at'])) ?> — dados abertos da RFB.</p>
+        <?php endif; ?>
+        <form method="post">
+          <?= csrf_field() ?>
+          <input type="hidden" name="action" value="cnpj_lookup">
+          <button class="btn btn-ghost" type="submit"><?= $lead['cnpj_checked_at'] ? 'Atualizar consulta' : 'Consultar na Receita' ?></button>
+        </form>
+      <?php endif; ?>
     </div>
 
     <div class="card">

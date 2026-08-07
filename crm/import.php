@@ -10,7 +10,7 @@ require __DIR__ . '/lib/bootstrap.php';
 
 $user = auth_require();
 
-const IMPORT_COLS = ['empresa', 'contato', 'email', 'whatsapp', 'estacoes', 'origem', 'observacoes'];
+const IMPORT_COLS = ['empresa', 'contato', 'email', 'whatsapp', 'estacoes', 'origem', 'observacoes', 'cnpj'];
 
 // Modelo de CSV para download
 if (isset($_GET['modelo'])) {
@@ -19,7 +19,7 @@ if (isset($_GET['modelo'])) {
     echo "\xEF\xBB\xBF";
     $out = fopen('php://output', 'w');
     fputcsv($out, IMPORT_COLS, ';');
-    fputcsv($out, ['ACME Contabilidade', 'Fulano Silva', 'fulano@acme.com.br', '11999990000', '25', 'lista_50', 'indicação do José'], ';');
+    fputcsv($out, ['ACME Contabilidade', 'Fulano Silva', 'fulano@acme.com.br', '11999990000', '25', 'lista_50', 'indicação do José', '00.000.000/0001-91'], ';');
     fclose($out);
     exit;
 }
@@ -46,7 +46,7 @@ function parse_import_csv(string $content): array
             continue;
         }
         $cells = array_pad(array_map('trim', $cells), count(IMPORT_COLS), '');
-        [$empresa, $contato, $email, $whatsapp, $estacoes, $origem, $obs] = $cells;
+        [$empresa, $contato, $email, $whatsapp, $estacoes, $origem, $obs, $cnpjRaw] = $cells;
 
         $r = [
             'linha'    => $i + 1,
@@ -57,6 +57,7 @@ function parse_import_csv(string $content): array
             'estacoes' => null,
             'origem'   => 'lista_50',
             'obs'      => norm_text($obs, 10000),
+            'cnpj'     => null,
             'status'   => 'ok',
             'motivo'   => '',
         ];
@@ -83,6 +84,14 @@ function parse_import_csv(string $content): array
             continue;
         }
         $r['whatsapp'] = $w;
+        $c = norm_cnpj($cnpjRaw);
+        if ($c === false) {
+            $r['status'] = 'invalida';
+            $r['motivo'] = 'CNPJ inválido';
+            $rows[] = $r;
+            continue;
+        }
+        $r['cnpj'] = $c;
         $n = norm_int($estacoes, 1, 10000);
         $r['estacoes'] = $n === false ? null : $n;
 
@@ -93,15 +102,15 @@ function parse_import_csv(string $content): array
         $r['origem'] = $mapa[$origemNorm] ?? 'outro';
 
         // Duplicada no banco ou no próprio arquivo
-        $dupKey = ($r['email'] ?? '') . '|' . ($r['whatsapp'] ?? '');
-        if ($dupKey !== '|' && isset($seen[$dupKey])) {
+        $dupKey = ($r['email'] ?? '') . '|' . ($r['whatsapp'] ?? '') . '|' . ($r['cnpj'] ?? '');
+        if ($dupKey !== '||' && isset($seen[$dupKey])) {
             $r['status'] = 'duplicada';
             $r['motivo'] = 'repetida no arquivo (linha ' . $seen[$dupKey] . ')';
-        } elseif (lead_find_duplicate($r['email'], $r['whatsapp']) !== null) {
+        } elseif (lead_find_duplicate($r['email'], $r['whatsapp'], $r['cnpj']) !== null) {
             $r['status'] = 'duplicada';
-            $r['motivo'] = 'e-mail/fone já existe no CRM';
+            $r['motivo'] = 'e-mail/fone/CNPJ já existe no CRM';
         }
-        if ($dupKey !== '|') {
+        if ($dupKey !== '||') {
             $seen[$dupKey] = $r['linha'];
         }
         $rows[] = $r;
@@ -150,6 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $res = lead_create([
                 'company'           => $r['empresa'],
+                'cnpj'              => $r['cnpj'] ?? null,
                 'contact_name'      => $r['contato'],
                 'email'             => $r['email'],
                 'whatsapp'          => $r['whatsapp'],
@@ -171,7 +181,7 @@ page_header('Importar', 'import.php', $user);
 
 <?php if (!$preview): ?>
   <div class="card">
-    <p>Colunas esperadas (com cabeçalho): <code>empresa;contato;email;whatsapp;estacoes;origem;observacoes</code>
+    <p>Colunas esperadas (com cabeçalho): <code>empresa;contato;email;whatsapp;estacoes;origem;observacoes;cnpj</code>
       — <a href="import.php?modelo=1">baixar modelo</a>.</p>
     <p class="muted">Aceita separador <code>;</code> ou <code>,</code> e arquivos salvos pelo Excel (Windows-1252) ou UTF-8.
       Linhas sem e-mail e sem WhatsApp são aceitas (prospecção): a duplicidade fica por conta da empresa.</p>
@@ -207,13 +217,14 @@ page_header('Importar', 'import.php', $user);
   </div>
   <div class="card table-wrap">
     <table class="table">
-      <thead><tr><th>Linha</th><th>Situação</th><th>Empresa</th><th>Contato</th><th>E-mail</th><th>WhatsApp</th><th>Estações</th><th>Origem</th><th>Motivo</th></tr></thead>
+      <thead><tr><th>Linha</th><th>Situação</th><th>Empresa</th><th>CNPJ</th><th>Contato</th><th>E-mail</th><th>WhatsApp</th><th>Estações</th><th>Origem</th><th>Motivo</th></tr></thead>
       <tbody>
         <?php foreach ($preview as $r): ?>
           <tr>
             <td><?= (int) $r['linha'] ?></td>
             <td class="import-<?= esc($r['status']) ?>"><?= esc($r['status']) ?></td>
             <td><?= esc($r['empresa']) ?></td>
+            <td><?= esc(isset($r['cnpj']) && $r['cnpj'] ? cnpj_format($r['cnpj']) : '—') ?></td>
             <td><?= esc($r['contato']) ?></td>
             <td><?= esc($r['email'] ?? '—') ?></td>
             <td><?= esc($r['whatsapp'] ?? '—') ?></td>

@@ -18,11 +18,8 @@ const DEMO_META_MES     = 10; // meta comercial: 10 demos/mês (docs/CONSIDERACO
 
 /* ---------- Leads ---------- */
 
-function lead_find_duplicate(?string $email, ?string $whatsapp): ?int
+function lead_find_duplicate(?string $email, ?string $whatsapp, ?string $cnpj = null): ?int
 {
-    if ($email === null && $whatsapp === null) {
-        return null;
-    }
     $conds = [];
     $params = [];
     if ($email !== null) {
@@ -33,6 +30,13 @@ function lead_find_duplicate(?string $email, ?string $whatsapp): ?int
         $conds[] = 'whatsapp = ?';
         $params[] = $whatsapp;
     }
+    if ($cnpj !== null) {
+        $conds[] = 'cnpj = ?';
+        $params[] = $cnpj;
+    }
+    if (!$conds) {
+        return null;
+    }
     $id = scalar('SELECT id FROM leads WHERE ' . implode(' OR ', $conds) . ' ORDER BY id LIMIT 1', $params);
     return $id === null ? null : (int) $id;
 }
@@ -40,14 +44,15 @@ function lead_find_duplicate(?string $email, ?string $whatsapp): ?int
 /** @return array{id:int, duplicate_of_lead_id:?int} */
 function lead_create(array $d, ?int $userId, string $via): array
 {
-    $dup = lead_find_duplicate($d['email'] ?? null, $d['whatsapp'] ?? null);
+    $dup = lead_find_duplicate($d['email'] ?? null, $d['whatsapp'] ?? null, $d['cnpj'] ?? null);
     db()->beginTransaction();
     try {
-        q('INSERT INTO leads (company, contact_name, email, whatsapp, status, source,
+        q('INSERT INTO leads (company, cnpj, contact_name, email, whatsapp, status, source,
                               utm_source, utm_medium, utm_campaign, estimated_devices, plan_interest,
                               next_action_at, next_action_note, notes, duplicate_of_lead_id, created_via, created_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [
             $d['company'],
+            $d['cnpj'] ?? null,
             $d['contact_name'] ?? '',
             $d['email'] ?? null,
             $d['whatsapp'] ?? null,
@@ -79,7 +84,7 @@ function lead_create(array $d, ?int $userId, string $via): array
 /** Atualiza campos editáveis (whitelist). Valores já normalizados pelo chamador. */
 function lead_update(int $id, array $d): void
 {
-    $allowed = ['company', 'contact_name', 'email', 'whatsapp', 'source', 'estimated_devices',
+    $allowed = ['company', 'cnpj', 'contact_name', 'email', 'whatsapp', 'source', 'estimated_devices',
         'plan_interest', 'next_action_at', 'next_action_note', 'notes',
         'utm_source', 'utm_medium', 'utm_campaign'];
     $sets = [];
@@ -131,6 +136,32 @@ function lead_delete(int $id): void
     q('DELETE FROM leads WHERE id = ?', [$id]);
 }
 
+/**
+ * Consulta o CNPJ do lead nos dados públicos da Receita e grava o snapshot.
+ * @return array os dados normalizados (shape do cnpj_lookup)
+ */
+function lead_enrich_cnpj(int $id): array
+{
+    $lead = row('SELECT id, cnpj FROM leads WHERE id = ?', [$id]);
+    if ($lead === null) {
+        throw new InvalidArgumentException('Lead não encontrado.');
+    }
+    if (!$lead['cnpj']) {
+        throw new InvalidArgumentException('Preencha e salve o CNPJ antes de consultar.');
+    }
+    $data = cnpj_lookup($lead['cnpj']);
+    if ($data === null) {
+        throw new InvalidArgumentException('Consulta indisponível agora ou CNPJ não encontrado na base da Receita.');
+    }
+    q('UPDATE leads SET cnpj_razao_social = ?, cnpj_situacao = ?, cnpj_json = ?, cnpj_checked_at = NOW() WHERE id = ?', [
+        mb_substr($data['razao_social'], 0, 160),
+        mb_substr($data['situacao'], 0, 40),
+        json_encode($data, JSON_UNESCAPED_UNICODE),
+        $id,
+    ]);
+    return $data;
+}
+
 function leads_search(array $f, int $page = 1, int $perPage = 25): array
 {
     $where = [];
@@ -144,9 +175,9 @@ function leads_search(array $f, int $page = 1, int $perPage = 25): array
         $params[] = $f['source'];
     }
     if (!empty($f['q'])) {
-        $where[] = '(l.company LIKE ? OR l.contact_name LIKE ? OR l.email LIKE ? OR l.whatsapp LIKE ?)';
+        $where[] = '(l.company LIKE ? OR l.contact_name LIKE ? OR l.email LIKE ? OR l.whatsapp LIKE ? OR l.cnpj LIKE ? OR l.cnpj_razao_social LIKE ?)';
         $like = '%' . $f['q'] . '%';
-        array_push($params, $like, $like, $like, $like);
+        array_push($params, $like, $like, $like, $like, $like, $like);
     }
     if (!empty($f['so_vencidos'])) {
         $where[] = "l.next_action_at IS NOT NULL AND l.next_action_at <= NOW() AND l.status NOT IN ('cliente','perdido')";
