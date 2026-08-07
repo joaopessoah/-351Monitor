@@ -35,7 +35,7 @@ security_headers();
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>Entrar — +351 CRM</title>
-<link rel="stylesheet" href="assets/crm.css">
+<link rel="stylesheet" href="<?= esc(asset_url('assets/crm.css')) ?>">
 </head>
 <body class="login-body">
 <main class="login-card">

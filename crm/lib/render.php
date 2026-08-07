@@ -91,7 +91,7 @@ function page_header(string $title, string $active, array $user): void
     echo '<meta name="viewport" content="width=device-width, initial-scale=1">';
     echo '<meta name="robots" content="noindex, nofollow">';
     echo '<title>' . esc($title) . ' — +351 CRM</title>';
-    echo '<link rel="stylesheet" href="assets/crm.css">';
+    echo '<link rel="stylesheet" href="' . esc(asset_url('assets/crm.css')) . '">';
     echo '</head><body>';
     echo '<header class="topbar"><div class="topbar-inner">';
     echo '<a class="brand" href="index.php"><em>+</em>351 <span>CRM</span></a>';
@@ -111,5 +111,12 @@ function page_header(string $title, string $active, array $user): void
 
 function page_footer(): void
 {
-    echo '</main><script src="assets/crm.js" defer></script></body></html>';
+    echo '</main><script src="' . esc(asset_url('assets/crm.js')) . '" defer></script></body></html>';
+}
+
+/** URL do asset com cache-busting automático (?v=mtime) — o .htaccess do site herda 7d de cache para CSS/JS. */
+function asset_url(string $rel): string
+{
+    $mtime = @filemtime(dirname(__DIR__) . '/' . $rel);
+    return $rel . ($mtime ? '?v=' . $mtime : '');
 }
