@@ -102,6 +102,7 @@ try {
                 'source'      => $_GET['source'] ?? '',
                 'q'           => norm_text($_GET['q'] ?? '', 120),
                 'so_vencidos' => !empty($_GET['so_vencidos']),
+                'so_decisor'  => !empty($_GET['so_decisor']),
             ], max(1, (int) ($_GET['page'] ?? 1)));
             api_out(200, [
                 'items' => array_map('api_lead_row', $res['items']),
@@ -120,6 +121,11 @@ try {
             $out['utm'] = ['source' => $l['utm_source'], 'medium' => $l['utm_medium'], 'campaign' => $l['utm_campaign']];
             $out['cnpj_data'] = $l['cnpj_json'] !== null ? json_decode((string) $l['cnpj_json'], true) : null;
             $out['cnpj_checked_at'] = api_dt($l['cnpj_checked_at']);
+            $out['contacts'] = array_map(fn ($c) => [
+                'id' => (int) $c['id'], 'name' => $c['name'], 'cargo' => $c['cargo'],
+                'email' => $c['email'], 'whatsapp' => $c['whatsapp'],
+                'principal' => (bool) $c['is_principal'], 'decisor' => (bool) $c['is_decisor'],
+            ], contacts_of($id));
             $out['interactions'] = array_map(fn ($i) => [
                 'id' => (int) $i['id'], 'type' => $i['type'], 'summary' => $i['summary'],
                 'occurred_at' => api_dt($i['occurred_at']), 'user' => $i['user_name'],
@@ -237,6 +243,37 @@ try {
                 $d['notes'] = trim((string) $body['notes']) ?: null;
             }
             lead_update($id, $d);
+            if (array_key_exists('contact_name', $d) || array_key_exists('email', $d) || array_key_exists('whatsapp', $d)) {
+                sync_lead_to_principal($id);
+            }
+            api_out(200, ['ok' => true]);
+        }
+        case 'POST contacts': {
+            $leadId = (int) ($body['lead_id'] ?? 0);
+            if (row('SELECT id FROM leads WHERE id = ?', [$leadId]) === null) {
+                api_err(404, 'not_found', 'Lead não encontrado.');
+            }
+            $email = norm_email($body['email'] ?? '');
+            if ($email === false) {
+                api_err(422, 'invalid', 'email inválido.');
+            }
+            $fone = norm_whatsapp($body['whatsapp'] ?? '');
+            if ($fone === false) {
+                api_err(422, 'invalid', 'whatsapp inválido.');
+            }
+            $cid = contact_add($leadId, [
+                'name'         => (string) ($body['name'] ?? ''),
+                'cargo'        => $body['cargo'] ?? null,
+                'email'        => $email,
+                'whatsapp'     => $fone,
+                'is_principal' => !empty($body['principal']),
+                'is_decisor'   => array_key_exists('decisor', $body) ? (bool) $body['decisor'] : null,
+                'notes'        => $body['notes'] ?? null,
+            ]);
+            api_out(200, ['id' => $cid]);
+        }
+        case 'POST contact-delete': {
+            contact_delete((int) ($body['id'] ?? 0));
             api_out(200, ['ok' => true]);
         }
         case 'POST lead-status': {
@@ -317,6 +354,7 @@ try {
                     'cnpj'           => $cnpj,
                     'company'        => $company,
                     'contact_name'   => norm_text($item['contact_name'] ?? '', 120),
+                    'contact_cargo'  => norm_text($item['contact_cargo'] ?? '', 80) ?: null,
                     'email'          => $email !== false ? $email : null,
                     'whatsapp'       => $fone !== false ? $fone : null,
                     'estacoes'       => $est !== false ? $est : null,

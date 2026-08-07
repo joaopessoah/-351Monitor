@@ -98,12 +98,13 @@ def transformar(mes: str, refazer: bool = False) -> str:
           AND cnpj_basico IN (SELECT cnpj_basico FROM est_alvo)
     """)
 
-    print("  [4/5] Socios (contato = 1o socio-administrador PF)...")
+    print("  [4/5] Socios (contato = 1o socio-administrador PF, com qualificacao)...")
     con.execute(f"""
         CREATE TABLE contato AS
-        SELECT cnpj_basico, nome_socio_razao_social AS contato
+        SELECT cnpj_basico, nome_socio_razao_social AS contato,
+               qualificacao_socio AS contato_qual
         FROM (
-            SELECT s.cnpj_basico, s.nome_socio_razao_social,
+            SELECT s.cnpj_basico, s.nome_socio_razao_social, s.qualificacao_socio,
                    row_number() OVER (
                        PARTITION BY s.cnpj_basico
                        ORDER BY CASE s.qualificacao_socio {prioridade_qual} ELSE 9 END,
@@ -126,7 +127,7 @@ def transformar(mes: str, refazer: bool = False) -> str:
             SELECT e.cnpj14, e.cnpj_basico, e.nome_fantasia, e.cnae, e.inicio,
                    e.uf, e.fone1, e.fone2, e.email,
                    emp.razao_social, emp.capital, emp.porte,
-                   c.contato,
+                   c.contato, c.contato_qual,
                    coalesce(m.descricao, '') AS municipio_nome
             FROM est_alvo e
             JOIN emp_alvo emp USING (cnpj_basico)

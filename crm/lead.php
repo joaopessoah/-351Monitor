@@ -109,10 +109,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             [$d, $errors] = lead_form_validate($_POST);
             if (!$errors) {
                 lead_update($id, $d);
+                sync_lead_to_principal($id);
                 flash_set('ok', 'Dados salvos.');
                 redirect('lead.php?id=' . $id);
             }
             $old = $_POST;
+        } elseif ($action === 'contact_add' && $id > 0) {
+            $email = norm_email($_POST['c_email'] ?? '');
+            if ($email === false) {
+                throw new InvalidArgumentException('E-mail do contato inválido.');
+            }
+            $fone = norm_whatsapp($_POST['c_whatsapp'] ?? '');
+            if ($fone === false) {
+                throw new InvalidArgumentException('WhatsApp do contato inválido.');
+            }
+            contact_add($id, [
+                'name'         => (string) ($_POST['c_name'] ?? ''),
+                'cargo'        => $_POST['c_cargo'] ?? null,
+                'email'        => $email,
+                'whatsapp'     => $fone,
+                'is_principal' => !empty($_POST['c_principal']),
+            ]);
+            flash_set('ok', 'Contato adicionado.');
+            redirect('lead.php?id=' . $id);
+        } elseif ($action === 'contact_delete' && $id > 0) {
+            contact_delete((int) ($_POST['contact_id'] ?? 0));
+            flash_set('ok', 'Contato removido.');
+            redirect('lead.php?id=' . $id);
+        } elseif ($action === 'contact_principal' && $id > 0) {
+            contact_set_principal((int) ($_POST['contact_id'] ?? 0));
+            flash_set('ok', 'Contato principal atualizado.');
+            redirect('lead.php?id=' . $id);
+        } elseif ($action === 'contact_decisor' && $id > 0) {
+            contact_toggle_decisor((int) ($_POST['contact_id'] ?? 0));
+            redirect('lead.php?id=' . $id);
         } elseif ($action === 'status' && $id > 0) {
             lead_set_status($id, (string) ($_POST['status'] ?? ''), $_POST['lost_reason'] ?? null, $userId);
             flash_set('ok', 'Status atualizado.');
@@ -444,6 +474,86 @@ if ($errors) {
 </div>
 
 <?php if (!$isNew): ?>
+  <div class="card">
+    <h2 class="card-title">Contatos <span class="muted">(o principal alimenta a lista e o dedupe)</span></h2>
+    <?php $contatos = contacts_of($id); ?>
+    <?php if ($contatos): ?>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Nome</th><th>Cargo</th><th>E-mail</th><th>WhatsApp</th><th></th><th></th></tr></thead>
+          <tbody>
+            <?php foreach ($contatos as $c): ?>
+              <tr>
+                <td>
+                  <?= esc($c['name']) ?>
+                  <?php if ($c['is_principal']): ?><span class="badge badge-trial">Principal</span><?php endif; ?>
+                </td>
+                <td>
+                  <?= esc($c['cargo'] ?: '—') ?>
+                  <?php if ($c['is_decisor']): ?><span class="badge badge-decisor">★ Decisor</span><?php endif; ?>
+                </td>
+                <td><?= esc($c['email'] ?: '—') ?></td>
+                <td><?= wa_link($c['whatsapp']) ?></td>
+                <td>
+                  <form method="post" class="inline-form"><?= csrf_field() ?>
+                    <input type="hidden" name="action" value="contact_decisor">
+                    <input type="hidden" name="contact_id" value="<?= (int) $c['id'] ?>">
+                    <button class="btn btn-ghost btn-sm" type="submit"><?= $c['is_decisor'] ? 'Tirar decisor' : 'Marcar decisor' ?></button>
+                  </form>
+                  <?php if (!$c['is_principal']): ?>
+                    <form method="post" class="inline-form"><?= csrf_field() ?>
+                      <input type="hidden" name="action" value="contact_principal">
+                      <input type="hidden" name="contact_id" value="<?= (int) $c['id'] ?>">
+                      <button class="btn btn-ghost btn-sm" type="submit">Tornar principal</button>
+                    </form>
+                  <?php endif; ?>
+                </td>
+                <td>
+                  <form method="post" class="inline-form" data-confirm="Remover este contato?"><?= csrf_field() ?>
+                    <input type="hidden" name="action" value="contact_delete">
+                    <input type="hidden" name="contact_id" value="<?= (int) $c['id'] ?>">
+                    <button class="btn btn-danger btn-sm" type="submit">Remover</button>
+                  </form>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    <?php else: ?>
+      <p class="muted">Nenhum contato cadastrado ainda.</p>
+    <?php endif; ?>
+    <form method="post" class="form-stack">
+      <?= csrf_field() ?>
+      <input type="hidden" name="action" value="contact_add">
+      <div class="form-grid">
+        <div class="field">
+          <label for="c_name">Nome *</label>
+          <input id="c_name" name="c_name" type="text" maxlength="120" required>
+        </div>
+        <div class="field">
+          <label for="c_cargo">Cargo <span class="muted">(sócio, CEO, diretor… marca decisor sozinho)</span></label>
+          <input id="c_cargo" name="c_cargo" type="text" maxlength="80" placeholder="Ex.: Sócio-administrador">
+        </div>
+        <div class="field">
+          <label for="c_email">E-mail</label>
+          <input id="c_email" name="c_email" type="email" maxlength="190">
+        </div>
+        <div class="field">
+          <label for="c_whatsapp">WhatsApp</label>
+          <input id="c_whatsapp" name="c_whatsapp" type="tel" maxlength="20" placeholder="(11) 99999-9999">
+        </div>
+        <div class="field field-check">
+          <input id="c_principal" name="c_principal" type="checkbox" value="1">
+          <label for="c_principal">Tornar principal</label>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" type="submit">Adicionar contato</button>
+      </div>
+    </form>
+  </div>
+
   <div class="grid-2">
     <div class="card">
       <h2 class="card-title">Registrar interação</h2>

@@ -44,11 +44,25 @@ CNAES = {
     "8219999": ("bpo_agencias", "Apoio administrativo", 22, 1.5),
     "8220200": ("bpo_agencias", "Teleatendimento / call center", 22, 2.5),
     "7311400": ("bpo_agencias", "Agencia de publicidade", 15, 0.9),
+    "6622300": ("seguros_imob", "Corretora de seguros", 16, 0.8),
+    "6821801": ("seguros_imob", "Corretagem de imoveis", 16, 0.8),
+    "6822600": ("seguros_imob", "Administracao de imoveis", 16, 0.9),
+    "7020400": ("servicos_prof", "Consultoria em gestao empresarial", 15, 0.9),
+    "7112000": ("servicos_prof", "Servicos de engenharia", 15, 0.9),
 }
 # Extensões futuras (avaliar na calibração): "6311900" hosting/dados,
-# "7020400" consultoria em gestão, "6822600" administração de imóveis.
+# "7111100" arquitetura, "4930202" transportadoras com backoffice.
 
-VERTICAIS = ("contabilidade", "software_ti", "advocacia", "bpo_agencias")
+VERTICAIS = ("contabilidade", "software_ti", "advocacia", "bpo_agencias",
+             "seguros_imob", "servicos_prof")
+
+# Qualificação RFB do sócio-contato -> cargo legível (vai para o CRM)
+CARGO_POR_QUALIFICACAO = {
+    "49": "Sócio-administrador",
+    "05": "Administrador",
+    "16": "Presidente",
+    "22": "Sócio",
+}
 
 # ---------------------------------------------------------------------------
 # Filtros

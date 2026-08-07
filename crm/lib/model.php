@@ -38,7 +38,27 @@ function lead_find_duplicate(?string $email, ?string $whatsapp, ?string $cnpj = 
         return null;
     }
     $id = scalar('SELECT id FROM leads WHERE ' . implode(' OR ', $conds) . ' ORDER BY id LIMIT 1', $params);
-    return $id === null ? null : (int) $id;
+    if ($id !== null) {
+        return (int) $id;
+    }
+    // Também considera os contatos adicionais (lead_contacts)
+    if ($email !== null || $whatsapp !== null) {
+        $conds2 = [];
+        $params2 = [];
+        if ($email !== null) {
+            $conds2[] = 'email = ?';
+            $params2[] = $email;
+        }
+        if ($whatsapp !== null) {
+            $conds2[] = 'whatsapp = ?';
+            $params2[] = $whatsapp;
+        }
+        $id = scalar('SELECT lead_id FROM lead_contacts WHERE ' . implode(' OR ', $conds2) . ' ORDER BY lead_id LIMIT 1', $params2);
+        if ($id !== null) {
+            return (int) $id;
+        }
+    }
+    return null;
 }
 
 /** @return array{id:int, duplicate_of_lead_id:?int} */
@@ -77,6 +97,16 @@ function lead_create(array $d, ?int $userId, string $via): array
     } catch (Throwable $e) {
         db()->rollBack();
         throw $e;
+    }
+    // Contato principal vira registro estruturado (com cargo, quando conhecido)
+    if (!empty($d['contact_name']) || !empty($d['email']) || !empty($d['whatsapp'])) {
+        contact_add($id, [
+            'name'         => $d['contact_name'] ?: 'Contato',
+            'cargo'        => $d['contact_cargo'] ?? null,
+            'email'        => $d['email'] ?? null,
+            'whatsapp'     => $d['whatsapp'] ?? null,
+            'is_principal' => 1,
+        ]);
     }
     return ['id' => $id, 'duplicate_of_lead_id' => $dup];
 }
@@ -181,6 +211,9 @@ function leads_search(array $f, int $page = 1, int $perPage = 25): array
     }
     if (!empty($f['so_vencidos'])) {
         $where[] = "l.next_action_at IS NOT NULL AND l.next_action_at <= NOW() AND l.status NOT IN ('cliente','perdido')";
+    }
+    if (!empty($f['so_decisor'])) {
+        $where[] = 'EXISTS (SELECT 1 FROM lead_contacts lc WHERE lc.lead_id = l.id AND lc.is_decisor = 1)';
     }
     $sqlWhere = $where ? 'WHERE ' . implode(' AND ', $where) : '';
     $total = (int) scalar("SELECT COUNT(*) FROM leads l $sqlWhere", $params);
@@ -297,30 +330,171 @@ function leads_novos_parados(int $hours = 48, int $limit = 10): array
                  ORDER BY created_at ASC LIMIT $limit");
 }
 
+/* ---------- Contatos do lead (lead_contacts) ---------- */
+
+/** Cargos que indicam poder de decisão (flag automática, editável na UI). */
+function cargo_e_decisor(?string $cargo): bool
+{
+    if (!$cargo) {
+        return false;
+    }
+    return (bool) preg_match(
+        '/s[óo]cio|ceo\b|coo\b|cfo\b|cto\b|diretor|presidente|dono|propriet|founder|fundador|administrador|gerente geral|head\b/iu',
+        $cargo
+    );
+}
+
+function contacts_of(int $leadId): array
+{
+    return rows('SELECT * FROM lead_contacts WHERE lead_id = ? ORDER BY is_principal DESC, is_decisor DESC, id', [$leadId]);
+}
+
+/** Espelha o contato principal nos campos rápidos do lead (compatibilidade). */
+function sync_principal_contact(int $leadId): void
+{
+    $p = row('SELECT name, email, whatsapp FROM lead_contacts WHERE lead_id = ? AND is_principal = 1 LIMIT 1', [$leadId]);
+    if ($p !== null) {
+        q('UPDATE leads SET contact_name = ?, email = ?, whatsapp = ? WHERE id = ?',
+            [$p['name'], $p['email'], $p['whatsapp'], $leadId]);
+    }
+}
+
+function contact_add(int $leadId, array $d): int
+{
+    $name = norm_text($d['name'] ?? '', 120);
+    if (mb_strlen($name) < 2) {
+        throw new InvalidArgumentException('Informe o nome do contato.');
+    }
+    $cargo = norm_text($d['cargo'] ?? '', 80) ?: null;
+    $decisor = array_key_exists('is_decisor', $d) && $d['is_decisor'] !== null
+        ? (int) (bool) $d['is_decisor']
+        : (int) cargo_e_decisor($cargo);
+    $principal = (int) (bool) ($d['is_principal'] ?? 0);
+    // Primeiro contato do lead vira principal automaticamente
+    if (!$principal && scalar('SELECT COUNT(*) FROM lead_contacts WHERE lead_id = ?', [$leadId]) == 0) {
+        $principal = 1;
+    }
+    if ($principal) {
+        q('UPDATE lead_contacts SET is_principal = 0 WHERE lead_id = ?', [$leadId]);
+    }
+    q('INSERT INTO lead_contacts (lead_id, name, cargo, email, whatsapp, is_principal, is_decisor, notes)
+       VALUES (?,?,?,?,?,?,?,?)', [
+        $leadId, $name, $cargo,
+        $d['email'] ?? null, $d['whatsapp'] ?? null,
+        $principal, $decisor,
+        norm_text($d['notes'] ?? '', 255) ?: null,
+    ]);
+    $id = last_id();
+    if ($principal) {
+        sync_principal_contact($leadId);
+    }
+    return $id;
+}
+
+function contact_delete(int $id): void
+{
+    q('DELETE FROM lead_contacts WHERE id = ?', [$id]);
+}
+
+/** Caminho inverso do sync: edição dos campos rápidos do lead atualiza o contato principal. */
+function sync_lead_to_principal(int $leadId): void
+{
+    $l = row('SELECT contact_name, email, whatsapp FROM leads WHERE id = ?', [$leadId]);
+    if ($l === null || ($l['contact_name'] === '' && !$l['email'] && !$l['whatsapp'])) {
+        return;
+    }
+    $p = row('SELECT id FROM lead_contacts WHERE lead_id = ? AND is_principal = 1 LIMIT 1', [$leadId]);
+    if ($p !== null) {
+        q('UPDATE lead_contacts SET name = ?, email = ?, whatsapp = ? WHERE id = ?',
+            [$l['contact_name'] ?: 'Contato', $l['email'], $l['whatsapp'], $p['id']]);
+    } else {
+        contact_add($leadId, [
+            'name'         => $l['contact_name'] ?: 'Contato',
+            'email'        => $l['email'],
+            'whatsapp'     => $l['whatsapp'],
+            'is_principal' => 1,
+        ]);
+    }
+}
+
+function contact_set_principal(int $id): void
+{
+    $c = row('SELECT lead_id FROM lead_contacts WHERE id = ?', [$id]);
+    if ($c === null) {
+        throw new InvalidArgumentException('Contato não encontrado.');
+    }
+    q('UPDATE lead_contacts SET is_principal = 0 WHERE lead_id = ?', [$c['lead_id']]);
+    q('UPDATE lead_contacts SET is_principal = 1 WHERE id = ?', [$id]);
+    sync_principal_contact((int) $c['lead_id']);
+}
+
+function contact_toggle_decisor(int $id): void
+{
+    q('UPDATE lead_contacts SET is_decisor = 1 - is_decisor WHERE id = ?', [$id]);
+}
+
+/** Map lead_id => true para leads (da página atual) que têm contato decisor. */
+function leads_com_decisor(array $leadIds): array
+{
+    if (!$leadIds) {
+        return [];
+    }
+    $marks = implode(',', array_fill(0, count($leadIds), '?'));
+    $map = [];
+    foreach (rows("SELECT DISTINCT lead_id FROM lead_contacts WHERE is_decisor = 1 AND lead_id IN ($marks)", $leadIds) as $r) {
+        $map[(int) $r['lead_id']] = true;
+    }
+    return $map;
+}
+
+/** Contatos agregados por lead ("Nome (cargo) email fone; ...") para o export. */
+function contacts_agregados(array $leadIds): array
+{
+    if (!$leadIds) {
+        return [];
+    }
+    $marks = implode(',', array_fill(0, count($leadIds), '?'));
+    $map = [];
+    foreach (rows("SELECT lead_id, name, cargo, email, whatsapp, is_decisor
+                   FROM lead_contacts WHERE lead_id IN ($marks)
+                   ORDER BY lead_id, is_principal DESC, id", $leadIds) as $c) {
+        $peca = $c['name']
+            . ($c['cargo'] ? ' (' . $c['cargo'] . ($c['is_decisor'] ? ' — decisor' : '') . ')' : ($c['is_decisor'] ? ' (decisor)' : ''))
+            . ($c['email'] ? ' ' . $c['email'] : '')
+            . ($c['whatsapp'] ? ' ' . $c['whatsapp'] : '');
+        $map[(int) $c['lead_id']][] = trim($peca);
+    }
+    return array_map(fn ($l) => implode(' | ', $l), $map);
+}
+
 /* ---------- Fila de prospecção (prospect_pool) ---------- */
 
-const POOL_VERTICAIS = ['contabilidade', 'software_ti', 'advocacia', 'bpo_agencias'];
+const POOL_VERTICAIS = ['contabilidade', 'software_ti', 'advocacia', 'bpo_agencias', 'seguros_imob', 'servicos_prof'];
 const POOL_VERTICAL_LABELS = [
     'contabilidade' => 'Contabilidade',
     'software_ti'   => 'Software/TI',
     'advocacia'     => 'Advocacia',
     'bpo_agencias'  => 'BPO/Agências',
+    'seguros_imob'  => 'Seguros/Imobiliárias',
+    'servicos_prof' => 'Consultoria/Engenharia',
 ];
 
 /** Upsert por CNPJ (pipeline mensal). Preserva o estado de promoção. */
 function pool_upsert(array $d): void
 {
     q('INSERT INTO prospect_pool
-         (cnpj, company, contact_name, email, whatsapp, estacoes, vertical,
+         (cnpj, company, contact_name, contact_cargo, email, whatsapp, estacoes, vertical,
           score, uf, municipio, observacoes, mes_referencia)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON DUPLICATE KEY UPDATE
          company = VALUES(company), contact_name = VALUES(contact_name),
+         contact_cargo = VALUES(contact_cargo),
          email = VALUES(email), whatsapp = VALUES(whatsapp),
          estacoes = VALUES(estacoes), vertical = VALUES(vertical),
          score = VALUES(score), uf = VALUES(uf), municipio = VALUES(municipio),
          observacoes = VALUES(observacoes), mes_referencia = VALUES(mes_referencia)', [
-        $d['cnpj'], $d['company'], $d['contact_name'] ?? '', $d['email'] ?? null,
+        $d['cnpj'], $d['company'], $d['contact_name'] ?? '',
+        $d['contact_cargo'] ?? null, $d['email'] ?? null,
         $d['whatsapp'] ?? null, $d['estacoes'] ?? null,
         in_enum($d['vertical'] ?? null, POOL_VERTICAIS, 'outro'),
         max(0, min(100, (int) ($d['score'] ?? 0))),
@@ -384,6 +558,7 @@ function pool_pull(int $qtd, ?string $vertical, int $userId): array
                 'company'           => $p['company'],
                 'cnpj'              => $p['cnpj'],
                 'contact_name'      => $p['contact_name'],
+                'contact_cargo'     => $p['contact_cargo'] ?? null,
                 'email'             => $p['email'] ?: null,
                 'whatsapp'          => $p['whatsapp'] ?: null,
                 'estimated_devices' => $p['estacoes'] !== null ? (int) $p['estacoes'] : null,

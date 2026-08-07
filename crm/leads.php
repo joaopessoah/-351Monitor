@@ -10,22 +10,30 @@ $f = [
     'source'      => $_GET['source'] ?? '',
     'q'           => norm_text($_GET['q'] ?? '', 120),
     'so_vencidos' => !empty($_GET['so_vencidos']),
+    'so_decisor'  => !empty($_GET['so_decisor']),
 ];
 
-// Export CSV com os filtros aplicados (Excel BR: BOM UTF-8 + ';')
+// Export CSV com os filtros aplicados — sem filtro, baixa a base inteira
+// (contatos agregados e flag de decisor incluídos). Excel BR: BOM UTF-8 + ';'.
 if (isset($_GET['export'])) {
     $res = leads_search($f, 1, 100000);
+    $ids = array_map(fn ($l) => (int) $l['id'], $res['items']);
+    $agregados = contacts_agregados($ids);
+    $decisores = leads_com_decisor($ids);
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="leads-' . date('Ymd-Hi') . '.csv"');
     echo "\xEF\xBB\xBF";
     $out = fopen('php://output', 'w');
     fputcsv($out, ['id', 'empresa', 'cnpj', 'razao_social_receita', 'situacao_receita',
-        'contato', 'email', 'whatsapp', 'status', 'motivo_perda', 'origem',
+        'contato_principal', 'email', 'whatsapp', 'tem_decisor', 'contatos',
+        'status', 'motivo_perda', 'origem',
         'estacoes', 'plano', 'proxima_acao', 'nota_proxima_acao', 'observacoes',
         'utm_source', 'utm_medium', 'utm_campaign', 'criado_em', 'atualizado_em'], ';');
     foreach ($res['items'] as $l) {
         fputcsv($out, [$l['id'], $l['company'], cnpj_format($l['cnpj']), $l['cnpj_razao_social'], $l['cnpj_situacao'],
             $l['contact_name'], $l['email'], $l['whatsapp'],
+            isset($decisores[(int) $l['id']]) ? 'Sim' : 'Não',
+            $agregados[(int) $l['id']] ?? '',
             STATUS_LABELS[$l['status']] ?? $l['status'], $l['lost_reason'],
             SOURCE_LABELS[$l['source']] ?? $l['source'], $l['estimated_devices'],
             PLAN_LABELS[$l['plan_interest']] ?? $l['plan_interest'],
@@ -49,6 +57,7 @@ function leads_qs(array $f, array $extra = []): string
         'source'      => $f['source'],
         'q'           => $f['q'],
         'so_vencidos' => $f['so_vencidos'] ? '1' : '',
+        'so_decisor'  => $f['so_decisor'] ? '1' : '',
     ], fn ($v) => $v !== '' && $v !== null);
     return http_build_query($params + $extra);
 }
@@ -90,9 +99,14 @@ page_header('Leads', 'leads.php', $user);
     <input id="f-vencidos" name="so_vencidos" type="checkbox" value="1" class="auto-submit" <?= $f['so_vencidos'] ? 'checked' : '' ?>>
     <label for="f-vencidos">Só follow-ups vencidos</label>
   </div>
+  <div class="field field-check">
+    <input id="f-decisor" name="so_decisor" type="checkbox" value="1" class="auto-submit" <?= $f['so_decisor'] ? 'checked' : '' ?>>
+    <label for="f-decisor">Só com decisor</label>
+  </div>
   <button class="btn btn-ghost" type="submit">Filtrar</button>
 </form>
 
+<?php $decisores = leads_com_decisor(array_map(fn ($l) => (int) $l['id'], $res['items'])); ?>
 <div class="card table-wrap">
   <table class="table">
     <thead>
@@ -111,7 +125,10 @@ page_header('Leads', 'leads.php', $user);
             <a href="lead.php?id=<?= (int) $l['id'] ?>"><?= esc($l['company']) ?></a>
             <?php if ($l['duplicate_of_lead_id']): ?><span class="badge badge-dup">Duplicado</span><?php endif; ?>
           </td>
-          <td><?= esc($l['contact_name'] ?: '—') ?></td>
+          <td>
+            <?= esc($l['contact_name'] ?: '—') ?>
+            <?php if (isset($decisores[(int) $l['id']])): ?><span class="badge badge-decisor" title="Tem contato decisor">★</span><?php endif; ?>
+          </td>
           <td><?= wa_link($l['whatsapp']) ?></td>
           <td><?= status_badge($l['status']) ?></td>
           <td>

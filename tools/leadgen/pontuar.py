@@ -162,6 +162,7 @@ def gerar_pool_itens(parquet: str, mes: str, tamanho: int, uf_boost: str) -> lis
             "cnpj": r["cnpj14"],
             "company": nome_titulo(r["razao_social"]),
             "contact_name": nome_titulo(r["contato"]),
+            "contact_cargo": config.CARGO_POR_QUALIFICACAO.get(r.get("contato_qual") or "", ""),
             "email": r["email"] if r["email_valido"] else "",
             "whatsapp": whatsapp,
             "estacoes": r["estacoes"],
