@@ -200,16 +200,26 @@ if ($errors) {
   <h1 class="page-title">Novo lead</h1>
 
   <?php if (!$old && !$errors): ?>
-    <div class="card">
-      <h2 class="card-title">Começar pelo CNPJ <span class="muted">(recomendado)</span></h2>
-      <p class="muted">Digite o CNPJ e buscamos razão social e situação direto na Receita — o cadastro já vem preenchido.
-        Sem o CNPJ agora? Preencha os dados manualmente logo abaixo.</p>
-      <form method="post" class="cnpj-start">
+    <div class="card cnpj-hero">
+      <p class="cnpj-hero-eyebrow"><span class="plus">+</span>Novo lead</p>
+      <h2 class="cnpj-hero-title">Comece pelo CNPJ</h2>
+      <p class="cnpj-hero-sub">A gente consulta a Receita e o cadastro já vem preenchido — razão social, situação, CNAE e sócios.</p>
+      <form method="post" class="cnpj-start" id="cnpj-start-form">
         <?= csrf_field() ?>
         <input type="hidden" name="action" value="cnpj_prefill">
-        <input name="cnpj" type="text" maxlength="18" placeholder="00.000.000/0000-00" autofocus>
-        <button class="btn btn-primary" type="submit">Buscar na Receita</button>
+        <div class="cnpj-group">
+          <svg class="cnpj-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 21h18"/><path d="M5 21V5a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v16"/>
+            <path d="M14 9h4a1 1 0 0 1 1 1v11"/><path d="M8 8h2M8 12h2M8 16h2"/>
+          </svg>
+          <input id="cnpj-hero-input" class="cnpj-mask" name="cnpj" type="text" inputmode="text"
+                 maxlength="18" placeholder="00.000.000/0000-00" autocomplete="off" spellcheck="false" autofocus
+                 aria-label="CNPJ" aria-describedby="cnpj-live">
+          <button class="btn btn-primary" id="cnpj-hero-btn" type="submit">Buscar na Receita<span class="btn-arrow" aria-hidden="true">→</span></button>
+        </div>
+        <p class="cnpj-live" id="cnpj-live" data-state="idle">Digite ou cole o CNPJ — aceita o novo formato alfanumérico.</p>
       </form>
+      <p class="muted cnpj-hero-skip">Sem o CNPJ agora? Preencha os dados manualmente logo abaixo.</p>
     </div>
   <?php endif; ?>
 
@@ -265,7 +275,7 @@ if ($errors) {
         </div>
         <div class="field">
           <label for="cnpj">CNPJ</label>
-          <input id="cnpj" name="cnpj" type="text" maxlength="18" placeholder="00.000.000/0000-00" value="<?= esc($v('cnpj')) ?>">
+          <input id="cnpj" name="cnpj" class="cnpj-mask" type="text" maxlength="18" placeholder="00.000.000/0000-00" value="<?= esc($v('cnpj')) ?>">
         </div>
         <div class="field">
           <label for="contact_name">Contato</label>
