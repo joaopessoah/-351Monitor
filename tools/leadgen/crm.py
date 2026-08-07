@@ -61,6 +61,28 @@ def carregar_existentes() -> tuple[set[str], set[str]]:
     return cnpjs, emails
 
 
+def pool_upsert_lote(itens: list[dict]) -> dict:
+    """POST ?r=pool-upsert com um lote de empresas para a fila de prospecção."""
+    token = _token()
+    if not token:
+        raise RuntimeError("Token do CRM ausente (MAIS351_CRM_TOKEN).")
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    r = requests.post(
+        config.CRM_API, params={"r": "pool-upsert"}, json={"items": itens},
+        headers=headers, timeout=(10, 120),
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def pool_stats() -> dict:
+    token = _token()
+    headers = {"Authorization": f"Bearer {token}"}
+    r = requests.get(config.CRM_API, params={"r": "pool-stats"}, headers=headers, timeout=TIMEOUT)
+    r.raise_for_status()
+    return r.json()
+
+
 def criar_lead(linha: dict) -> dict:
     """POST ?r=leads — usado apenas com --enviar-crm (padrão é só gerar CSV)."""
     token = _token()

@@ -6,12 +6,19 @@ documentados no README.md desta pasta — recalibrar mensalmente com as taxas
 de conversão reais do CRM.
 """
 
+import os
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent
-DIR_DATA = RAIZ / "data"
+# Dados brutos podem ir para outro disco (ex.: /mnt no GitHub Actions).
+DIR_DATA = Path(os.environ.get("LEADGEN_DATA_DIR", RAIZ / "data"))
 DIR_SAIDA = RAIZ / "saida"
-ARQ_HISTORICO = DIR_DATA / "historico" / "exportados.csv"
+# O histórico vive SEMPRE no repositório (é commitado), independente do DIR_DATA.
+ARQ_HISTORICO = RAIZ / "data" / "historico" / "exportados.csv"
+
+# Fila de prospecção no CRM (modo --enviar-pool)
+POOL_TAMANHO = 20_000   # melhores N empresas enviadas para a fila
+POOL_LOTE = 400         # empresas por requisição (?r=pool-upsert)
 
 # Espelho CDN dos dados abertos (Casa dos Dados) + oficial como plano B.
 URL_ESPELHO = "https://dados-abertos-rf-cnpj.casadosdados.com.br/arquivos/"

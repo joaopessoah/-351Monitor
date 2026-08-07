@@ -291,8 +291,51 @@ try {
             $data = lead_enrich_cnpj((int) ($body['lead_id'] ?? 0));
             api_out(200, ['ok' => true, 'data' => $data]);
         }
+        case 'POST pool-upsert': {
+            // Carga mensal da fila de prospecção (pipeline tools/leadgen).
+            $itens = $body['items'] ?? null;
+            if (!is_array($itens) || count($itens) === 0 || count($itens) > 500) {
+                api_err(422, 'invalid', 'items deve ser uma lista de 1 a 500 empresas.');
+            }
+            $ok = 0;
+            $ignorados = 0;
+            foreach ($itens as $item) {
+                if (!is_array($item)) {
+                    $ignorados++;
+                    continue;
+                }
+                $cnpj = norm_cnpj($item['cnpj'] ?? '');
+                $company = norm_text($item['company'] ?? '', 160);
+                if ($cnpj === null || $cnpj === false || mb_strlen($company) < 2) {
+                    $ignorados++;
+                    continue;
+                }
+                $email = norm_email($item['email'] ?? '');
+                $fone = norm_whatsapp($item['whatsapp'] ?? '');
+                $est = norm_int($item['estacoes'] ?? null, 1, 10000);
+                pool_upsert([
+                    'cnpj'           => $cnpj,
+                    'company'        => $company,
+                    'contact_name'   => norm_text($item['contact_name'] ?? '', 120),
+                    'email'          => $email !== false ? $email : null,
+                    'whatsapp'       => $fone !== false ? $fone : null,
+                    'estacoes'       => $est !== false ? $est : null,
+                    'vertical'       => $item['vertical'] ?? null,
+                    'score'          => (int) ($item['score'] ?? 0),
+                    'uf'             => norm_text($item['uf'] ?? '', 2) ?: null,
+                    'municipio'      => norm_text($item['municipio'] ?? '', 120) ?: null,
+                    'observacoes'    => trim((string) ($item['observacoes'] ?? '')) ?: null,
+                    'mes_referencia' => norm_text($item['mes_referencia'] ?? '', 7) ?: null,
+                ]);
+                $ok++;
+            }
+            api_out(200, ['ok' => true, 'gravados' => $ok, 'ignorados' => $ignorados]);
+        }
+        case 'GET pool-stats': {
+            api_out(200, pool_stats());
+        }
         default:
-            api_err(404, 'not_found', 'Rota desconhecida. Rotas: leads, lead, lead-update, lead-status, interactions, tasks, task-done, cnpj-lookup, cnpj-enrich.');
+            api_err(404, 'not_found', 'Rota desconhecida. Rotas: leads, lead, lead-update, lead-status, interactions, tasks, task-done, cnpj-lookup, cnpj-enrich, pool-upsert, pool-stats.');
     }
 } catch (InvalidArgumentException $e) {
     api_err(422, 'invalid', $e->getMessage());

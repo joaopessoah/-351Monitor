@@ -127,6 +127,54 @@ def _whatsapp_provavel(d: str) -> bool:
 PORTE_LABEL = {"01": "ME", "03": "EPP", "05": "Demais", "00": "N/I"}
 
 
+def gerar_pool_itens(parquet: str, mes: str, tamanho: int, uf_boost: str) -> list[dict]:
+    """Pontua a base inteira e devolve os melhores N no formato da fila do CRM
+    (?r=pool-upsert). Sem dedupe aqui: a reconciliação acontece na puxada."""
+    con = duckdb.connect()
+    linhas = con.execute(f"SELECT * FROM '{Path(parquet).as_posix()}'").fetchall()
+    colunas = [d[0] for d in con.description]
+    con.close()
+
+    candidatos = []
+    for valores in linhas:
+        r = dict(zip(colunas, valores))
+        r.update(pontuar_linha(r, uf_boost))
+        candidatos.append(r)
+    candidatos.sort(key=lambda x: (-x["score"], -(x["capital"] or 0)))
+
+    itens = []
+    for r in candidatos[:tamanho]:
+        fones = [x for x in (r["fone1"], r["fone2"]) if x and len(x) >= 10]
+        whatsapp = fones[0] if fones and _whatsapp_provavel(fones[0]) else ""
+        obs_fones = [f"Fone: {_fone_formatado(x)}" for x in fones if x != whatsapp]
+        fantasia = nome_titulo(r["nome_fantasia"])
+        obs = " | ".join(filter(None, [
+            f"CNAE {r['cnae']} {r['cnae_desc']}",
+            f"Porte {PORTE_LABEL.get(r['porte'], r['porte'])}",
+            f"Capital R$ {int(r['capital'] or 0):,}".replace(",", "."),
+            f"Fantasia: {fantasia}" if fantasia else "",
+            *obs_fones,
+            f"{nome_titulo(r['municipio_nome'])}/{r['uf']}",
+            f"Fundada ha {r['idade_anos']:.0f} anos",
+            f"Score {r['score']}",
+        ]))
+        itens.append({
+            "cnpj": r["cnpj14"],
+            "company": nome_titulo(r["razao_social"]),
+            "contact_name": nome_titulo(r["contato"]),
+            "email": r["email"] if r["email_valido"] else "",
+            "whatsapp": whatsapp,
+            "estacoes": r["estacoes"],
+            "vertical": r["vertical"],
+            "score": r["score"],
+            "uf": r["uf"],
+            "municipio": nome_titulo(r["municipio_nome"]),
+            "observacoes": obs,
+            "mes_referencia": mes[:7],
+        })
+    return itens
+
+
 def gerar_saida(
     parquet: str,
     mes: str,

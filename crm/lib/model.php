@@ -297,6 +297,111 @@ function leads_novos_parados(int $hours = 48, int $limit = 10): array
                  ORDER BY created_at ASC LIMIT $limit");
 }
 
+/* ---------- Fila de prospecção (prospect_pool) ---------- */
+
+const POOL_VERTICAIS = ['contabilidade', 'software_ti', 'advocacia', 'bpo_agencias'];
+const POOL_VERTICAL_LABELS = [
+    'contabilidade' => 'Contabilidade',
+    'software_ti'   => 'Software/TI',
+    'advocacia'     => 'Advocacia',
+    'bpo_agencias'  => 'BPO/Agências',
+];
+
+/** Upsert por CNPJ (pipeline mensal). Preserva o estado de promoção. */
+function pool_upsert(array $d): void
+{
+    q('INSERT INTO prospect_pool
+         (cnpj, company, contact_name, email, whatsapp, estacoes, vertical,
+          score, uf, municipio, observacoes, mes_referencia)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+       ON DUPLICATE KEY UPDATE
+         company = VALUES(company), contact_name = VALUES(contact_name),
+         email = VALUES(email), whatsapp = VALUES(whatsapp),
+         estacoes = VALUES(estacoes), vertical = VALUES(vertical),
+         score = VALUES(score), uf = VALUES(uf), municipio = VALUES(municipio),
+         observacoes = VALUES(observacoes), mes_referencia = VALUES(mes_referencia)', [
+        $d['cnpj'], $d['company'], $d['contact_name'] ?? '', $d['email'] ?? null,
+        $d['whatsapp'] ?? null, $d['estacoes'] ?? null,
+        in_enum($d['vertical'] ?? null, POOL_VERTICAIS, 'outro'),
+        max(0, min(100, (int) ($d['score'] ?? 0))),
+        $d['uf'] ?? null, $d['municipio'] ?? null, $d['observacoes'] ?? null,
+        $d['mes_referencia'] ?? null,
+    ]);
+}
+
+/** Disponíveis/promovidos por vertical + mês de referência mais recente. */
+function pool_stats(): array
+{
+    $stats = ['verticais' => [], 'disponiveis' => 0, 'promovidos' => 0, 'mes' => null];
+    foreach (rows('SELECT vertical,
+                          SUM(promoted_at IS NULL) AS disponiveis,
+                          SUM(promoted_at IS NOT NULL) AS promovidos
+                   FROM prospect_pool GROUP BY vertical') as $r) {
+        $stats['verticais'][$r['vertical']] = [
+            'disponiveis' => (int) $r['disponiveis'],
+            'promovidos'  => (int) $r['promovidos'],
+        ];
+        $stats['disponiveis'] += (int) $r['disponiveis'];
+        $stats['promovidos'] += (int) $r['promovidos'];
+    }
+    $stats['mes'] = scalar('SELECT MAX(mes_referencia) FROM prospect_pool');
+    return $stats;
+}
+
+/**
+ * Promove os melhores da fila a leads (botão "Puxar leads").
+ * Empresas que já viraram lead por outro caminho são reconciliadas
+ * (marcadas como promovidas) sem criar duplicata, e não contam na cota.
+ * @return array{criados:int, reconciliados:int, lead_ids:array}
+ */
+function pool_pull(int $qtd, ?string $vertical, int $userId): array
+{
+    $qtd = max(1, min(50, $qtd));
+    $criados = 0;
+    $reconciliados = 0;
+    $leadIds = [];
+    $vistos = 0;
+
+    while ($criados < $qtd && $vistos < 500) { // trava de segurança
+        $sqlVert = $vertical ? 'AND vertical = ?' : '';
+        $params = $vertical ? [$vertical] : [];
+        $lote = rows("SELECT * FROM prospect_pool
+                      WHERE promoted_at IS NULL $sqlVert
+                      ORDER BY score DESC, id ASC LIMIT 50", $params);
+        if (!$lote) {
+            break;
+        }
+        foreach ($lote as $p) {
+            $vistos++;
+            $dup = lead_find_duplicate($p['email'] ?: null, $p['whatsapp'] ?: null, $p['cnpj']);
+            if ($dup !== null) {
+                q('UPDATE prospect_pool SET promoted_lead_id = ?, promoted_at = NOW() WHERE id = ?',
+                    [$dup, $p['id']]);
+                $reconciliados++;
+                continue;
+            }
+            $res = lead_create([
+                'company'           => $p['company'],
+                'cnpj'              => $p['cnpj'],
+                'contact_name'      => $p['contact_name'],
+                'email'             => $p['email'] ?: null,
+                'whatsapp'          => $p['whatsapp'] ?: null,
+                'estimated_devices' => $p['estacoes'] !== null ? (int) $p['estacoes'] : null,
+                'source'            => 'prospeccao',
+                'notes'             => $p['observacoes'] ?: null,
+            ], $userId, 'ui');
+            q('UPDATE prospect_pool SET promoted_lead_id = ?, promoted_at = NOW() WHERE id = ?',
+                [$res['id'], $p['id']]);
+            $leadIds[] = $res['id'];
+            $criados++;
+            if ($criados >= $qtd) {
+                break;
+            }
+        }
+    }
+    return ['criados' => $criados, 'reconciliados' => $reconciliados, 'lead_ids' => $leadIds];
+}
+
 /* ---------- Log do intake público ---------- */
 
 function intake_log(string $ip, string $outcome, ?int $leadId = null, ?string $detail = null): void

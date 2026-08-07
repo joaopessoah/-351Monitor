@@ -40,6 +40,11 @@ def main() -> int:
     p.add_argument("--manter-csv", action="store_true", help="não apaga os CSVs extraídos")
     p.add_argument("--enviar-crm", action="store_true",
                    help="além do CSV, cria os leads direto via API do CRM")
+    p.add_argument("--enviar-pool", action="store_true",
+                   help="modo fila: envia as melhores empresas para a fila de prospecção do CRM "
+                        "(sem CSV e sem histórico — a reconciliação acontece na puxada)")
+    p.add_argument("--pool-tamanho", type=int, default=config.POOL_TAMANHO,
+                   help=f"tamanho da fila no modo --enviar-pool (padrão {config.POOL_TAMANHO})")
     args = p.parse_args()
 
     inicio = time.time()
@@ -61,6 +66,30 @@ def main() -> int:
         transformar.transformar(mes, refazer=args.refazer)
     else:
         print("[2-4] Base do mês já processada (cache); use --refazer para reprocessar.")
+
+    if args.enviar_pool:
+        print(f"[5] Modo fila: pontuando e enviando top {args.pool_tamanho} para o CRM...")
+        itens = pontuar.gerar_pool_itens(str(parquet), mes, args.pool_tamanho, args.uf_boost.upper())
+        gravados = ignorados = 0
+        for i in range(0, len(itens), config.POOL_LOTE):
+            lote = itens[i:i + config.POOL_LOTE]
+            resp = crm.pool_upsert_lote(lote)
+            gravados += resp.get("gravados", 0)
+            ignorados += resp.get("ignorados", 0)
+            print(f"    lote {i // config.POOL_LOTE + 1}/{-(-len(itens) // config.POOL_LOTE)}: "
+                  f"+{resp.get('gravados', 0)} gravados")
+        stats = crm.pool_stats()
+        print("\n== Fila atualizada ==")
+        print(f"Enviados: {gravados} gravados, {ignorados} ignorados")
+        print(f"Disponíveis na fila: {stats.get('disponiveis')} | já usados: {stats.get('promovidos')}"
+              f" | base RFB: {stats.get('mes')}")
+        if not args.manter_csv:
+            shutil.rmtree(dir_mes_pool := (config.DIR_DATA / mes / "csv"), ignore_errors=True)
+        shutil.rmtree(config.DIR_DATA / mes / "tmp", ignore_errors=True)
+        if not args.manter_zips:
+            shutil.rmtree(config.DIR_DATA / mes / "zips", ignore_errors=True)
+        print(f"Tempo total: {time.time() - inicio:.0f}s")
+        return 0
 
     print("[5] Dedupe (histórico local + CRM)...")
     excluir_cnpjs = historico.carregar()

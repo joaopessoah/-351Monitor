@@ -60,6 +60,16 @@ page_header('Dashboard', 'index.php', $user);
       <span class="muted">· <?= (int) $demos['agendadas'] ?> agendada(s) no mês</span></p>
   </div>
   <div class="progress"><div class="progress-bar" style="width: <?= $pct ?>%"></div></div>
+  <?php
+    try {
+        $filaDisp = (int) scalar('SELECT COUNT(*) FROM prospect_pool WHERE promoted_at IS NULL');
+        echo '<p class="muted" style="margin: 12px 0 0">Fila de prospecção: <strong>'
+            . number_format($filaDisp, 0, ',', '.')
+            . '</strong> empresa(s) disponível(is) — <a href="fila.php">puxar leads</a>.</p>';
+    } catch (Throwable $e) {
+        // tabela ainda não migrada — o card do dashboard segue sem a fila
+    }
+  ?>
 </div>
 
 <div class="grid-2">

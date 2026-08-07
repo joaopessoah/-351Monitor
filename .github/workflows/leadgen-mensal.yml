@@ -1,0 +1,39 @@
+name: Leadgen mensal (fila de prospeccao)
+
+# A RFB publica os dados abertos do CNPJ por volta do dia 12-15 de cada mês.
+# Rodamos dia 16 às 03h (BRT = 06h UTC); o pipeline descobre a pasta mais
+# recente sozinho e atualiza a fila do CRM (?r=pool-upsert).
+on:
+  schedule:
+    - cron: '0 6 16 * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: leadgen-mensal
+  cancel-in-progress: false
+
+jobs:
+  gerar:
+    name: Atualizar fila de prospeccao no CRM
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias
+        run: pip install -r tools/leadgen/requirements.txt
+
+      # O disco raiz do runner (~20-30 GB livres) nao comporta os ~30 GB de
+      # pico (zips + CSVs); /mnt tem espaco de sobra.
+      - name: Preparar area de dados em /mnt
+        run: sudo mkdir -p /mnt/leadgen-data && sudo chown "$USER" /mnt/leadgen-data
+
+      - name: Gerar e enviar a fila
+        env:
+          MAIS351_CRM_TOKEN: ${{ secrets.MAIS351_CRM_TOKEN }}
+          LEADGEN_DATA_DIR: /mnt/leadgen-data
+        run: cd tools/leadgen && python gerar.py --enviar-pool

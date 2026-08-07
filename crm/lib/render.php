@@ -85,6 +85,7 @@ function page_header(string $title, string $active, array $user): void
         'index.php'    => 'Dashboard',
         'leads.php'    => 'Leads',
         'kanban.php'   => 'Kanban',
+        'fila.php'     => 'Fila',
         'import.php'   => 'Importar',
         'settings.php' => 'Configurações',
     ];
