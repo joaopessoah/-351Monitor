@@ -44,6 +44,18 @@ function lead_form_validate(array $in): array
     } else {
         $d['estimated_devices'] = $est;
     }
+    $site = norm_url($in['website'] ?? '');
+    if ($site === false) {
+        $errors['website'] = 'Site inválido — use algo como acme.com.br.';
+    } else {
+        $d['website'] = $site;
+    }
+    $li = norm_url($in['linkedin'] ?? '');
+    if ($li === false) {
+        $errors['linkedin'] = 'LinkedIn inválido — cole a URL do perfil/página.';
+    } else {
+        $d['linkedin'] = $li;
+    }
     $d['source'] = in_enum($in['source'] ?? null, LEAD_SOURCES, 'outro');
     $d['plan_interest'] = in_enum($in['plan_interest'] ?? null, LEAD_PLANS, 'indefinido');
 
@@ -123,11 +135,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($fone === false) {
                 throw new InvalidArgumentException('WhatsApp do contato inválido.');
             }
+            $li = norm_url($_POST['c_linkedin'] ?? '');
+            if ($li === false) {
+                throw new InvalidArgumentException('LinkedIn do contato inválido.');
+            }
             contact_add($id, [
                 'name'         => (string) ($_POST['c_name'] ?? ''),
                 'cargo'        => $_POST['c_cargo'] ?? null,
                 'email'        => $email,
                 'whatsapp'     => $fone,
+                'linkedin'     => $li,
                 'is_principal' => !empty($_POST['c_principal']),
             ]);
             flash_set('ok', 'Contato adicionado.');
@@ -282,6 +299,8 @@ if ($errors) {
   </div>
   <p class="muted">Criado em <?= esc(fmt_dt($lead['created_at'])) ?> via <?= esc($lead['created_via']) ?>
     · origem <?= esc(SOURCE_LABELS[$lead['source']] ?? $lead['source']) ?>
+    <?php if ($lead['website']): ?> · <a href="<?= esc($lead['website']) ?>" target="_blank" rel="noopener">site ↗</a><?php endif; ?>
+    <?php if ($lead['linkedin']): ?> · <a href="<?= esc($lead['linkedin']) ?>" target="_blank" rel="noopener">LinkedIn ↗</a><?php endif; ?>
     <?php if ($lead['utm_source']): ?> · UTM: <?= esc($lead['utm_source']) ?>/<?= esc($lead['utm_medium'] ?? '-') ?>/<?= esc($lead['utm_campaign'] ?? '-') ?><?php endif; ?>
     <?php if ($lead['status'] === 'perdido' && $lead['lost_reason']): ?> · <strong>Motivo da perda:</strong> <?= esc($lead['lost_reason']) ?><?php endif; ?>
   </p>
@@ -318,6 +337,14 @@ if ($errors) {
         <div class="field">
           <label for="whatsapp">WhatsApp (DDD + número)</label>
           <input id="whatsapp" name="whatsapp" type="tel" maxlength="20" value="<?= esc($v('whatsapp')) ?>" placeholder="(11) 99999-9999">
+        </div>
+        <div class="field">
+          <label for="website">Site da empresa</label>
+          <input id="website" name="website" type="text" maxlength="190" value="<?= esc($v('website')) ?>" placeholder="acme.com.br">
+        </div>
+        <div class="field">
+          <label for="linkedin">LinkedIn da empresa</label>
+          <input id="linkedin" name="linkedin" type="text" maxlength="190" value="<?= esc($v('linkedin')) ?>" placeholder="linkedin.com/company/acme">
         </div>
         <div class="field">
           <label for="source">Origem</label>
@@ -480,7 +507,7 @@ if ($errors) {
     <?php if ($contatos): ?>
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>Nome</th><th>Cargo</th><th>E-mail</th><th>WhatsApp</th><th></th><th></th></tr></thead>
+          <thead><tr><th>Nome</th><th>Cargo</th><th>E-mail</th><th>WhatsApp</th><th>LinkedIn</th><th></th><th></th></tr></thead>
           <tbody>
             <?php foreach ($contatos as $c): ?>
               <tr>
@@ -494,6 +521,7 @@ if ($errors) {
                 </td>
                 <td><?= esc($c['email'] ?: '—') ?></td>
                 <td><?= wa_link($c['whatsapp']) ?></td>
+                <td><?php if ($c['linkedin']): ?><a href="<?= esc($c['linkedin']) ?>" target="_blank" rel="noopener">perfil ↗</a><?php else: ?>—<?php endif; ?></td>
                 <td>
                   <form method="post" class="inline-form"><?= csrf_field() ?>
                     <input type="hidden" name="action" value="contact_decisor">
@@ -542,6 +570,10 @@ if ($errors) {
         <div class="field">
           <label for="c_whatsapp">WhatsApp</label>
           <input id="c_whatsapp" name="c_whatsapp" type="tel" maxlength="20" placeholder="(11) 99999-9999">
+        </div>
+        <div class="field">
+          <label for="c_linkedin">LinkedIn</label>
+          <input id="c_linkedin" name="c_linkedin" type="text" maxlength="190" placeholder="linkedin.com/in/fulano">
         </div>
         <div class="field field-check">
           <input id="c_principal" name="c_principal" type="checkbox" value="1">

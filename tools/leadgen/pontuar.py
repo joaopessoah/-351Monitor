@@ -158,11 +158,18 @@ def gerar_pool_itens(parquet: str, mes: str, tamanho: int, uf_boost: str) -> lis
             f"Fundada ha {r['idade_anos']:.0f} anos",
             f"Score {r['score']}",
         ]))
+        # Site derivado do domínio do e-mail corporativo (domínio próprio = site provável)
+        website = ""
+        if r["email_valido"]:
+            dominio = (r["email"] or "").rsplit("@", 1)[-1]
+            if dominio and dominio not in config.DOMINIOS_GRATIS:
+                website = "https://" + dominio
         itens.append({
             "cnpj": r["cnpj14"],
             "company": nome_titulo(r["razao_social"]),
             "contact_name": nome_titulo(r["contato"]),
             "contact_cargo": config.CARGO_POR_QUALIFICACAO.get(r.get("contato_qual") or "", ""),
+            "website": website,
             "email": r["email"] if r["email_valido"] else "",
             "whatsapp": whatsapp,
             "estacoes": r["estacoes"],

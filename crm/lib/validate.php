@@ -111,3 +111,19 @@ function in_enum(?string $v, array $allowed, string $default): string
 {
     return in_array($v, $allowed, true) ? $v : $default;
 }
+
+/** URL http(s) normalizada (esquema adicionado se faltar). null vazio; false inválida. */
+function norm_url(?string $s)
+{
+    $s = trim((string) $s);
+    if ($s === '') {
+        return null;
+    }
+    if (!preg_match('~^https?://~i', $s)) {
+        $s = 'https://' . $s;
+    }
+    if (mb_strlen($s) > 190 || !filter_var($s, FILTER_VALIDATE_URL)) {
+        return false;
+    }
+    return $s;
+}

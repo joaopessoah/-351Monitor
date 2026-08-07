@@ -67,15 +67,17 @@ function lead_create(array $d, ?int $userId, string $via): array
     $dup = lead_find_duplicate($d['email'] ?? null, $d['whatsapp'] ?? null, $d['cnpj'] ?? null);
     db()->beginTransaction();
     try {
-        q('INSERT INTO leads (company, cnpj, contact_name, email, whatsapp, status, source,
+        q('INSERT INTO leads (company, cnpj, contact_name, email, whatsapp, website, linkedin, status, source,
                               utm_source, utm_medium, utm_campaign, estimated_devices, plan_interest,
                               next_action_at, next_action_note, notes, duplicate_of_lead_id, created_via, created_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [
             $d['company'],
             $d['cnpj'] ?? null,
             $d['contact_name'] ?? '',
             $d['email'] ?? null,
             $d['whatsapp'] ?? null,
+            $d['website'] ?? null,
+            $d['linkedin'] ?? null,
             'novo',
             in_enum($d['source'] ?? null, LEAD_SOURCES, 'outro'),
             $d['utm_source'] ?? null,
@@ -114,7 +116,8 @@ function lead_create(array $d, ?int $userId, string $via): array
 /** Atualiza campos editáveis (whitelist). Valores já normalizados pelo chamador. */
 function lead_update(int $id, array $d): void
 {
-    $allowed = ['company', 'cnpj', 'contact_name', 'email', 'whatsapp', 'source', 'estimated_devices',
+    $allowed = ['company', 'cnpj', 'contact_name', 'email', 'whatsapp', 'website', 'linkedin',
+        'source', 'estimated_devices',
         'plan_interest', 'next_action_at', 'next_action_note', 'notes',
         'utm_source', 'utm_medium', 'utm_campaign'];
     $sets = [];
@@ -377,10 +380,10 @@ function contact_add(int $leadId, array $d): int
     if ($principal) {
         q('UPDATE lead_contacts SET is_principal = 0 WHERE lead_id = ?', [$leadId]);
     }
-    q('INSERT INTO lead_contacts (lead_id, name, cargo, email, whatsapp, is_principal, is_decisor, notes)
-       VALUES (?,?,?,?,?,?,?,?)', [
+    q('INSERT INTO lead_contacts (lead_id, name, cargo, email, whatsapp, linkedin, is_principal, is_decisor, notes)
+       VALUES (?,?,?,?,?,?,?,?,?)', [
         $leadId, $name, $cargo,
-        $d['email'] ?? null, $d['whatsapp'] ?? null,
+        $d['email'] ?? null, $d['whatsapp'] ?? null, $d['linkedin'] ?? null,
         $principal, $decisor,
         norm_text($d['notes'] ?? '', 255) ?: null,
     ]);
@@ -455,13 +458,14 @@ function contacts_agregados(array $leadIds): array
     }
     $marks = implode(',', array_fill(0, count($leadIds), '?'));
     $map = [];
-    foreach (rows("SELECT lead_id, name, cargo, email, whatsapp, is_decisor
+    foreach (rows("SELECT lead_id, name, cargo, email, whatsapp, linkedin, is_decisor
                    FROM lead_contacts WHERE lead_id IN ($marks)
                    ORDER BY lead_id, is_principal DESC, id", $leadIds) as $c) {
         $peca = $c['name']
             . ($c['cargo'] ? ' (' . $c['cargo'] . ($c['is_decisor'] ? ' — decisor' : '') . ')' : ($c['is_decisor'] ? ' (decisor)' : ''))
             . ($c['email'] ? ' ' . $c['email'] : '')
-            . ($c['whatsapp'] ? ' ' . $c['whatsapp'] : '');
+            . ($c['whatsapp'] ? ' ' . $c['whatsapp'] : '')
+            . ($c['linkedin'] ? ' ' . $c['linkedin'] : '');
         $map[(int) $c['lead_id']][] = trim($peca);
     }
     return array_map(fn ($l) => implode(' | ', $l), $map);
@@ -483,19 +487,20 @@ const POOL_VERTICAL_LABELS = [
 function pool_upsert(array $d): void
 {
     q('INSERT INTO prospect_pool
-         (cnpj, company, contact_name, contact_cargo, email, whatsapp, estacoes, vertical,
+         (cnpj, company, contact_name, contact_cargo, email, whatsapp, website, estacoes, vertical,
           score, uf, municipio, observacoes, mes_referencia)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON DUPLICATE KEY UPDATE
          company = VALUES(company), contact_name = VALUES(contact_name),
          contact_cargo = VALUES(contact_cargo),
          email = VALUES(email), whatsapp = VALUES(whatsapp),
+         website = VALUES(website),
          estacoes = VALUES(estacoes), vertical = VALUES(vertical),
          score = VALUES(score), uf = VALUES(uf), municipio = VALUES(municipio),
          observacoes = VALUES(observacoes), mes_referencia = VALUES(mes_referencia)', [
         $d['cnpj'], $d['company'], $d['contact_name'] ?? '',
         $d['contact_cargo'] ?? null, $d['email'] ?? null,
-        $d['whatsapp'] ?? null, $d['estacoes'] ?? null,
+        $d['whatsapp'] ?? null, $d['website'] ?? null, $d['estacoes'] ?? null,
         in_enum($d['vertical'] ?? null, POOL_VERTICAIS, 'outro'),
         max(0, min(100, (int) ($d['score'] ?? 0))),
         $d['uf'] ?? null, $d['municipio'] ?? null, $d['observacoes'] ?? null,
@@ -561,6 +566,7 @@ function pool_pull(int $qtd, ?string $vertical, int $userId): array
                 'contact_cargo'     => $p['contact_cargo'] ?? null,
                 'email'             => $p['email'] ?: null,
                 'whatsapp'          => $p['whatsapp'] ?: null,
+                'website'           => $p['website'] ?? null,
                 'estimated_devices' => $p['estacoes'] !== null ? (int) $p['estacoes'] : null,
                 'source'            => 'prospeccao',
                 'notes'             => $p['observacoes'] ?: null,

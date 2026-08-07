@@ -24,13 +24,14 @@ if (isset($_GET['export'])) {
     header('Content-Disposition: attachment; filename="leads-' . date('Ymd-Hi') . '.csv"');
     echo "\xEF\xBB\xBF";
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['id', 'empresa', 'cnpj', 'razao_social_receita', 'situacao_receita',
+    fputcsv($out, ['id', 'empresa', 'cnpj', 'razao_social_receita', 'situacao_receita', 'site', 'linkedin',
         'contato_principal', 'email', 'whatsapp', 'tem_decisor', 'contatos',
         'status', 'motivo_perda', 'origem',
         'estacoes', 'plano', 'proxima_acao', 'nota_proxima_acao', 'observacoes',
         'utm_source', 'utm_medium', 'utm_campaign', 'criado_em', 'atualizado_em'], ';');
     foreach ($res['items'] as $l) {
         fputcsv($out, [$l['id'], $l['company'], cnpj_format($l['cnpj']), $l['cnpj_razao_social'], $l['cnpj_situacao'],
+            $l['website'], $l['linkedin'],
             $l['contact_name'], $l['email'], $l['whatsapp'],
             isset($decisores[(int) $l['id']]) ? 'Sim' : 'Não',
             $agregados[(int) $l['id']] ?? '',

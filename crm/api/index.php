@@ -81,6 +81,8 @@ function api_lead_row(array $l): array
         'contact_name'         => $l['contact_name'],
         'email'                => $l['email'],
         'whatsapp'             => $l['whatsapp'],
+        'website'              => $l['website'],
+        'linkedin'             => $l['linkedin'],
         'status'               => $l['status'],
         'lost_reason'          => $l['lost_reason'],
         'source'               => $l['source'],
@@ -123,7 +125,7 @@ try {
             $out['cnpj_checked_at'] = api_dt($l['cnpj_checked_at']);
             $out['contacts'] = array_map(fn ($c) => [
                 'id' => (int) $c['id'], 'name' => $c['name'], 'cargo' => $c['cargo'],
-                'email' => $c['email'], 'whatsapp' => $c['whatsapp'],
+                'email' => $c['email'], 'whatsapp' => $c['whatsapp'], 'linkedin' => $c['linkedin'],
                 'principal' => (bool) $c['is_principal'], 'decisor' => (bool) $c['is_decisor'],
             ], contacts_of($id));
             $out['interactions'] = array_map(fn ($i) => [
@@ -164,12 +166,22 @@ try {
             if ($na === false) {
                 api_err(422, 'invalid', 'next_action_at inválido (use YYYY-MM-DD HH:MM).');
             }
+            $site = norm_url($body['website'] ?? '');
+            if ($site === false) {
+                api_err(422, 'invalid', 'website inválido.');
+            }
+            $li = norm_url($body['linkedin'] ?? '');
+            if ($li === false) {
+                api_err(422, 'invalid', 'linkedin inválido.');
+            }
             $res = lead_create([
                 'company'           => $company,
                 'cnpj'              => $cnpj,
                 'contact_name'      => norm_text($body['contact_name'] ?? '', 120),
                 'email'             => $email,
                 'whatsapp'          => $fone,
+                'website'           => $site,
+                'linkedin'          => $li,
                 'estimated_devices' => $est,
                 'source'            => in_enum($body['source'] ?? null, LEAD_SOURCES, 'outro'),
                 'plan_interest'     => in_enum($body['plan_interest'] ?? null, LEAD_PLANS, 'indefinido'),
@@ -223,6 +235,20 @@ try {
                 }
                 $d['estimated_devices'] = $n;
             }
+            if (array_key_exists('website', $body)) {
+                $u = norm_url($body['website']);
+                if ($u === false) {
+                    api_err(422, 'invalid', 'website inválido.');
+                }
+                $d['website'] = $u;
+            }
+            if (array_key_exists('linkedin', $body)) {
+                $u = norm_url($body['linkedin']);
+                if ($u === false) {
+                    api_err(422, 'invalid', 'linkedin inválido.');
+                }
+                $d['linkedin'] = $u;
+            }
             if (array_key_exists('plan_interest', $body)) {
                 $d['plan_interest'] = in_enum($body['plan_interest'], LEAD_PLANS, 'indefinido');
             }
@@ -261,11 +287,16 @@ try {
             if ($fone === false) {
                 api_err(422, 'invalid', 'whatsapp inválido.');
             }
+            $li = norm_url($body['linkedin'] ?? '');
+            if ($li === false) {
+                api_err(422, 'invalid', 'linkedin inválido.');
+            }
             $cid = contact_add($leadId, [
                 'name'         => (string) ($body['name'] ?? ''),
                 'cargo'        => $body['cargo'] ?? null,
                 'email'        => $email,
                 'whatsapp'     => $fone,
+                'linkedin'     => $li,
                 'is_principal' => !empty($body['principal']),
                 'is_decisor'   => array_key_exists('decisor', $body) ? (bool) $body['decisor'] : null,
                 'notes'        => $body['notes'] ?? null,
@@ -349,6 +380,7 @@ try {
                 }
                 $email = norm_email($item['email'] ?? '');
                 $fone = norm_whatsapp($item['whatsapp'] ?? '');
+                $site = norm_url($item['website'] ?? '');
                 $est = norm_int($item['estacoes'] ?? null, 1, 10000);
                 pool_upsert([
                     'cnpj'           => $cnpj,
@@ -357,6 +389,7 @@ try {
                     'contact_cargo'  => norm_text($item['contact_cargo'] ?? '', 80) ?: null,
                     'email'          => $email !== false ? $email : null,
                     'whatsapp'       => $fone !== false ? $fone : null,
+                    'website'        => $site !== false ? $site : null,
                     'estacoes'       => $est !== false ? $est : null,
                     'vertical'       => $item['vertical'] ?? null,
                     'score'          => (int) ($item['score'] ?? 0),
