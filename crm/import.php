@@ -98,6 +98,7 @@ function parse_import_csv(string $content): array
         $origemNorm = mb_strtolower(str_replace(['ç', 'ã'], ['c', 'a'], trim($origem)));
         $mapa = ['site' => 'site', 'whatsapp' => 'whatsapp', 'email' => 'email', 'e-mail' => 'email',
             'indicacao' => 'indicacao', 'lista_50' => 'lista_50', 'lista 50' => 'lista_50', 'lista' => 'lista_50',
+            'prospeccao' => 'prospeccao', 'prospecção' => 'prospeccao',
             '' => 'lista_50'];
         $r['origem'] = $mapa[$origemNorm] ?? 'outro';
 

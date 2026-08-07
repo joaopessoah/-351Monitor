@@ -11,7 +11,7 @@ if (!defined('CRM')) {
 }
 
 const LEAD_STATUSES     = ['novo', 'contato_feito', 'demo_agendada', 'demo_realizada', 'trial', 'cliente', 'perdido'];
-const LEAD_SOURCES      = ['site', 'whatsapp', 'email', 'indicacao', 'lista_50', 'outro'];
+const LEAD_SOURCES      = ['site', 'whatsapp', 'email', 'indicacao', 'lista_50', 'prospeccao', 'outro'];
 const LEAD_PLANS        = ['essencial', 'pro', 'indefinido'];
 const INTERACTION_TYPES = ['whatsapp', 'email', 'ligacao', 'demo', 'reuniao', 'outro'];
 const DEMO_META_MES     = 10; // meta comercial: 10 demos/mês (docs/CONSIDERACOES-E-DECISOES.md:343)

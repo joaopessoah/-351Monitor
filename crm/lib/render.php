@@ -17,12 +17,13 @@ const STATUS_LABELS = [
 ];
 
 const SOURCE_LABELS = [
-    'site'      => 'Site',
-    'whatsapp'  => 'WhatsApp',
-    'email'     => 'E-mail',
-    'indicacao' => 'Indicação',
-    'lista_50'  => 'Lista 50',
-    'outro'     => 'Outro',
+    'site'       => 'Site',
+    'whatsapp'   => 'WhatsApp',
+    'email'      => 'E-mail',
+    'indicacao'  => 'Indicação',
+    'lista_50'   => 'Lista 50',
+    'prospeccao' => 'Prospecção',
+    'outro'      => 'Outro',
 ];
 
 const PLAN_LABELS = [

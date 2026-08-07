@@ -1,0 +1,8 @@
+# Dados brutos e saídas ficam fora do git; o histórico de exportados é commitado.
+data/*
+!data/historico/
+data/historico/*
+!data/historico/exportados.csv
+saida/
+.env
+__pycache__/
