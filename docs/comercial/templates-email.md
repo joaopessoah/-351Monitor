@@ -30,7 +30,7 @@ Se não quiser receber meus e-mails, responda SAIR que removo seu contato.
 >
 > O +351 Monitor mostra horas ativas, ociosidade e os sistemas usados em cada
 > estação Windows do escritório, **sem print de tela e sem keylogger**, com kit
-> LGPD pronto (termo de ciência incluído). A partir de R$ 19,90 por máquina.
+> LGPD pronto (termo de ciência incluído).
 >
 > Vale uma demonstração de 10 minutos pelo WhatsApp esta semana?
 
@@ -73,7 +73,7 @@ Se não quiser receber meus e-mails, responda SAIR que removo seu contato.
 >
 > O +351 Monitor é brasileiro: horas ativas, ociosidade e apps por estação Windows,
 > painel por equipe, **sem captura de conteúdo**, suporte por WhatsApp e preço em
-> real (a partir de R$ 19,90/máquina). Para {estacoes} estações, a conta fecha fácil.
+> real, sem dólar na fatura. Para {estacoes} estações, a conta fecha fácil.
 >
 > Posso te mostrar o painel em 10 minutos pelo WhatsApp?
 
@@ -88,7 +88,7 @@ Se não quiser receber meus e-mails, responda SAIR que removo seu contato.
 > - **O que coletamos**: horas ativas, ociosidade, aplicativo/janela em uso, sessões.
 > - **O que nunca coletamos**: teclas digitadas, prints de tela, arquivos, e-mails.
 > - **LGPD**: termo de ciência pronto, ícone visível na máquina, dados no Brasil.
-> - **Preço**: a partir de R$ 19,90 por estação/mês, em real, com Pix ou boleto.
+> - **Preço**: em real, com Pix ou boleto.
 > - **Implantação**: nós instalamos junto com a sua TI, com onboarding assistido.
 >
 > A demonstração leva 10 minutos, pelo WhatsApp, no seu horário. Que tal
