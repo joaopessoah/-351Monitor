@@ -7,7 +7,7 @@
 ## O funil em uma linha
 
 Lista scorada → cadência de 5 toques em 14 dias → demo de 10 min no WhatsApp →
-trial 14 dias assistido → cliente. Tudo registrado no CRM (cada toque = interação).
+onboarding assistido → cliente. Tudo registrado no CRM (cada toque = interação).
 
 ## Cadência padrão (5 toques / 14 dias)
 

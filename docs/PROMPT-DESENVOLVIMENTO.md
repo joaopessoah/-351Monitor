@@ -23,7 +23,7 @@ Composição do produto (3 componentes + 1 contrato):
 | **Portal Web** | SPA React para o cliente (gestor/RH/TI): dashboard, timeline, relatórios, configurações, LGPD |
 | **Contrato canônico** | Seção 5 deste documento — envelope de eventos, tipos, config, números. Agente, ingestão, pipeline e portal usam EXATAMENTE a mesma tabela |
 
-Modelo comercial (contexto, não escopo de código além do indicado): cobrança **por dispositivo/mês** (Essencial R$ 19,90 / Pro R$ 34,90, piso 10 devices), billing **manual** no MVP (Pix/boleto), trial 14 dias limitado a **25 devices** com onboarding assistido, org criada via backoffice (sem signup self-service). Meta de dimensionamento técnico: **~2.500 devices** (10–30 contas de 20–80 devices com folga) — NÃO dimensionar para 10k.
+Modelo comercial (contexto, não escopo de código além do indicado): cobrança **por dispositivo/mês** (Essencial R$ 19,90 / Pro R$ 34,90, piso 10 devices), billing **manual** no MVP (Pix/boleto), piloto sem prazo fixo limitado a **25 devices** com onboarding assistido, org criada via backoffice (sem signup self-service). Meta de dimensionamento técnico: **~2.500 devices** (10–30 contas de 20–80 devices com folga) — NÃO dimensionar para 10k.
 
 Papéis LGPD: a empresa cliente é **controladora**; nós somos **operadora**. DPA assinado é pré-condição de provisionamento de tenant (processo comercial, não código).
 

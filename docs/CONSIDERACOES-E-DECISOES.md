@@ -76,7 +76,7 @@ Estes são os números finais. **Qualquer divergência em `docs/design/` está s
 | RBAC | Owner / Admin / Viewer; MFA TOTP **obrigatória** para Owner e Admin; senha ≥ 12 chars, Argon2id |
 | Signup | Sem self-service: org criada via backoffice, trial assistido |
 | Dimensionamento | ~2.500 devices (não 10.000 — corte da crítica) |
-| Preço (hipótese) | Essencial R$ 19,90/device/mês · Pro R$ 34,90 · piso 10 devices (R$ 199) · anual ~2 meses grátis · trial 14 dias / 25 devices, assistido |
+| Preço (hipótese) | Essencial R$ 19,90/device/mês · Pro R$ 34,90 · piso 10 devices (R$ 199) · anual ~2 meses grátis · piloto assistido de até 25 devices, sem prazo fixo |
 | Roadmap | F0 2 sem → F1 3 sem → F2 4 sem → F3 4 sem → F4 5 sem → F5 6 sem (parcialmente paralela) ≈ **20–24 semanas com 2 devs** |
 
 ---
@@ -273,7 +273,7 @@ O concorrente direto BR é o **fSense** (~R$ 10–25/máquina/mês, UX datada) �
 - **Por dispositivo, não por usuário**: auditável (nº de agentes ativos), evita discussão de turnos/máquinas compartilhadas, e é o modelo do concorrente BR.
 - **Piso de 10 dispositivos (R$ 199/mês)**: filtra micro-contas que consomem suporte e não renovam.
 - **Anual com ~2 meses grátis**: melhora caixa e trava churn.
-- **Trial 14 dias sem cartão, com onboarding assistido obrigatório** (call de 30 min instalando os 5 primeiros agentes): resolve ativação e qualifica o lead ao mesmo tempo.
+- **Piloto sem cartão e sem prazo fixo, com onboarding assistido obrigatório** (call de 30 min instalando os 5 primeiros agentes): resolve ativação e qualifica o lead ao mesmo tempo. (A oferta pública de "14 dias" foi descontinuada em 08/2026; a duração do piloto é controle comercial, caso a caso.)
 - **Billing manual (Pix/boleto + NFS-e) até ~30 contas**: 10–30 faturas/mês são 2 h de trabalho; integrar gateway custa 2–4 semanas de dev. O financeiro manual ainda funciona como sensor de churn. Nota: a retenção é fixa no MVP, então a diferenciação do Pro no lançamento é suporte + acesso prioritário ao que vier na v1.1 — diferenciação por retenção entra junto com o gateway.
 - Unit economics alvo: ticket médio ~40 devices × R$ 25 ≈ **R$ 1.000/mês por conta**; margem bruta > 85% (eventos de metadados são leves); CAC < 3 meses de receita.
 

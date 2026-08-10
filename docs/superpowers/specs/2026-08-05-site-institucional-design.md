@@ -39,7 +39,7 @@ Landing page de vendas do +351 Monitor: apresentar o produto, comunicar o posici
 8. Por que brasileiro (real, WhatsApp, kit LGPD, feito para PME)
 9. "O que NÃO somos" (ponto eletrônico, spyware, antivírus/DLP)
 10. FAQ — as 5 objeções do doc de estratégia
-11. CTA final (demo 10 min + trial 14 dias sem cartão com onboarding assistido)
+11. CTA final (demo 10 min no WhatsApp com onboarding assistido)
 12. Footer (contato, redes, Política de Privacidade, tagline)
 
 ## Página de privacidade

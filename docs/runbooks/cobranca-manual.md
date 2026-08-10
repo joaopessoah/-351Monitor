@@ -24,7 +24,7 @@ Origem: PROMPT-DESENVOLVIMENTO Seção 1 e CONSIDERACOES Seção 3 (tabela "Pre�
 | Plano Pro | **R$ 34,90** / device / mês | [DECISÃO DO JOÃO] |
 | Piso de faturamento | **10 devices** (≈ R$ 199 no Essencial) | [DECISÃO DO JOÃO] |
 | Plano anual | **~2 meses grátis** (hipótese) | [DECISÃO DO JOÃO] |
-| Trial | **14 dias**, limitado a **25 devices**, onboarding assistido | [SISTEMA] limite de 25 devices é enforced no enroll (N24); os 14 dias são controle comercial |
+| Trial | **sem prazo fixo** (caso a caso), limitado a **25 devices**, onboarding assistido | [SISTEMA] limite de 25 devices é enforced no enroll (N24); a duração é controle comercial |
 | Forma de pagamento (MVP) | **Pix ou boleto**, com **NFS-e** | [DECISÃO DO JOÃO] / processo manual |
 | Criação de conta | **via backoffice** (sem signup self-service) | [SISTEMA] - DPA assinado é pré-condição de provisionamento |
 
@@ -192,7 +192,7 @@ adotá-la como regra. Confirme prazos e consequências no contrato/DPA de cada c
 
 | Item | Detalhe | Quem aplica |
 |---|---|---|
-| Duração | **14 dias** | [DECISÃO DO JOÃO] - controle comercial; o sistema não expira o trial sozinho |
+| Duração | **sem prazo fixo, caso a caso** | [DECISÃO DO JOÃO] - controle comercial; a oferta pública de 14 dias foi descontinuada em 08/2026; o sistema não expira o trial sozinho |
 | Limite de dispositivos | **25 devices** (N24) | **[SISTEMA]** - enforced no enroll: tentar enrolar o 26º device é recusado |
 | Onboarding | **assistido** (comercial/João acompanham) | processo manual |
 | Criação | via **backoffice** (`create-org`), com DPA assinado | [SISTEMA] sem signup self-service |

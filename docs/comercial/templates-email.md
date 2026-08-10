@@ -8,7 +8,7 @@ possível (site da empresa, notícia, indicação). Enviar de bruna@mais351monit
 Assinatura padrão:
 
 ```
-Bruna — +351 Monitor
+Bruna | +351 Monitor
 Monitoramento transparente de produtividade (sem keylogger, sem prints)
 www.mais351monitor.com.br · WhatsApp +55 11 99220-9235
 
@@ -25,17 +25,17 @@ Se não quiser receber meus e-mails, responda SAIR que removo seu contato.
 > Oi, {contato}, tudo bem?
 >
 > Falo com escritórios de contabilidade em {municipio} e a dor é quase sempre a
-> mesma: no híbrido, ninguém sabe quantas das 8h realmente viram entrega — e o
+> mesma: no híbrido, ninguém sabe quantas das 8h realmente viram entrega, e o
 > fechamento continua apertado do mesmo jeito.
 >
 > O +351 Monitor mostra horas ativas, ociosidade e os sistemas usados em cada
-> estação Windows do escritório — **sem print de tela e sem keylogger**, com kit
+> estação Windows do escritório, **sem print de tela e sem keylogger**, com kit
 > LGPD pronto (termo de ciência incluído). A partir de R$ 19,90 por máquina.
 >
 > Vale uma demonstração de 10 minutos pelo WhatsApp esta semana?
 
 ### Software house / TI
-**Assunto:** Capacidade do time sem microgestão — {empresa}
+**Assunto:** Capacidade do time sem microgestão no {empresa}
 
 > Oi, {contato},
 >
@@ -43,7 +43,7 @@ Se não quiser receber meus e-mails, responda SAIR que removo seu contato.
 > mas odeia (com razão) ferramenta de vigilância.
 >
 > O +351 Monitor fica no meio-termo honesto: horas ativas, ociosidade e apps usados
-> por estação Windows — sem screenshot, sem keylog, com ícone visível para o time.
+> por estação Windows, sem screenshot, sem keylog, com ícone visível para o time.
 > Agente leve, MSI silencioso, instala em 10 minutos (sua TI vai aprovar).
 >
 > Te mostro o painel em 10 minutos pelo WhatsApp?
@@ -57,19 +57,19 @@ Se não quiser receber meus e-mails, responda SAIR que removo seu contato.
 > equipe (e o timesheet agradece), mas qualquer ferramenta que grave tela ou
 > digitação é impensável pelo sigilo profissional.
 >
-> Por isso o +351 Monitor **não coleta conteúdo**: nada de prints, nada de teclas —
-> só horas ativas, ociosidade e aplicativos usados, com transparência total para a
+> Por isso o +351 Monitor **não coleta conteúdo**: nada de prints, nada de teclas.
+> Só horas ativas, ociosidade e aplicativos usados, com transparência total para a
 > equipe e kit LGPD pronto. Dados hospedados no Brasil.
 >
 > Faz sentido ver isso funcionando em 10 minutos, pelo WhatsApp?
 
 ### BPO / call center / agências
-**Assunto:** Visibilidade da operação em {empresa} — em real, e dentro da LGPD
+**Assunto:** Visibilidade da operação em {empresa}, em real e dentro da LGPD
 
 > Oi, {contato},
 >
 > Operações como a de vocês costumam usar monitoramento gringo: pago em dólar,
-> suporte em inglês e quase sempre com screenshot — que virou risco desde a LGPD.
+> suporte em inglês e quase sempre com screenshot, que virou risco desde a LGPD.
 >
 > O +351 Monitor é brasileiro: horas ativas, ociosidade e apps por estação Windows,
 > painel por equipe, **sem captura de conteúdo**, suporte por WhatsApp e preço em
@@ -89,7 +89,7 @@ Se não quiser receber meus e-mails, responda SAIR que removo seu contato.
 > - **O que nunca coletamos**: teclas digitadas, prints de tela, arquivos, e-mails.
 > - **LGPD**: termo de ciência pronto, ícone visível na máquina, dados no Brasil.
 > - **Preço**: a partir de R$ 19,90 por estação/mês, em real, com Pix ou boleto.
-> - **Teste**: 14 dias grátis, sem cartão — nós instalamos junto com a sua TI.
+> - **Implantação**: nós instalamos junto com a sua TI, com onboarding assistido.
 >
 > A demonstração leva 10 minutos, pelo WhatsApp, no seu horário. Que tal
 > {dia sugerido}, às {hora}?
@@ -100,7 +100,7 @@ Se não quiser receber meus e-mails, responda SAIR que removo seu contato.
 
 **Assunto:** Fecho seu contato, {contato}?
 
-> {contato}, imagino que a semana esteja corrida — este é meu último e-mail.
+> {contato}, imagino que a semana esteja corrida, então este é meu último e-mail.
 >
 > Se visibilidade de produtividade das estações Windows não é prioridade agora,
 > tudo certo: guardo seu contato e não insisto. Se for tema para outro momento,
@@ -113,8 +113,8 @@ Se não quiser receber meus e-mails, responda SAIR que removo seu contato.
 ## Nota no LinkedIn (D+7, após conexão aceita)
 
 > Oi, {contato}! Te mandei um e-mail dias atrás sobre visibilidade de produtividade
-> nas estações Windows do {empresa} — sem vigilância, dentro da LGPD. Se fizer
-> sentido, te mostro o painel em 10 min. Se não, sem stress — bom te ter na rede!
+> nas estações Windows do {empresa}, sem vigilância, dentro da LGPD. Se fizer
+> sentido, te mostro o painel em 10 min. Se não, sem stress. Bom te ter na rede!
 
 ## Higiene de deliverability
 

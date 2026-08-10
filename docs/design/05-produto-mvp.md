@@ -109,7 +109,7 @@ Princípio do corte: **o MVP é o menor produto pelo qual uma PME paga R$ 500–
 - Ancoragem competitiva: Essencial a R$ 19,90 fica na faixa do player BR direto e a ~1/3 do custo em reais de um ActivTrak; Pro a R$ 34,90 ainda é ~50–60% do global.
 
 ### 4.3 Trial e piloto
-- **Trial 14 dias, sem cartão (billing é manual mesmo)**, limitado a 25 dispositivos, **com onboarding assistido obrigatório**: call de 30 min para instalar os 5 primeiros agentes junto com a TI do cliente. Isso resolve ativação E qualifica o lead ao mesmo tempo.
+- **Piloto sem prazo fixo e sem cartão (billing é manual mesmo)**, limitado a 25 dispositivos, **com onboarding assistido obrigatório**: call de 30 min para instalar os 5 primeiros agentes junto com a TI do cliente. Isso resolve ativação E qualifica o lead ao mesmo tempo.
 - Programa de piloto fundador (F5): 2–3 empresas amigas, 3 meses com 50–70% de desconto em troca de feedback quinzenal estruturado + depoimento/logo no site + permissão para case.
 
 ### 4.4 Unit economics alvo (hipóteses para o modelo, não promessas)
@@ -192,7 +192,7 @@ Princípio do corte: **o MVP é o menor produto pelo qual uma PME paga R$ 500–
 - Pipeline de intervalos (F2) é o coração do produto e a primeira demo vendável; nenhum trabalho de dashboard (F3) antes de validar a timeline contra um dia real de uso
 - MSI + auto-update + code signing são bloqueadores de GA (F4), não polimento: sem auto-update, cada bug de agente vira visita técnica em parque de cliente
 - Seed de dados demo (tenant fictício com 60 dias de histórico sintético) entra no backlog técnico da F3 como requisito de vendas — nenhum prospect pode ver dados reais de outro cliente
-- Trial de 14 dias sem cartão com onboarding assistido obrigatório (call de 30 min instalando os 5 primeiros agentes) — resolve ativação e qualificação ao mesmo tempo
+- Piloto sem prazo fixo e sem cartão com onboarding assistido obrigatório (call de 30 min instalando os 5 primeiros agentes), resolve ativação e qualificação ao mesmo tempo
 - Multi-tenancy lógico com tenant_id em toda tabela desde a primeira migration e teste automatizado de isolamento desde F0 — retrofit de multi-tenancy é o retrabalho mais caro possível neste produto
 
 ## Apêndice: Riscos
