@@ -3,24 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>+351 Monitor | Monitoramento transparente de produtividade para equipes Windows</title>
-<meta name="description" content="Horas ativas, ociosidade e aplicativos usados em cada estação Windows da sua empresa, com aviso claro ao funcionário, sem keylogger e sem prints de tela. LGPD por design, suporte brasileiro.">
+<title>+351 Monitor | Software de Monitoramento de Produtividade</title>
+<meta name="description" content="Monitore tempo ativo, ociosidade, aplicativos e jornada em dispositivos corporativos. Gestão de produtividade com transparência, sem keylogger e sem prints de tela.">
 <link rel="canonical" href="https://www.mais351monitor.com.br/">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="pt_BR">
 <meta property="og:site_name" content="+351 Monitor">
-<meta property="og:title" content="+351 Monitor: o dia de trabalho da sua equipe, finalmente visível">
-<meta property="og:description" content="Monitoramento transparente de estações Windows para PMEs: dashboards de produtividade com LGPD por design. Sem keylogger. Sem prints de tela.">
+<meta property="og:title" content="+351 Monitor | Software de Monitoramento de Produtividade">
+<meta property="og:description" content="Monitore tempo ativo, ociosidade, aplicativos e jornada em dispositivos corporativos. Gestão de produtividade com transparência, sem keylogger e sem prints de tela.">
 <meta property="og:url" content="https://www.mais351monitor.com.br/">
 <meta property="og:image" content="https://www.mais351monitor.com.br/assets/img/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
 <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
-<meta name="theme-color" content="#0B0F1A">
+<meta name="theme-color" content="#05070D">
 <link rel="preload" href="assets/fonts/space-grotesk-var.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="assets/fonts/open-sans-var.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="assets/css/styles.css">
+<link rel="stylesheet" href="assets/css/home.css">
+<noscript><style>.reveal{opacity:1 !important;transform:none !important}</style></noscript>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -28,13 +29,17 @@
   "name": "+351 Monitor",
   "applicationCategory": "BusinessApplication",
   "operatingSystem": "Windows",
-  "description": "Monitoramento transparente de produtividade para estações Windows: horas ativas, ociosidade e aplicativos, com LGPD por design.",
+  "description": "Software de monitoramento de produtividade corporativa: tempo ativo, ociosidade, aplicativos e jornada em dispositivos corporativos, com transparência e LGPD por design.",
   "url": "https://www.mais351monitor.com.br/",
   "inLanguage": "pt-BR",
   "publisher": {
     "@type": "Organization",
     "name": "+351 Monitor",
     "url": "https://www.mais351monitor.com.br/",
+    "founder": [
+      { "@type": "Person", "name": "João Pessoa", "jobTitle": "Tecnologia & Produto" },
+      { "@type": "Person", "name": "Bruna Rondelli", "jobTitle": "Estratégia & Gestão Corporativa" }
+    ],
     "sameAs": [
       "https://www.instagram.com/351monitor/",
       "https://www.linkedin.com/company/351-monitor/"
@@ -62,12 +67,12 @@
     <nav class="nav-links" aria-label="Seções da página">
       <a href="#produto">Produto</a>
       <a href="#como-funciona">Como funciona</a>
-      <a href="#transparencia">Transparência</a>
-      <a href="#perguntas">Perguntas</a>
+      <a href="#seguranca-lgpd">Segurança e LGPD</a>
+      <a href="#para-empresas">Para empresas</a>
     </nav>
 
     <div class="nav-cta">
-      <a class="btn btn-primary btn-sm" href="https://wa.me/5511992209235?text=Ol%C3%A1!%20Quero%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20do%20%2B351%20Monitor." target="_blank" rel="noopener">Agendar demonstração</a>
+      <a class="btn btn-primary btn-sm" href="https://wa.me/5511925690601?text=Ol%C3%A1!%20Quero%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20do%20%2B351%20Monitor." target="_blank" rel="noopener">Agendar demonstração</a>
     </div>
 
     <button class="nav-burger" aria-expanded="false" aria-controls="menu-mobile" aria-label="Abrir menu">
@@ -78,443 +83,355 @@
   <div class="nav-mobile" id="menu-mobile" hidden>
     <a href="#produto">Produto</a>
     <a href="#como-funciona">Como funciona</a>
-    <a href="#transparencia">Transparência</a>
-    <a href="#perguntas">Perguntas</a>
-    <a class="btn btn-primary" href="https://wa.me/5511992209235?text=Ol%C3%A1!%20Quero%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20do%20%2B351%20Monitor." target="_blank" rel="noopener">Agendar demonstração</a>
+    <a href="#seguranca-lgpd">Segurança e LGPD</a>
+    <a href="#para-empresas">Para empresas</a>
+    <a class="btn btn-primary" href="https://wa.me/5511925690601?text=Ol%C3%A1!%20Quero%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20do%20%2B351%20Monitor." target="_blank" rel="noopener">Agendar demonstração</a>
   </div>
 </header>
 
 <main>
 
   <!-- ============ HERO ============ -->
-  <section class="hero">
-    <svg class="hero-pulse" viewBox="0 0 1440 160" preserveAspectRatio="none" aria-hidden="true">
-      <path class="pulse-path" d="M-20 100 H790 l22-44 34 88 20-44 14 24 H1010 l18-36 28 72 16-36 10 18 H1460" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-
+  <section class="hero" id="inicio">
     <div class="container hero-grid">
       <div class="hero-copy">
-        <p class="eyebrow"><span class="plus">+</span>Monitoramento transparente de estações Windows</p>
-        <h1>O dia de trabalho da sua equipe, finalmente <span class="hl">visível<svg class="hl-pulse" viewBox="0 0 120 14" preserveAspectRatio="none" aria-hidden="true"><path d="M2 9 H48 l6-6 8 9 5-6 3 3 H118" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>.</h1>
-        <p class="lead">O <strong>+351 Monitor</strong> mostra horas ativas, ociosidade e aplicativos usados em cada estação Windows, com aviso claro ao funcionário, sem capturar teclas nem tela. Gestão transparente para equipes presenciais, híbridas e remotas.</p>
+        <h1>Produtividade<br>não deveria ser<br><span class="hl">uma percepção.</span></h1>
+        <p class="lead">A <strong>+351 Monitor</strong> é um software de monitoramento de produtividade que acompanha a atividade nos dispositivos corporativos e mostra como o tempo de trabalho da sua equipe é realmente utilizado.</p>
+
+        <ul class="hero-indicators" role="list">
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.4" stroke="currentColor" stroke-width="1.7"/><path d="M12 7.6V12l3 1.9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Tempo ativo</span>
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.4" stroke="currentColor" stroke-width="1.7"/><path d="M10 9v6M14 9v6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            <span>Ociosidade</span>
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="13.4" y="4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="4" y="13.4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="13.4" y="13.4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/></svg>
+            <span>Aplicativos</span>
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.5 12h5l2.2-4.6 2.6 9.2 2.2-4.6h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Jornada</span>
+          </li>
+        </ul>
+
         <div class="cta-row">
-          <a class="btn btn-primary" href="https://wa.me/5511992209235?text=Ol%C3%A1!%20Quero%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20do%20%2B351%20Monitor." target="_blank" rel="noopener">Agendar demonstração<span class="btn-arrow" aria-hidden="true">→</span></a>
-          <a class="btn btn-ghost" href="#produto">Ver o produto</a>
+          <a class="btn btn-primary" href="https://wa.me/5511925690601?text=Ol%C3%A1!%20Quero%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20do%20%2B351%20Monitor." target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 9.6h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            Agendar demonstração
+          </a>
+          <a class="btn btn-ghost" href="#como-funciona">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.6" stroke="currentColor" stroke-width="1.7"/><path d="M10.2 8.9l5 3.1-5 3.1z" fill="currentColor"/></svg>
+            Ver como funciona
+          </a>
         </div>
+
         <ul class="trust" role="list">
+          <li>Sem keylogger</li>
+          <li>Sem prints</li>
           <li>LGPD por design</li>
-          <li>Dados hospedados no Brasil</li>
-          <li>Sem keylogger. Sem prints de tela.</li>
-          <li>Agente leve, instala em minutos</li>
         </ul>
       </div>
-    </div>
 
-    <div class="container hero-shot reveal">
-      <div class="window" role="img" aria-label="Ilustração do painel do +351 Monitor: visão geral com horas ativas, ociosidade, dispositivos e principais aplicativos">
-        <div class="window-bar">
-          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-          <span class="window-addr">app.mais351monitor.com.br</span>
+      <!-- Local preparado para screenshot REAL do software:
+           substitua o conteúdo de .shot-body abaixo por
+           <img src="assets/img/print-visao-geral.png" alt="Painel Visão geral da +351 Monitor" width="1280" height="800">
+           mantendo a moldura <figure class="shot"> para preservar o visual. -->
+      <figure class="shot shot-hero reveal" role="img" aria-label="Interface da +351 Monitor: visão geral com tempo ativo, ociosidade, aplicativos e atividade ao longo do dia">
+        <div class="shot-top" aria-hidden="true">
+          <span class="shot-brand">
+            <svg viewBox="0 0 64 64" fill="none"><rect x="3" y="7" width="58" height="42" rx="7" stroke="#E8EEF7" stroke-width="4"/><path d="M11 30h7l5.5-11L31 41l5-11 3.5 6H53" stroke="#B6FF3C" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M23 57h18" stroke="#E8EEF7" stroke-width="4" stroke-linecap="round"/></svg>
+            <b>+351</b> Monitor
+          </span>
+          <span class="shot-topright">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 4.5a5 5 0 0 0-5 5V13l-1.6 2.6h13.2L17 13V9.5a5 5 0 0 0-5-5ZM10.4 18.4a1.7 1.7 0 0 0 3.2 0" stroke="#8FA0BC" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <i class="shot-avatar"></i>
+          </span>
         </div>
-        <div class="window-body">
-          <aside class="mock-side" aria-hidden="true">
-            <svg class="mock-logo" viewBox="0 0 64 64" fill="none">
-              <rect x="3" y="7" width="58" height="42" rx="7" stroke="#F2F5FA" stroke-width="4"/>
-              <path d="M11 30h7l5.5-11L31 41l5-11 3.5 6H53" stroke="#B6FF3C" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M23 57h18" stroke="#F2F5FA" stroke-width="4" stroke-linecap="round"/>
-            </svg>
-            <span class="side-item active">Visão geral</span>
-            <span class="side-item">Linha do tempo</span>
-            <span class="side-item">Dispositivos</span>
-            <span class="side-item">Relatórios</span>
-            <span class="side-item">Transparência</span>
+        <div class="shot-body" aria-hidden="true">
+          <aside class="shot-nav">
+            <span class="on">Visão geral</span>
+            <span>Colaboradores</span>
+            <span>Atividades</span>
+            <span>Aplicativos</span>
+            <span>Jornada</span>
+            <span>Relatórios</span>
+            <span>Configurações</span>
           </aside>
-
-          <div class="mock-main" aria-hidden="true">
-            <div class="mock-head">
-              <strong>Visão geral</strong>
-              <span class="chip">Empresa Demo</span>
-              <span class="chip chip-soft">Últimos 7 dias</span>
+          <div class="shot-main">
+            <div class="shot-head">
+              <strong>Resumo geral</strong>
+              <span class="shot-chip">Hoje</span>
             </div>
-
-            <div class="kpis">
-              <div class="kpi">
-                <span class="kpi-label">Horas ativas / dia</span>
-                <span class="kpi-value">6h42</span>
-                <span class="kpi-delta up">▲ 8% vs. semana anterior</span>
-              </div>
-              <div class="kpi">
-                <span class="kpi-label">Ociosidade média</span>
-                <span class="kpi-value">14%</span>
-                <span class="kpi-delta up">▼ 3 p.p.</span>
-              </div>
-              <div class="kpi">
-                <span class="kpi-label">Dispositivos ativos</span>
-                <span class="kpi-value">32<small>/34</small></span>
-                <span class="kpi-delta">2 sem sinal hoje</span>
-              </div>
-              <div class="kpi">
-                <span class="kpi-label">Tempo produtivo</span>
-                <span class="kpi-value">71%</span>
-                <span class="kpi-delta up">▲ 5 p.p.</span>
-              </div>
+            <div class="shot-kpis">
+              <div class="skpi"><span class="skpi-l">Colaboradores ativos</span><span class="skpi-v">128</span><span class="skpi-d">+8 vs ontem</span></div>
+              <div class="skpi"><span class="skpi-l">Tempo ativo médio</span><span class="skpi-v">6h48</span><span class="skpi-d">+4% vs ontem</span></div>
+              <div class="skpi"><span class="skpi-l">Ociosidade média</span><span class="skpi-v">52min</span><span class="skpi-d">−6min vs ontem</span></div>
+              <div class="skpi"><span class="skpi-l">Horas registradas</span><span class="skpi-v">872</span><span class="skpi-d">hoje</span></div>
             </div>
-
-            <div class="mock-grid">
-              <div class="mock-card">
-                <div class="mock-card-head">
-                  <span>Atividade da semana</span>
-                  <span class="legend">
-                    <i class="sw sw-green"></i>Produtivo
-                    <i class="sw sw-blue"></i>Neutro
-                    <i class="sw sw-amber"></i>Improdutivo
-                  </span>
-                </div>
-                <div class="weekbars">
-                  <div class="wb"><div class="wb-stack"><i class="s-green" style="height:58%"></i><i class="s-blue" style="height:16%"></i><i class="s-amber" style="height:7%"></i></div><span>seg</span></div>
-                  <div class="wb"><div class="wb-stack"><i class="s-green" style="height:64%"></i><i class="s-blue" style="height:14%"></i><i class="s-amber" style="height:5%"></i></div><span>ter</span></div>
-                  <div class="wb"><div class="wb-stack"><i class="s-green" style="height:61%"></i><i class="s-blue" style="height:17%"></i><i class="s-amber" style="height:6%"></i></div><span>qua</span></div>
-                  <div class="wb wb-max"><div class="wb-label">7h58</div><div class="wb-stack"><i class="s-green" style="height:70%"></i><i class="s-blue" style="height:13%"></i><i class="s-amber" style="height:4%"></i></div><span>qui</span></div>
-                  <div class="wb"><div class="wb-stack"><i class="s-green" style="height:55%"></i><i class="s-blue" style="height:18%"></i><i class="s-amber" style="height:8%"></i></div><span>sex</span></div>
-                  <div class="wb wb-dim"><div class="wb-stack"><i class="s-green" style="height:9%"></i><i class="s-blue" style="height:4%"></i></div><span>sáb</span></div>
-                  <div class="wb wb-dim"><div class="wb-stack"><i class="s-green" style="height:3%"></i></div><span>dom</span></div>
-                </div>
+            <div class="shot-grid">
+              <div class="shot-card">
+                <div class="shot-card-head"><span>Atividade ao longo do dia</span><span class="shot-legend"><i></i>Atividade</span></div>
+                <svg class="shot-chart" viewBox="0 0 560 210" preserveAspectRatio="none">
+                  <g class="grid">
+                    <line x1="12" y1="36"  x2="548" y2="36"/>
+                    <line x1="12" y1="88"  x2="548" y2="88"/>
+                    <line x1="12" y1="140" x2="548" y2="140"/>
+                    <line x1="12" y1="192" x2="548" y2="192"/>
+                  </g>
+                  <path class="area" d="M12 163 L80 122 L146 93 L202 109 L258 158 L314 111 L370 83 L426 101 L482 124 L548 156 L548 192 L12 192 Z"/>
+                  <path class="line" d="M12 163 L80 122 L146 93 L202 109 L258 158 L314 111 L370 83 L426 101 L482 124 L548 156"/>
+                  <g class="dots">
+                    <circle cx="12" cy="163" r="3"/><circle cx="146" cy="93" r="3"/><circle cx="258" cy="158" r="3"/><circle cx="370" cy="83" r="3"/><circle cx="482" cy="124" r="3"/>
+                  </g>
+                </svg>
+                <div class="shot-hours"><span>08h</span><span>10h</span><span>12h</span><span>14h</span><span>16h</span><span>18h</span></div>
               </div>
-
-              <div class="mock-card">
-                <div class="mock-card-head"><span>Top aplicativos</span><span class="legend">horas na semana</span></div>
-                <div class="hbars">
-                  <div class="hb"><span class="hb-name">ERP Domínio</span><div class="hb-track"><i style="width:92%"></i></div><span class="hb-val">11h20</span></div>
-                  <div class="hb"><span class="hb-name">Excel</span><div class="hb-track"><i style="width:79%"></i></div><span class="hb-val">9h45</span></div>
-                  <div class="hb"><span class="hb-name">Portal NF-e</span><div class="hb-track"><i style="width:50%"></i></div><span class="hb-val">6h10</span></div>
-                  <div class="hb"><span class="hb-name">Outlook</span><div class="hb-track"><i style="width:45%"></i></div><span class="hb-val">5h30</span></div>
-                  <div class="hb"><span class="hb-name">Teams</span><div class="hb-track"><i style="width:34%"></i></div><span class="hb-val">4h15</span></div>
+              <div class="shot-card">
+                <div class="shot-card-head"><span>Aplicativos mais utilizados</span></div>
+                <div class="shot-apps">
+                  <div class="sapp"><span class="sapp-n">ERP</span><span class="sapp-t"><i style="width:92%"></i></span><span class="sapp-v">6h12</span></div>
+                  <div class="sapp"><span class="sapp-n">Excel</span><span class="sapp-t"><i style="width:74%"></i></span><span class="sapp-v">4h45</span></div>
+                  <div class="sapp"><span class="sapp-n">Navegador</span><span class="sapp-t"><i style="width:60%"></i></span><span class="sapp-v">3h58</span></div>
+                  <div class="sapp"><span class="sapp-n">Outlook</span><span class="sapp-t"><i style="width:38%"></i></span><span class="sapp-v">2h30</span></div>
+                  <div class="sapp"><span class="sapp-n">Teams</span><span class="sapp-t"><i style="width:28%"></i></span><span class="sapp-v">1h47</span></div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </figure>
     </div>
+
+    <p class="container belt reveal">Informação para a <span>empresa</span>. Respeito para as <span>pessoas</span>.</p>
   </section>
 
-  <!-- ============ SEGMENTOS ============ -->
-  <section class="segments">
+  <!-- ============ O QUE A +351 MONITOR MONITORA ============ -->
+  <section class="section" id="produto">
     <div class="container">
-      <p class="segments-title">Feito para escritórios que rodam no Windows</p>
-      <ul class="segments-list" role="list">
-        <li>Contabilidade</li>
-        <li>Advocacia</li>
-        <li>BPO e call centers</li>
-        <li>Agências</li>
-        <li>Software houses</li>
-        <li>Corretoras e imobiliárias</li>
-      </ul>
-    </div>
-  </section>
+      <p class="eyebrow reveal">O que a +351 Monitor monitora</p>
+      <h2 class="reveal">O que acontece durante a jornada,<br>agora você pode medir.</h2>
 
-  <!-- ============ DOR ============ -->
-  <section class="section pain" id="dor">
-    <div class="container">
-      <p class="eyebrow reveal"><span class="plus">+</span>O problema</p>
-      <h2 class="reveal">O trabalho híbrido virou uma caixa-preta.</h2>
-      <p class="section-lead reveal">Sem dados, sobra a impressão. E impressão gera injustiça para os dois lados: para quem gere e para quem trabalha bem e não é visto.</p>
-
-      <div class="cards-3">
-        <article class="card reveal">
-          <h3>“Pago 8 horas por dia. Quantas acontecem?”</h3>
-          <p><strong>Para quem dirige a operação:</strong> horas ativas, ociosidade e destino do tempo, por equipe e por pessoa, em uma tela que você entende sem treinamento.</p>
+      <div class="monitors reveal-group">
+        <article class="mcard reveal">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.4" stroke="currentColor" stroke-width="1.7"/><path d="M12 7.6V12l3 1.9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h3>Tempo ativo</h3>
+          <p>Acompanhe quanto tempo o dispositivo esteve efetivamente em utilização.</p>
         </article>
-        <article class="card reveal">
-          <h3>“Conversas difíceis merecem fatos, não impressões.”</h3>
-          <p><strong>Para RH e DP:</strong> relatórios por período que embasam feedback e decisões de desempenho, com acesso auditado e sem ranking público de funcionários.</p>
+        <article class="mcard reveal">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.4" stroke="currentColor" stroke-width="1.7"/><path d="M10 9v6M14 9v6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <h3>Ociosidade</h3>
+          <p>Identifique onde e quando surgem períodos de inatividade.</p>
         </article>
-        <article class="card reveal">
-          <h3>“Mais um agente na máquina? Só se for invisível na fila de chamados.”</h3>
-          <p><strong>Para a TI:</strong> instalador MSI silencioso, deploy por GPO, atualização automática e painel de saúde do parque. Instala em minutos e não volta a incomodar.</p>
+        <article class="mcard reveal">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="13.4" y="4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="4" y="13.4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="13.4" y="13.4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/></svg>
+          <h3>Aplicativos utilizados</h3>
+          <p>Saiba quais ferramentas são utilizadas e por quanto tempo.</p>
+        </article>
+        <article class="mcard reveal">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.5 12h5l2.2-4.6 2.6 9.2 2.2-4.6h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h3>Jornada de atividade</h3>
+          <p>Entenda como o uso do dispositivo acontece ao longo do expediente.</p>
         </article>
       </div>
+
+      <p class="tagline reveal">A +351 Monitor <span>mede.</span> Você <span>entende.</span> Sua empresa <span>decide.</span></p>
     </div>
   </section>
 
-  <!-- ============ PRODUTO: 3 TELAS ============ -->
-  <section class="section product" id="produto">
-    <div class="container">
-      <p class="eyebrow reveal"><span class="plus">+</span>O produto</p>
-      <h2 class="reveal">Três telas. Nenhum manual.</h2>
-
-      <!-- Tela 1: Visão geral -->
-      <div class="feature reveal">
-        <div class="feature-copy">
-          <h3>Da empresa à pessoa, em três cliques</h3>
-          <p>O painel de visão geral compara equipes lado a lado: horas ativas, tempo produtivo e ociosidade. Clique numa equipe para ver pessoas; clique numa pessoa para ver o dia dela.</p>
-          <ul class="feature-list" role="list">
-            <li>Categorias produtivo / neutro / improdutivo configuráveis por empresa</li>
-            <li>Comparativo entre períodos para enxergar tendência</li>
-            <li>Sem ranking público: acesso individual só para perfis autorizados</li>
-          </ul>
-        </div>
-        <div class="feature-shot">
-          <div class="panel" role="img" aria-label="Ilustração: comparativo de equipes com barras de tempo produtivo, neutro e improdutivo">
-            <div class="panel-head">
-              <strong>Equipes</strong>
-              <span class="legend">
-                <i class="sw sw-green"></i>Produtivo
-                <i class="sw sw-blue"></i>Neutro
-                <i class="sw sw-amber"></i>Improdutivo
+  <!-- ============ DO MONITORAMENTO À GESTÃO ============ -->
+  <section class="section manage" id="como-funciona">
+    <div class="container manage-grid">
+      <!-- Local preparado para screenshot REAL da plataforma (colaboradores, equipes,
+           atividade, ociosidade, aplicativos e linha do tempo): substitua o conteúdo
+           de .shot-body por <img src="assets/img/print-colaboradores.png" alt="..."> -->
+      <figure class="shot shot-manage reveal" role="img" aria-label="Interface da +351 Monitor: lista de colaboradores com status, tempo ativo e composição da jornada">
+        <div class="shot-body shot-body-solo" aria-hidden="true">
+          <aside class="shot-nav shot-nav-slim">
+            <span>Visão geral</span>
+            <span class="on">Colaboradores</span>
+            <span>Atividades</span>
+            <span>Aplicativos</span>
+            <span>Jornada</span>
+            <span>Relatórios</span>
+          </aside>
+          <div class="shot-main">
+            <div class="shot-head">
+              <strong>Colaboradores</strong>
+              <span class="shot-search">
+                <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="6.5" stroke="#8FA0BC" stroke-width="1.7"/><path d="M15.8 15.8 20 20" stroke="#8FA0BC" stroke-width="1.7" stroke-linecap="round"/></svg>
+                Buscar colaborador
               </span>
             </div>
-            <div class="teambars" aria-hidden="true">
-              <div class="tb">
-                <span class="tb-name">Contábil</span>
-                <div class="tb-track"><i class="s-green" style="width:64%"></i><i class="s-blue" style="width:17%"></i><i class="s-amber" style="width:5%"></i></div>
-                <span class="tb-val">78%</span>
-              </div>
-              <div class="tb">
-                <span class="tb-name">Fiscal</span>
-                <div class="tb-track"><i class="s-green" style="width:58%"></i><i class="s-blue" style="width:19%"></i><i class="s-amber" style="width:7%"></i></div>
-                <span class="tb-val">71%</span>
-              </div>
-              <div class="tb">
-                <span class="tb-name">Atendimento</span>
-                <div class="tb-track"><i class="s-green" style="width:50%"></i><i class="s-blue" style="width:22%"></i><i class="s-amber" style="width:9%"></i></div>
-                <span class="tb-val">64%</span>
-              </div>
-              <div class="tb">
-                <span class="tb-name">Administrativo</span>
-                <div class="tb-track"><i class="s-green" style="width:46%"></i><i class="s-blue" style="width:26%"></i><i class="s-amber" style="width:8%"></i></div>
-                <span class="tb-val">61%</span>
-              </div>
+            <div class="shot-tabs"><span class="on">Geral</span><span>Atividade</span><span>Aplicativos</span><span>Jornada</span></div>
+            <div class="shot-table">
+              <div class="srow srow-head"><span>Colaborador</span><span>Status</span><span>Tempo ativo</span><span>Jornada de hoje</span></div>
+              <div class="srow"><span class="sname"><i>AO</i>Ana Oliveira</span><span class="sstat on">Ativo</span><span class="stime">6h52</span><span class="sbar"><i class="p" style="width:62%"></i><i class="n" style="width:16%"></i><i class="d" style="width:6%"></i><i class="o" style="width:10%"></i></span></div>
+              <div class="srow"><span class="sname"><i>BS</i>Bruno Santos</span><span class="sstat on">Ativo</span><span class="stime">6h31</span><span class="sbar"><i class="p" style="width:58%"></i><i class="n" style="width:20%"></i><i class="d" style="width:8%"></i><i class="o" style="width:8%"></i></span></div>
+              <div class="srow"><span class="sname"><i>CF</i>Carla Ferreira</span><span class="sstat idle">Ocioso</span><span class="stime">4h58</span><span class="sbar"><i class="p" style="width:44%"></i><i class="n" style="width:12%"></i><i class="d" style="width:4%"></i><i class="o" style="width:30%"></i></span></div>
+              <div class="srow"><span class="sname"><i>DL</i>Diego Lima</span><span class="sstat on">Ativo</span><span class="stime">6h05</span><span class="sbar"><i class="p" style="width:55%"></i><i class="n" style="width:22%"></i><i class="d" style="width:9%"></i><i class="o" style="width:6%"></i></span></div>
+              <div class="srow"><span class="sname"><i>EC</i>Elisa Costa</span><span class="sstat off">Offline</span><span class="stime">2h40</span><span class="sbar"><i class="p" style="width:28%"></i><i class="n" style="width:8%"></i><i class="d" style="width:2%"></i><i class="o" style="width:6%"></i></span></div>
+              <div class="srow"><span class="sname"><i>FR</i>Fábio Ramos</span><span class="sstat on">Ativo</span><span class="stime">6h14</span><span class="sbar"><i class="p" style="width:60%"></i><i class="n" style="width:18%"></i><i class="d" style="width:5%"></i><i class="o" style="width:9%"></i></span></div>
+            </div>
+            <div class="shot-legend-row">
+              <span><i class="p"></i>Produtivo</span>
+              <span><i class="n"></i>Neutro</span>
+              <span><i class="d"></i>Improdutivo</span>
+              <span><i class="o"></i>Ocioso</span>
             </div>
           </div>
         </div>
-      </div>
+      </figure>
 
-      <!-- Tela 2: Linha do tempo -->
-      <div class="feature feature-flip reveal">
-        <div class="feature-copy">
-          <h3>O dia como ele aconteceu</h3>
-          <p>A linha do tempo reconstrói a jornada de cada estação, minuto a minuto: qual aplicativo estava em uso, quando a máquina ficou ociosa, quando a sessão foi bloqueada. Para conversas justas, baseadas em fato.</p>
-          <ul class="feature-list" role="list">
-            <li>Intervalos de uso por aplicativo, com título de janela mascarável</li>
-            <li>Ociosidade marca só a ausência de atividade, nunca o conteúdo</li>
-            <li>Fora do expediente configurado, apps e janelas não são coletados</li>
-          </ul>
-        </div>
-        <div class="feature-shot">
-          <div class="panel" role="img" aria-label="Ilustração: linha do tempo de um dia de trabalho com blocos de aplicativos e períodos ociosos">
-            <div class="panel-head">
-              <strong>Linha do tempo · qui, 30 jul</strong>
-              <span class="chip chip-soft">Ana · Contábil</span>
-            </div>
-            <div class="timeline" aria-hidden="true">
-              <div class="tl-hours"><span>08h</span><span>10h</span><span>12h</span><span>14h</span><span>16h</span><span>18h</span></div>
-              <div class="tl-track">
-                <i class="s-green" style="left:2%;width:20%"  title="ERP Domínio"></i>
-                <i class="s-blue"  style="left:23%;width:8%"  title="Outlook"></i>
-                <i class="s-green" style="left:32%;width:9%"  title="Excel"></i>
-                <i class="s-idle"  style="left:42%;width:10%" title="Almoço"></i>
-                <i class="s-green" style="left:53%;width:17%" title="ERP Domínio"></i>
-                <i class="s-amber" style="left:71%;width:4%"  title="YouTube"></i>
-                <i class="s-blue"  style="left:76%;width:8%"  title="Teams"></i>
-                <i class="s-green" style="left:85%;width:11%" title="Portal NF-e"></i>
-              </div>
-              <div class="tl-tip">ERP Domínio · 09:02 às 11:30 · produtivo</div>
-              <div class="legend legend-row">
-                <span><i class="sw sw-green"></i>Produtivo</span>
-                <span><i class="sw sw-blue"></i>Neutro</span>
-                <span><i class="sw sw-amber"></i>Improdutivo</span>
-                <span><i class="sw sw-idle"></i>Ocioso / pausa</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Tela 3: Saúde dos agentes -->
-      <div class="feature reveal">
-        <div class="feature-copy">
-          <h3>A TI enxerga o parque inteiro</h3>
-          <p>Cada agente reporta versão e último sinal. Máquina que parou de reportar aparece na hora, antes de virar buraco nos dados ou chamado de suporte.</p>
-          <ul class="feature-list" role="list">
-            <li>Instalação silenciosa via MSI, manual ou por GPO</li>
-            <li>Atualização automática, sem tocar nas máquinas</li>
-            <li>Relatórios exportam em CSV, prontos para o Excel</li>
-          </ul>
-        </div>
-        <div class="feature-shot">
-          <div class="panel" role="img" aria-label="Ilustração: painel de saúde dos agentes com status por dispositivo">
-            <div class="panel-head">
-              <strong>Saúde dos agentes</strong>
-              <span class="btn-mock">Exportar CSV</span>
-            </div>
-            <div class="devices" aria-hidden="true">
-              <div class="dev"><i class="st st-ok"></i><span class="dev-name">DESK-CONTAB-03</span><span class="dev-meta">v1.4.2 · há 2 min</span></div>
-              <div class="dev"><i class="st st-ok"></i><span class="dev-name">NOTE-FISCAL-07</span><span class="dev-meta">v1.4.2 · há 4 min</span></div>
-              <div class="dev"><i class="st st-ok"></i><span class="dev-name">DESK-ATEND-12</span><span class="dev-meta">v1.4.2 · há 1 min</span></div>
-              <div class="dev dev-warn"><i class="st st-warn"></i><span class="dev-name">DESK-ADM-01</span><span class="dev-meta">sem sinal há 3 dias</span></div>
-              <div class="dev"><i class="st st-ok"></i><span class="dev-name">NOTE-DIRETORIA</span><span class="dev-meta">v1.4.2 · há 6 min</span></div>
-            </div>
-          </div>
-        </div>
+      <div class="manage-copy">
+        <p class="eyebrow reveal">Do monitoramento à gestão</p>
+        <h2 class="reveal">Veja o que está acontecendo na sua operação.</h2>
+        <p class="reveal">Primeiro, a +351 Monitor monitora e mede a atividade nos dispositivos. Depois, apresenta esses dados por equipes e colaboradores, prontos para análise e gestão.</p>
+        <ul class="checks reveal-group" role="list">
+          <li class="reveal"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Compare equipes e colaboradores</li>
+          <li class="reveal"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Identifique padrões de ociosidade</li>
+          <li class="reveal"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Entenda onde o tempo está sendo utilizado</li>
+        </ul>
+        <a class="btn btn-ghost reveal" href="https://wa.me/5511925690601?text=Ol%C3%A1!%20Quero%20ver%20uma%20demonstra%C3%A7%C3%A3o%20do%20%2B351%20Monitor." target="_blank" rel="noopener">Ver demonstração</a>
       </div>
     </div>
   </section>
 
-  <!-- ============ COMO FUNCIONA ============ -->
-  <section class="section how" id="como-funciona">
+  <!-- ============ MONITORAR NÃO É ESPIONAR ============ -->
+  <section class="section spy" id="seguranca-lgpd">
     <div class="container">
-      <p class="eyebrow reveal"><span class="plus">+</span>Como funciona</p>
-      <h2 class="reveal">Da instalação à decisão, em três passos.</h2>
+      <p class="eyebrow center reveal">Monitorar não é espionar</p>
+      <h2 class="center reveal">Informação para a <span class="hl">empresa</span>.<br>Respeito para as <span class="hl">pessoas</span>.</h2>
 
-      <div class="steps">
-        <div class="steps-line" aria-hidden="true">
-          <svg viewBox="0 0 1000 40" preserveAspectRatio="none">
-            <path class="pulse-path-2" d="M0 20 H310 l8-14 12 28 8-14 H660 l8-14 12 28 8-14 H1000" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <div class="compare reveal">
+        <div class="compare-col compare-yes">
+          <h3>A +351 Monitor monitora</h3>
+          <ul role="list">
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Atividade e ociosidade</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Aplicativos utilizados</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Jornada da estação de trabalho</li>
+          </ul>
+        </div>
+
+        <div class="compare-badge" aria-hidden="true">
+          <svg viewBox="0 0 120 120" fill="none">
+            <circle cx="60" cy="60" r="56" stroke="#B6FF3C" stroke-width="2.5" stroke-dasharray="176 176" stroke-dashoffset="0" stroke-linecap="round" transform="rotate(-90 60 60)" opacity=".9"/>
+            <circle cx="60" cy="60" r="56" stroke="#FF7A7A" stroke-width="2.5" stroke-dasharray="176 176" stroke-dashoffset="-176" stroke-linecap="round" transform="rotate(-90 60 60)" opacity=".75"/>
+            <rect x="34" y="38" width="52" height="36" rx="6" stroke="#F2F6FC" stroke-width="3"/>
+            <path d="M41 56h8l4-8 7 16 4-8 3 4h12" stroke="#B6FF3C" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M52 82h16" stroke="#F2F6FC" stroke-width="3" stroke-linecap="round"/>
+            <path d="M60 74v8" stroke="#F2F6FC" stroke-width="3"/>
           </svg>
         </div>
-        <article class="step reveal">
-          <span class="step-tag">Passo 1</span>
-          <h3>Instale em minutos</h3>
-          <p>Instalador MSI silencioso, manual ou via GPO, com token da sua empresa. No teste guiado, instalamos os 5 primeiros agentes junto com a sua TI, numa call de 30 minutos.</p>
-        </article>
-        <article class="step reveal">
-          <span class="step-tag">Passo 2</span>
-          <h3>A equipe sabe. Sempre.</h3>
-          <p>Ícone visível na máquina, aviso no primeiro acesso e termo de ciência pronto para assinar. A coleta respeita a janela de expediente configurada: fora dela, nada de apps ou janelas.</p>
-        </article>
-        <article class="step reveal">
-          <span class="step-tag">Passo 3</span>
-          <h3>Decida com dados</h3>
-          <p>Na segunda-feira, o painel responde: horas ativas, ociosidade, aplicativos mais usados e a linha do tempo de cada dia. Exporte o CSV e leve para a conversa.</p>
-        </article>
+
+        <div class="compare-col compare-no">
+          <h3>A +351 Monitor <em>não</em> monitora</h3>
+          <ul role="list">
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m9 9 6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Teclas digitadas</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m9 9 6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Prints da tela</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m9 9 6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Webcam ou microfone</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m9 9 6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Conteúdo pessoal e arquivos</li>
+          </ul>
+        </div>
       </div>
+
+      <p class="spy-note center reveal">Monitoramento transparente: a equipe sabe o que é medido e o que nunca é coletado.</p>
     </div>
   </section>
 
-  <!-- ============ TRANSPARÊNCIA / LGPD ============ -->
-  <section class="section lgpd" id="transparencia">
+  <!-- ============ CALCULADORA ============ -->
+  <section class="section" id="para-empresas">
     <div class="container">
-      <div class="lgpd-panel reveal">
-        <p class="eyebrow"><span class="plus">+</span>Transparência e LGPD</p>
-        <h2>Transparência não é um recurso.<br>É o produto.</h2>
-        <p class="section-lead">Monitorar equipamento corporativo é lícito quando é transparente, proporcional e minimizado. O +351 Monitor nasceu dentro dessas regras, e entrega as provas.</p>
+      <p class="eyebrow reveal">Quanto pode representar?</p>
+      <h2 class="reveal">Veja quanto um pequeno período diário pode representar quando multiplicado por toda a sua operação.</h2>
+      <p class="section-lead reveal">Use nossa calculadora e descubra o impacto potencial na sua empresa.</p>
 
-        <div class="lgpd-cols">
-          <div class="lgpd-col">
-            <h3 class="lgpd-title-yes">O que coletamos</h3>
-            <ul role="list">
-              <li>Aplicativo e janela em uso <small>título mascarável por padrão de privacidade</small></li>
-              <li>Sessões: login, logoff, bloqueio e desbloqueio</li>
-              <li>Tempo ativo × tempo ocioso <small>só o fato da pausa, nunca o que foi digitado</small></li>
-              <li>Saúde do agente: versão e último sinal</li>
-            </ul>
+      <form class="calc reveal" id="calc" novalidate>
+        <div class="calc-fields">
+          <div class="field">
+            <label for="calc-colab">Número de colaboradores</label>
+            <input type="number" id="calc-colab" inputmode="numeric" min="1" max="100000" value="100">
           </div>
-          <div class="lgpd-col lgpd-col-never">
-            <h3 class="lgpd-title-no">O que <em>nunca</em> coletamos</h3>
-            <ul role="list">
-              <li>Teclas digitadas <small>keylogging</small></li>
-              <li>Prints ou gravação de tela</li>
-              <li>Webcam e microfone</li>
-              <li>Conteúdo de arquivos e e-mails</li>
-              <li>Abas em navegação anônima</li>
-            </ul>
+
+          <fieldset class="field">
+            <legend>Tempo diário para simulação</legend>
+            <div class="segmented" role="group">
+              <label><input type="radio" name="minutos" value="15"><span>15 min</span></label>
+              <label><input type="radio" name="minutos" value="30" checked><span>30 min</span></label>
+              <label><input type="radio" name="minutos" value="45"><span>45 min</span></label>
+              <label><input type="radio" name="minutos" value="60"><span>60 min</span></label>
+            </div>
+          </fieldset>
+
+          <div class="field">
+            <label for="calc-dias">Dias úteis por mês</label>
+            <input type="number" id="calc-dias" inputmode="numeric" min="1" max="31" value="22">
           </div>
+
+          <button type="submit" class="btn btn-primary">Calcular para minha empresa</button>
         </div>
 
-        <ul class="lgpd-chips" role="list">
-          <li>Ícone visível na bandeja</li>
-          <li>Aviso no primeiro acesso</li>
-          <li>Termo de ciência incluso</li>
-          <li>Página pública de transparência</li>
-          <li>Exportação e exclusão de dados (DSR)</li>
-          <li>Retenção automática configurável</li>
-          <li>Auditoria de acesso: quem viu o quê</li>
-          <li>Coleta só no expediente configurado</li>
-        </ul>
-
-        <p class="lgpd-note">Entregamos o kit completo para a sua empresa fazer certo: modelo de comunicado interno, termo de ciência e FAQ para o seu jurídico ou DPO.</p>
-      </div>
+        <div class="calc-result" aria-live="polite">
+          <span class="calc-value" id="calc-value">1.100 horas<small> por mês</small></span>
+          <p class="calc-sentence" id="calc-sentence">Este período representa aproximadamente 1.100 horas por mês quando considerado em toda a operação.</p>
+          <p class="calc-sub">A +351 Monitor permite medir o que realmente acontece durante a jornada.</p>
+          <p class="calc-disclaimer">Esta é uma simulação proporcional ao período informado. Não representa horas improdutivas identificadas nem promessa de economia.</p>
+        </div>
+      </form>
     </div>
   </section>
 
-  <!-- ============ POR QUE BRASILEIRO ============ -->
-  <section class="section br">
+  <!-- ============ CREDIBILIDADE ============ -->
+  <section class="section cred">
     <div class="container">
-      <p class="eyebrow reveal"><span class="plus">+</span>Por que um produto brasileiro</p>
-      <h2 class="reveal">Feito aqui. Para a realidade daqui.</h2>
-
-      <div class="cards-4">
-        <article class="card reveal">
-          <h3>Preço em real</h3>
-          <p>Sem cotação do dólar no meio da fatura. Proposta, contrato e nota fiscal em português, com pagamento por Pix ou boleto.</p>
+      <div class="cred-grid reveal-group">
+        <article class="cred-item reveal">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 21s-6.8-5.4-6.8-10.3A6.8 6.8 0 0 1 12 3.9a6.8 6.8 0 0 1 6.8 6.8C18.8 15.6 12 21 12 21Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="10.6" r="2.5" stroke="currentColor" stroke-width="1.7"/></svg>
+          <h3>Desenvolvido no Brasil</h3>
+          <p>Preço e suporte em português, com atendimento próximo e especializado.</p>
         </article>
-        <article class="card reveal">
-          <h3>Suporte que responde</h3>
-          <p>WhatsApp em horário comercial brasileiro, com gente que fala a língua da sua TI. Não um ticket em inglês com 48h de espera.</p>
+        <article class="cred-item reveal">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5 5 6.2v5.2c0 4.3 3 7.6 7 9.1 4-1.5 7-4.8 7-9.1V6.2L12 3.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m9 11.8 2.2 2.2 3.8-4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h3>LGPD desde a concepção</h3>
+          <p>Monitoramento transparente, coleta limitada e segurança em todas as etapas.</p>
         </article>
-        <article class="card reveal">
-          <h3>Kit LGPD pronto</h3>
-          <p>Termo de ciência, comunicado interno e FAQ jurídico escritos para a legislação brasileira, não traduzidos de outro país.</p>
-        </article>
-        <article class="card reveal">
-          <h3>Do tamanho da sua PME</h3>
-          <p>Sem 40 telas de configuração, sem consultoria de três meses. Instalou, avisou a equipe, começou a decidir.</p>
+        <article class="cred-item reveal">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v10M12 13.5l-3.6-3.6M12 13.5l3.6-3.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 15.5v2.6a2.4 2.4 0 0 0 2.4 2.4h10.2a2.4 2.4 0 0 0 2.4-2.4v-2.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <h3>Implantação simples</h3>
+          <p>Agente Windows leve e instalação assistida via MSI ou GPO.</p>
         </article>
       </div>
     </div>
   </section>
 
-  <!-- ============ O QUE NÃO SOMOS ============ -->
-  <section class="section notwe">
-    <div class="container">
-      <p class="eyebrow reveal"><span class="plus">+</span>Para ficar claro</p>
-      <h2 class="reveal">O que o +351 Monitor <span class="strike">não</span> é.</h2>
-
-      <div class="cards-3">
-        <article class="card card-not reveal">
-          <h3>Não é ponto eletrônico</h3>
-          <p>Não substituímos o controle de jornada exigido por lei. Medimos uso de máquina para gestão, não marcamos ponto.</p>
-        </article>
-        <article class="card card-not reveal">
-          <h3>Não é spyware</h3>
-          <p>Nada roda escondido. E recusamos pedidos de keylogger ou captura de tela: por princípio, não por limitação técnica.</p>
-        </article>
-        <article class="card card-not reveal">
-          <h3>Não é antivírus nem DLP</h3>
-          <p>Não bloqueamos sites, não inspecionamos conteúdo, não fazemos varredura. Monitoramos uso do tempo, só.</p>
-        </article>
+  <!-- ============ QUEM SOMOS ============ -->
+  <section class="section who" id="quem-somos">
+    <div class="container who-grid">
+      <div class="who-copy">
+        <p class="eyebrow reveal">Quem está por trás da +351 Monitor</p>
+        <h2 class="reveal">Construída por quem conhece a realidade das empresas de tecnologia.</h2>
+        <p class="reveal">A +351 Monitor reúne experiências complementares em <strong class="hl-soft">tecnologia, gestão e ambiente corporativo</strong>.</p>
+        <p class="reveal">João Pessoa possui formação e experiência em tecnologia. Bruna Rondelli é advogada com trajetória executiva e corporativa em empresas de tecnologia.</p>
+        <p class="reveal">Essa combinação está na essência da +351 Monitor: <strong class="hl-soft">tecnologia para medir produtividade, visão de negócio para transformar informação em gestão e responsabilidade no tratamento dos dados</strong>.</p>
       </div>
-    </div>
-  </section>
 
-  <!-- ============ FAQ ============ -->
-  <section class="section faq" id="perguntas">
-    <div class="container container-narrow">
-      <p class="eyebrow reveal"><span class="plus">+</span>Perguntas frequentes</p>
-      <h2 class="reveal">O que todo gestor pergunta antes de assinar.</h2>
-
-      <div class="faq-list reveal">
-        <details>
-          <summary>É legal monitorar os computadores da empresa?<span class="faq-icon" aria-hidden="true"></span></summary>
-          <p>Sim. Em equipamento corporativo, o monitoramento se apoia no poder diretivo do empregador, desde que seja transparente, proporcional e colete o mínimo necessário, como pede a LGPD. O +351 Monitor nasce dentro dessas regras: aviso visível, termo de ciência, coleta mínima e retenção limitada. E entregamos o kit de comunicação para sua empresa formalizar tudo.</p>
-        </details>
-        <details>
-          <summary>Os funcionários sabem que estão sendo monitorados?<span class="faq-icon" aria-hidden="true"></span></summary>
-          <p>Sempre. Ícone permanente na bandeja do Windows, aviso na primeira sessão com registro de ciência, tela “o que é coletado” na própria máquina e página pública de transparência da sua empresa. Monitoramento escondido não existe aqui: é decisão de produto.</p>
-        </details>
-        <details>
-          <summary>Vocês capturam o que a pessoa digita ou a tela dela?<span class="faq-icon" aria-hidden="true"></span></summary>
-          <p>Nunca. Nenhuma versão do agente contém keylogger, captura de tela, webcam, microfone ou leitura de arquivos. Coletamos metadados de uso: aplicativo ativo, título de janela (com mascaramento), sessões e ociosidade.</p>
-        </details>
-        <details>
-          <summary>O agente pesa na máquina?<span class="faq-icon" aria-hidden="true"></span></summary>
-          <p>Não. É um serviço Windows leve, com consumo mínimo de CPU e memória. Funciona offline (guarda os eventos localmente e reenvia quando a rede volta) e se atualiza sozinho, sem visita técnica.</p>
-        </details>
-        <details>
-          <summary>Funciona no home office?<span class="faq-icon" aria-hidden="true"></span></summary>
-          <p>Sim. Qualquer estação Windows com internet reporta de onde estiver: presencial, híbrida ou remota. E a coleta respeita a janela de expediente configurada: fora dela, aplicativos e janelas não são registrados.</p>
-        </details>
+      <div class="who-photos reveal-group">
+        <figure class="founder reveal">
+          <img src="assets/img/joao-pessoa.jpg" alt="João Pessoa" width="691" height="592" loading="lazy" decoding="async">
+          <figcaption>
+            <strong>João Pessoa</strong>
+            <span>Tecnologia &amp; Produto</span>
+          </figcaption>
+        </figure>
+        <figure class="founder reveal">
+          <img src="assets/img/bruna-rondelli.jpg" alt="Bruna Rondelli" width="209" height="181" loading="lazy" decoding="async">
+          <figcaption>
+            <strong>Bruna Rondelli</strong>
+            <span>Estratégia &amp; Gestão Corporativa</span>
+          </figcaption>
+        </figure>
       </div>
     </div>
   </section>
@@ -523,73 +440,15 @@
   <section class="section final">
     <div class="container">
       <div class="final-panel reveal">
-        <svg class="final-pulse" viewBox="0 0 900 60" preserveAspectRatio="none" aria-hidden="true">
-          <path class="pulse-path-3" d="M0 30 H330 l14-22 20 44 12-22 8 11 H560 l10-16 14 32 8-16 H900" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <h2>Veja o sinal vital da sua operação.</h2>
-        <p>Demonstração de 10 minutos, direto no WhatsApp, com onboarding assistido pela nossa equipe.</p>
+        <h2>Veja o que hoje você <span class="hl">não consegue enxergar</span> na sua operação.</h2>
+        <p>Conheça a +351 Monitor em uma demonstração rápida e veja como o monitoramento funciona na prática.</p>
         <div class="cta-row cta-row-center">
-          <a class="btn btn-primary btn-lg" href="https://wa.me/5511992209235?text=Ol%C3%A1!%20Quero%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20do%20%2B351%20Monitor." target="_blank" rel="noopener">Agendar demonstração<span class="btn-arrow" aria-hidden="true">→</span></a>
-          <a class="btn btn-ghost" href="mailto:bruna@mais351monitor.com.br">ou escreva por e-mail</a>
-          <a class="btn btn-ghost" href="#contato">ou deixe seus dados</a>
+          <a class="btn btn-primary btn-lg" href="https://wa.me/5511925690601?text=Ol%C3%A1!%20Quero%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20do%20%2B351%20Monitor." target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 9.6h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            Agendar demonstração
+          </a>
+          <a class="link-arrow" href="https://wa.me/5511925690601?text=Ol%C3%A1!%20Quero%20falar%20com%20um%20especialista%20do%20%2B351%20Monitor." target="_blank" rel="noopener">Falar com um especialista <span aria-hidden="true">→</span></a>
         </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============ CONTATO / CAPTAÇÃO ============ -->
-  <section class="section contato" id="contato">
-    <div class="container">
-      <div class="contato-panel reveal">
-        <p class="eyebrow"><span class="plus">+</span>Fale com a gente</p>
-        <h2>Prefere que a gente entre em contato?</h2>
-        <p class="contato-lead">Deixe seus dados e a Bruna chama você no WhatsApp, sem spam, sem compromisso.</p>
-        <form id="form-demo" novalidate>
-          <div class="form-grid">
-            <div class="field">
-              <label for="f-nome">Seu nome *</label>
-              <input id="f-nome" name="nome" type="text" maxlength="120" autocomplete="name" required>
-              <span class="field-error" data-for="nome" hidden></span>
-            </div>
-            <div class="field">
-              <label for="f-empresa">Empresa *</label>
-              <input id="f-empresa" name="empresa" type="text" maxlength="160" autocomplete="organization" required>
-              <span class="field-error" data-for="empresa" hidden></span>
-            </div>
-            <div class="field">
-              <label for="f-email">E-mail corporativo</label>
-              <input id="f-email" name="email" type="email" maxlength="190" autocomplete="email">
-              <span class="field-error" data-for="email" hidden></span>
-            </div>
-            <div class="field">
-              <label for="f-whatsapp">WhatsApp</label>
-              <input id="f-whatsapp" name="whatsapp" type="tel" maxlength="20" autocomplete="tel" placeholder="(11) 99999-9999">
-              <span class="field-error" data-for="whatsapp" hidden></span>
-            </div>
-            <div class="field">
-              <label for="f-estacoes">Nº de estações Windows</label>
-              <input id="f-estacoes" name="estacoes" type="number" min="1" max="10000" inputmode="numeric">
-              <span class="field-error" data-for="estacoes" hidden></span>
-            </div>
-          </div>
-          <div class="hp-field" aria-hidden="true">
-            <label>Não preencha este campo<input name="site_web" type="text" tabindex="-1" autocomplete="off"></label>
-          </div>
-          <input type="hidden" name="form_ts" value="">
-          <input type="hidden" name="utm_source" value="">
-          <input type="hidden" name="utm_medium" value="">
-          <input type="hidden" name="utm_campaign" value="">
-          <div class="form-actions">
-            <button class="btn btn-primary btn-lg" type="submit">Quero uma demonstração<span class="btn-arrow" aria-hidden="true">→</span></button>
-            <p class="form-consent">Ao enviar, você autoriza nosso contato comercial.<br>Veja a <a href="privacidade.html#leads">Política de Privacidade</a>.</p>
-          </div>
-          <p class="form-msg" id="form-msg" hidden></p>
-        </form>
-        <noscript>
-          <p class="form-consent">Seu navegador está sem JavaScript. Chame direto no
-            <a href="https://wa.me/5511992209235" target="_blank" rel="noopener">WhatsApp +55 11 99220-9235</a>
-            ou escreva para <a href="mailto:bruna@mais351monitor.com.br">bruna@mais351monitor.com.br</a>.</p>
-        </noscript>
       </div>
     </div>
   </section>
@@ -608,33 +467,36 @@
         </svg>
         <span class="brand-word"><em>+</em>351 <span>Monitor</span></span>
       </a>
-      <p class="footer-tag">Produtividade em tempo real</p>
+      <p class="footer-tag">Software de monitoramento de produtividade</p>
     </div>
 
-    <nav class="footer-col" aria-label="Contato">
-      <h4>Contato</h4>
-      <a href="https://wa.me/5511992209235" target="_blank" rel="noopener">WhatsApp: +55 11 99220-9235</a>
+    <nav class="footer-col" aria-label="Páginas">
+      <h4>Navegação</h4>
+      <a href="#produto">Produto</a>
+      <a href="#como-funciona">Como funciona</a>
+      <a href="#seguranca-lgpd">Segurança e LGPD</a>
+      <a href="privacidade.html">Política de Privacidade</a>
+      <a href="termos.html">Termos de Uso</a>
+    </nav>
+
+    <nav class="footer-col" aria-label="Contato comercial">
+      <h4>Contato comercial</h4>
       <a href="mailto:bruna@mais351monitor.com.br">bruna@mais351monitor.com.br</a>
+      <a href="https://wa.me/5511925690601" target="_blank" rel="noopener">WhatsApp: +55 11 92569-0601</a>
     </nav>
 
     <nav class="footer-col" aria-label="Redes sociais">
       <h4>Redes</h4>
-      <a href="https://www.instagram.com/351monitor/" target="_blank" rel="noopener">Instagram</a>
       <a href="https://www.linkedin.com/company/351-monitor/" target="_blank" rel="noopener">LinkedIn</a>
-    </nav>
-
-    <nav class="footer-col" aria-label="Institucional">
-      <h4>Institucional</h4>
-      <a href="privacidade.html">Política de Privacidade</a>
-      <a href="#transparencia">Transparência e LGPD</a>
+      <a href="https://www.instagram.com/351monitor/" target="_blank" rel="noopener">Instagram</a>
     </nav>
   </div>
 
   <div class="container footer-legal">
-    <p>© <span id="ano">2026</span> +351 Monitor. Monitoramento transparente de produtividade, sem keylogger, sem prints de tela.</p>
+    <p>© <span id="ano">2026</span> +351 Monitor. Todos os direitos reservados.</p>
   </div>
 </footer>
 
-<script src="assets/js/main.js" defer></script>
+<script src="assets/js/home.js" defer></script>
 </body>
 </html>
