@@ -159,6 +159,10 @@ jobs:
           name: MonitorAgent-msi
           path: agent/installer/bin/MonitorAgent.msi
           if-no-files-found: error
+          # MSI de 85MB por push contra 500MB de cota total de artifacts do plano free:
+          # com 90d de retencao default a cota estourou em ago/2026 e TODO upload passou
+          # a falhar. 1 dia e suficiente para baixar o build do dia; cada commit rebuilda.
+          retention-days: 1
 
   deploy-staging:
     name: deploy-staging (SSH)
