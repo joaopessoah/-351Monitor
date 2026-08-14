@@ -63,11 +63,27 @@ public class RetentionJobsTests(ApiTestFixture fixture)
     /// </summary>
     private void EnsureMigrated() => _ = fixture.Services;
 
+    /// <summary>
+    /// Roda um ciclo de PartitionMaintenance ANTES do plantio para drenar particoes que OUTRAS
+    /// suites deixaram envelhecer alem da retencao. Caso real: BillingEndpointTests semeia
+    /// raw_events em maio/2026 FIXO; a partir de 2026-08-13 (90 dias depois), raw_events_20260514
+    /// cruza o corte N10 e o primeiro drop deste arquivo passaria a contar 2 em vez de 1 — o mesmo
+    /// vale para audit_log em jan/2028 (AuditLogTests semeia now-200d; retencao 24m). Drenado o
+    /// residuo, as contagens do ciclo asseridas via retorno ficam deterministicas em qualquer data
+    /// e em qualquer ordem de execucao da colecao.
+    /// </summary>
+    private async Task DrainStalePartitionsAsync()
+    {
+        await using var ds = NewDataSource();
+        await new PartitionMaintenanceService(ds).RunOnceAsync();
+    }
+
     // ============================================================ PartitionMaintenance — drop
     [Fact]
     public async Task PartitionMaintenance_DropaExpiradas_PreservaDentroDaRetencao()
     {
         EnsureMigrated();
+        await DrainStalePartitionsAsync();
         var testStart = DateTimeOffset.UtcNow;
         var now = DateTimeOffset.UtcNow;
 
@@ -156,6 +172,7 @@ public class RetentionJobsTests(ApiTestFixture fixture)
     public async Task PartitionMaintenance_DropComLockDoParentOcupado_PulaSemTravarIngestao()
     {
         EnsureMigrated();
+        await DrainStalePartitionsAsync();
         var now = DateTimeOffset.UtcNow;
         var rawOld = DateOnly.FromDateTime(now.UtcDateTime).AddDays(-200); // alem de N10=90d
         await CreateRawDailyPartitionAsync(rawOld);
