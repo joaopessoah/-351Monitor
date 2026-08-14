@@ -347,8 +347,8 @@
   <section class="section" id="para-empresas">
     <div class="container">
       <p class="eyebrow reveal">Quanto pode representar?</p>
-      <h2 class="reveal">Veja quanto um pequeno período diário pode representar quando multiplicado por toda a sua operação.</h2>
-      <p class="section-lead reveal">Use nossa calculadora e descubra o impacto potencial na sua empresa.</p>
+      <h2 class="reveal">Quanto <span class="hl" id="calc-title-minutos">30 minutos</span> representam na escala da sua empresa?</h2>
+      <p class="section-lead reveal">Pequenos períodos diários podem representar centenas ou até milhares de horas quando multiplicados por toda a operação. Faça uma simulação.</p>
 
       <form class="calc reveal" id="calc" novalidate>
         <div class="calc-fields">
@@ -358,7 +358,8 @@
           </div>
 
           <fieldset class="field">
-            <legend>Tempo diário para simulação</legend>
+            <legend>Período diário por colaborador</legend>
+            <p class="field-hint">Quanto tempo por dia você quer simular?</p>
             <div class="segmented" role="group">
               <label><input type="radio" name="minutos" value="15"><span>15 min</span></label>
               <label><input type="radio" name="minutos" value="30" checked><span>30 min</span></label>
@@ -372,14 +373,24 @@
             <input type="number" id="calc-dias" inputmode="numeric" min="1" max="31" value="22">
           </div>
 
-          <button type="submit" class="btn btn-primary">Calcular para minha empresa</button>
+          <button type="submit" class="btn btn-primary">Calcular impacto na operação</button>
         </div>
 
-        <div class="calc-result" aria-live="polite">
-          <span class="calc-value" id="calc-value">1.100 horas<small> por mês</small></span>
-          <p class="calc-sentence" id="calc-sentence">Este período representa aproximadamente 1.100 horas por mês quando considerado em toda a operação.</p>
-          <p class="calc-sub">A +351 Monitor permite medir o que realmente acontece durante a jornada.</p>
-          <p class="calc-disclaimer">Esta é uma simulação proporcional ao período informado. Não representa horas improdutivas identificadas nem promessa de economia.</p>
+        <div class="calc-result">
+          <p class="calc-context" id="calc-context" aria-hidden="true">30 minutos/dia × 100 colaboradores</p>
+          <span class="calc-value" id="calc-valor" aria-hidden="true"><b id="calc-horas">1.100</b> <span>horas</span></span>
+          <p class="calc-permes" aria-hidden="true">por mês na sua operação</p>
+          <p class="calc-jornadas" id="calc-jornadas" aria-hidden="true">O equivalente a aproximadamente <b>137</b> jornadas de trabalho de 8 horas.</p>
+          <p class="calc-conta" id="calc-conta" aria-hidden="true">100 colaboradores × 30 minutos × 22 dias = 1.100 horas/mês</p>
+          <p class="sr-only" aria-live="polite" id="calc-sr">1.100 horas por mês na sua operação, o equivalente a aproximadamente 137 jornadas de trabalho de 8 horas.</p>
+
+          <div class="calc-hook">
+            <p class="calc-pergunta">Você sabe como esse tempo está sendo utilizado?</p>
+            <p class="calc-explica">A +351 Monitor permite visualizar como a jornada acontece na prática, transformando a atividade nos dispositivos corporativos em dados objetivos para apoiar decisões de produtividade, eficiência e gestão.</p>
+            <a class="btn btn-primary" id="calc-demo" href="https://wa.me/5511925690601?text=Ol%C3%A1!%20Quero%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20do%20%2B351%20Monitor." target="_blank" rel="noopener">Solicitar uma demonstração</a>
+          </div>
+
+          <p class="calc-disclaimer">Esta é uma simulação matemática baseada no período informado. O resultado não representa horas improdutivas identificadas, desperdício comprovado ou promessa de economia. A +351 Monitor permite medir e analisar como o tempo de trabalho é efetivamente utilizado na operação.</p>
         </div>
       </form>
     </div>
