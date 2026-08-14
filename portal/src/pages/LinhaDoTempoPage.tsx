@@ -275,7 +275,7 @@ export function LinhaDoTempoPage() {
         {deviceTzBadge !== null && (
           <span
             title="convertido para o fuso da organização"
-            className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs text-amber-800"
+            className="inline-flex items-center gap-1.5 rounded-full border border-viz-improdutivo/40 bg-viz-improdutivo/10 px-2.5 py-0.5 text-xs text-viz-improdutivo"
           >
             <Globe className="h-3.5 w-3.5 shrink-0" aria-hidden />
             Máquina em {deviceTzBadge}
@@ -456,7 +456,7 @@ export function LinhaDoTempoPage() {
       {data?.data_incomplete === true && (
         <div
           role="status"
-          className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+          className="flex items-center gap-2 rounded-md border border-viz-improdutivo/40 bg-viz-improdutivo/10 px-3 py-2 text-sm text-viz-improdutivo"
         >
           <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
           Há trechos com dados incompletos neste dia.
@@ -467,7 +467,7 @@ export function LinhaDoTempoPage() {
       {teamData?.truncated === true && (
         <div
           role="status"
-          className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+          className="flex items-center gap-2 rounded-md border border-viz-improdutivo/40 bg-viz-improdutivo/10 px-3 py-2 text-sm text-viz-improdutivo"
         >
           <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
           Dia com dados demais - mostrando os {teamData.lanes.length} primeiros dispositivos.
@@ -708,7 +708,7 @@ function Legend({ showAppLane = true }: { showAppLane?: boolean }) {
         swatch={
           <span className="flex items-center gap-1">
             <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-sm" style={noDataHatch} />
-            <AlertTriangle className="h-3 w-3 shrink-0 text-red-600" aria-hidden />
+            <AlertTriangle className="h-3 w-3 shrink-0 text-brand-red" aria-hidden />
           </span>
         }
         label={stateLabels.no_data}

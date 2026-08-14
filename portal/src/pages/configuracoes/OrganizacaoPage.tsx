@@ -155,7 +155,7 @@ function OrgForm({ org, canEdit }: { org: OrganizationResponse; canEdit: boolean
 
       <CardContent>
         {!canEdit && (
-          <div className="mb-4 flex gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          <div className="mb-4 flex gap-3 rounded-md border border-viz-neutro/30 bg-viz-neutro/10 px-4 py-3 text-sm text-viz-neutro">
             <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             <p>
               Você está vendo estes campos em modo somente leitura. A edição fica disponível para
@@ -245,7 +245,7 @@ function OrgForm({ org, canEdit }: { org: OrganizationResponse; canEdit: boolean
                 {mutation.isPending ? "Salvando..." : "Salvar alterações"}
               </Button>
               {saved && !dirty && (
-                <span className="text-sm text-emerald-600">Alterações salvas.</span>
+                <span className="text-sm text-viz-produtivo">Alterações salvas.</span>
               )}
             </div>
           )}

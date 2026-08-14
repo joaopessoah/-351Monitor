@@ -173,7 +173,7 @@ function DisclaimerBanner() {
         Atendimento aos direitos do titular (LGPD): exportação e exclusão dos dados de uma pessoa
         identificada por um usuário do Windows em um dispositivo.
       </p>
-      <div className="mt-4 flex gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+      <div className="mt-4 flex gap-3 rounded-md border border-viz-neutro/30 bg-viz-neutro/10 px-4 py-3 text-sm text-viz-neutro">
         <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
         <div className="space-y-1">
           <p className="font-medium">Finalidade e responsabilidade</p>
@@ -616,7 +616,7 @@ function ExportDialog({
 
         {mutation.isSuccess ? (
           <div className="space-y-3 text-sm">
-            <div className="flex gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-900">
+            <div className="flex gap-3 rounded-md border border-viz-produtivo/30 bg-viz-produtivo/10 px-4 py-3 text-brand-soft">
               <Download className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
               <div className="space-y-1">
                 <p className="font-medium">Pacote em geração</p>
@@ -625,7 +625,7 @@ function ExportDialog({
                   horas. Acompanhe e baixe em{" "}
                   <Link
                     to="/relatorios/exportacoes"
-                    className="font-medium underline underline-offset-2 hover:text-emerald-700"
+                    className="font-medium underline underline-offset-2 hover:text-viz-produtivo"
                   >
                     Exportações
                   </Link>
@@ -896,7 +896,7 @@ const RECEIPT_ROWS: { key: keyof DsrReceipt; label: string }[] = [
 function Receipt({ receipt }: { receipt: DsrReceipt }) {
   return (
     <div className="space-y-3 text-sm">
-      <div className="flex gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-900">
+      <div className="flex gap-3 rounded-md border border-viz-produtivo/30 bg-viz-produtivo/10 px-4 py-3 text-brand-soft">
         <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
         <p>
           Exclusão concluída e registrada na trilha de auditoria. Guarde este recibo para a resposta

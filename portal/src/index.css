@@ -2,26 +2,56 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Fontes da marca, self-hosted (mesmos arquivos do site institucional).
+   Servidas de public/fonts — nada de CDN (LGPD: zero chamadas externas). */
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("/fonts/space-grotesk-var.woff2") format("woff2");
+  font-weight: 300 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Open Sans";
+  src: url("/fonts/open-sans-var.woff2") format("woff2");
+  font-weight: 300 800;
+  font-display: swap;
+}
+
 @layer base {
+  /* Tokens da identidade aprovada do site (site/assets/css/home.css), em HSL
+     para o contrato hsl(var(--x)) do Tailwind:
+     fundo #05070D · painel #0A101B · linhas #131D2E/#1C2940 · verde #B6FF3C
+     sobre tinta #081109 · textos #F2F6FC/#A9B4C8/#66738C. O verde é AÇÃO e
+     destaque, nunca superfície. */
   :root {
-    --background: 210 20% 98%;
-    --foreground: 222 47% 11%;
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    --primary: 221 83% 53%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 221 83% 53%;
-    --radius: 0.5rem;
+    --background: 225 44% 4%;
+    --foreground: 216 63% 97%;
+    --card: 219 46% 7%;
+    --card-foreground: 216 63% 97%;
+    --primary: 82 100% 62%;
+    --primary-foreground: 127 36% 5%;
+    --secondary: 218 49% 8%;
+    --secondary-foreground: 219 22% 72%;
+    --muted: 218 45% 10%;
+    --muted-foreground: 219 16% 47%;
+    --accent: 218 42% 13%;
+    --accent-foreground: 216 63% 97%;
+    --destructive: 0 62% 40%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 218 42% 13%;
+    --input: 218 39% 18%;
+    --ring: 82 100% 62%;
+    --radius: 0.75rem;
+
+    /* Paleta de dataviz da marca (mesma dos mockups do site): composição da
+       jornada e status. Consumida pelos canvases, ECharts e badges. */
+    --viz-produtivo: #a4e84d;
+    --viz-neutro: #6fa9dd;
+    --viz-improdutivo: #f2b45a;
+    --viz-ocioso: #3a455c;
+    --brand-green: #b6ff3c;
+    --brand-green-soft: #d8ffa3;
+    --brand-red: #ff8b8b;
   }
 
   * {
@@ -31,7 +61,7 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family:
-      "Inter",
+      "Open Sans",
       ui-sans-serif,
       system-ui,
       -apple-system,
@@ -42,6 +72,17 @@
       sans-serif;
   }
 
+  /* Space Grotesk carrega a personalidade: títulos, números e navegação. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: "Space Grotesk", "Segoe UI", sans-serif;
+    letter-spacing: -0.02em;
+  }
+
   .tabular-nums {
     font-variant-numeric: tabular-nums;
   }
@@ -49,7 +90,8 @@
 
 /* Impressão limpa da página pública de transparência (F4.8): esconde os
    elementos marcados como no-print (cabeçalho fixo, botões) e neutraliza
-   sombras/bordas pesadas, garantindo papel branco e texto preto legível. */
+   sombras/bordas pesadas, garantindo papel branco e texto preto legível
+   TAMBÉM no tema escuro do portal. */
 @media print {
   .no-print {
     display: none !important;

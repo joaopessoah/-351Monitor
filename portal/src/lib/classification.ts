@@ -2,18 +2,20 @@
 // Vocabulário e cores CANÔNICOS da classificação (Princípio 8, Seção 8.7):
 // SEMPRE "Relacionado ao trabalho" (1) / "Neutro" (0) / "Não relacionado ao
 // trabalho" (-1) / "Não categorizado" (app sem mapeamento) - jamais os
-// adjetivos vetados de produtividade. Cores: +1 verde, 0 cinza-azulado,
-// -1 vermelho suave; Não categorizado usa o mesmo #94a3b8 da faixa de apps
-// da timeline. Única fonte para gráficos, tabelas e selects do portal.
+// adjetivos vetados de produtividade. Cores: paleta de dataviz da marca
+// (BRAND em lib/brandTheme.ts, a mesma legenda do site) - +1 verde de
+// atividade, 0 azul neutro, -1 âmbar, sem categoria cinza-azulado.
+// Única fonte para gráficos, tabelas e selects do portal.
 // =============================================================================
 
+import { BRAND } from "./brandTheme";
 import type { UsageCategoryItem } from "./types";
 
 export const classificationColors = {
-  workRelated: "#16a34a",
-  neutral: "#64748b",
-  notWorkRelated: "#f87171",
-  uncategorized: "#94a3b8",
+  workRelated: BRAND.vizProdutivo,
+  neutral: BRAND.vizNeutro,
+  notWorkRelated: BRAND.vizImprodutivo,
+  uncategorized: BRAND.slate,
 } as const;
 
 /**

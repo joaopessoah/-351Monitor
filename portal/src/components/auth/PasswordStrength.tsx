@@ -27,8 +27,8 @@ const labels: Record<Strength, string> = {
 const barColors: Record<Strength, string> = {
   0: "bg-muted",
   1: "bg-destructive",
-  2: "bg-amber-500",
-  3: "bg-emerald-600",
+  2: "bg-viz-improdutivo",
+  3: "bg-viz-produtivo",
 };
 
 /** Medidor de força de senha (mínimo de 12 caracteres — N23). */

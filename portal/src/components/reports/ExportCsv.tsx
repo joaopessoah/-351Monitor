@@ -57,13 +57,13 @@ export function ExportCsvBanner({ mutation }: { mutation: CsvExportMutation }) {
     return (
       <div
         role="status"
-        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-viz-produtivo/30 bg-viz-produtivo/10 px-3 py-2 text-sm text-brand-soft"
       >
         <span>
           Exportação adicionada à fila.{" "}
           <Link
             to="/relatorios/exportacoes"
-            className="font-medium underline underline-offset-2 hover:text-emerald-700"
+            className="font-medium underline underline-offset-2 hover:text-viz-produtivo"
           >
             Acompanhar em Exportações
           </Link>

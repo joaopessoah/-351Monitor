@@ -3,7 +3,26 @@ export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['"Open Sans"', "ui-sans-serif", "system-ui", "sans-serif"],
+        display: ['"Space Grotesk"', '"Segoe UI"', "sans-serif"],
+      },
       colors: {
+        /* Hex literais (espelho de lib/brandTheme.ts): os modificadores de
+           opacidade do Tailwind (ex.: bg-viz-produtivo/10) exigem cor
+           parseável, não var(). Mudou lá, muda aqui. */
+        viz: {
+          produtivo: "#A4E84D",
+          neutro: "#6FA9DD",
+          improdutivo: "#F2B45A",
+          ocioso: "#3A455C",
+        },
+        brand: {
+          DEFAULT: "#B6FF3C",
+          soft: "#D8FFA3",
+          red: "#FF8B8B",
+          slate: "#5B6982",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

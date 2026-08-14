@@ -69,10 +69,10 @@ const deviceStatusLabels: Record<DeviceStatus, string> = {
 // paused em cinza-azulado (slate): âmbar ficava idêntico ao dot de "Inativo"
 // e ao badge "não suportado" - pausado não é alerta, é um estado neutro.
 const deviceStatusClasses: Record<DeviceStatus, string> = {
-  active: "bg-emerald-100 text-emerald-800",
-  paused: "bg-slate-200 text-slate-700",
-  archived: "bg-gray-100 text-gray-600",
-  revoked: "bg-red-100 text-red-700",
+  active: "bg-viz-produtivo/15 text-viz-produtivo",
+  paused: "bg-muted text-secondary-foreground",
+  archived: "bg-muted text-muted-foreground",
+  revoked: "bg-brand-red/15 text-brand-red",
 };
 
 /**
@@ -81,11 +81,11 @@ const deviceStatusClasses: Record<DeviceStatus, string> = {
  * diagonal + ícone de alerta (tratado à parte em PresenceStateCell).
  */
 const presenceDotClasses: Record<Exclude<PresenceState, "no_data">, string> = {
-  active: "bg-green-500",
-  idle: "bg-amber-500",
-  locked: "bg-slate-500",
-  no_session: "bg-slate-400",
-  off_clean: "border-2 border-gray-400 bg-transparent",
+  active: "bg-viz-produtivo",
+  idle: "bg-viz-improdutivo",
+  locked: "bg-brand-slate",
+  no_session: "bg-brand-slate",
+  off_clean: "border-2 border-brand-slate bg-transparent",
 };
 
 /** Offset atual (em minutos) de um fuso IANA, ex.: "America/Sao_Paulo" → -180. */
@@ -123,7 +123,7 @@ function PresenceStateCell({ presence }: { presence: PresenceItem | undefined })
   const state = presence.presence_state;
   if (state === "no_data") {
     return (
-      <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium text-red-700">
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium text-brand-red">
         <span
           aria-hidden="true"
           className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -169,7 +169,7 @@ function HealthBadge({
     <span
       className={cn(
         "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium",
-        severe ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800",
+        severe ? "bg-brand-red/15 text-brand-red" : "bg-viz-improdutivo/15 text-viz-improdutivo",
       )}
       title={title}
     >
@@ -246,7 +246,7 @@ function HealthCell({ device, health }: { device: DeviceItem; health: DeviceHeal
 function NoticeCell({ device, timezone }: { device: DeviceItem; timezone: string | undefined }) {
   if (device.notice_acked_at === null) {
     return (
-      <span className="inline-flex items-center gap-1 whitespace-nowrap text-amber-800">
+      <span className="inline-flex items-center gap-1 whitespace-nowrap text-viz-improdutivo">
         <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         Ciência pendente
       </span>
@@ -257,7 +257,7 @@ function NoticeCell({ device, timezone }: { device: DeviceItem; timezone: string
       className="inline-flex items-center gap-1 whitespace-nowrap tabular-nums text-muted-foreground"
       title="Aviso de coleta confirmado no dispositivo"
     >
-      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden="true" />
+      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-viz-produtivo" aria-hidden="true" />
       {timezone !== undefined ? formatDateTime(device.notice_acked_at, timezone) : "-"}
     </span>
   );
@@ -566,9 +566,9 @@ export function DispositivosPage() {
               "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-medium transition-colors",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
               alertCounts.withAlert > 0
-                ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
-                : "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100",
-              onlyAlerts && "ring-2 ring-amber-500/40",
+                ? "border-viz-improdutivo/40 bg-viz-improdutivo/10 text-viz-improdutivo hover:bg-viz-improdutivo/15"
+                : "border-viz-produtivo/40 bg-viz-produtivo/10 text-viz-produtivo hover:bg-viz-produtivo/15",
+              onlyAlerts && "ring-2 ring-viz-improdutivo/40",
             )}
           >
             {alertCounts.withAlert > 0 ? (
@@ -614,7 +614,7 @@ export function DispositivosPage() {
       )}
 
       {presenceQuery.isError && presenceQuery.data === undefined && (
-        <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+        <div className="flex items-center justify-between gap-3 rounded-md border border-brand-red/30 bg-brand-red/10 px-3 py-2 text-sm text-brand-red">
           <span className="flex items-center gap-2">
             <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
             Não foi possível carregar o estado de presença dos dispositivos.
@@ -714,7 +714,7 @@ export function DispositivosPage() {
                         className={cn(
                           "h-9 cursor-pointer border-b transition-colors last:border-0 focus-visible:outline-none",
                           highlight
-                            ? "bg-red-50 hover:bg-red-100/70 focus-visible:bg-red-100/70"
+                            ? "bg-brand-red/10 hover:bg-brand-red/15 focus-visible:bg-brand-red/15"
                             : "hover:bg-accent focus-visible:bg-accent",
                         )}
                       >
@@ -723,7 +723,7 @@ export function DispositivosPage() {
                             <span className="font-semibold">{d.display_name ?? d.hostname}</span>
                             {d.os_type === "server" && (
                               <span
-                                className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs text-amber-800"
+                                className="rounded-full border border-viz-improdutivo/40 bg-viz-improdutivo/10 px-2 py-0.5 text-xs text-viz-improdutivo"
                                 title="Sistemas operacionais de servidor não são suportados"
                               >
                                 não suportado

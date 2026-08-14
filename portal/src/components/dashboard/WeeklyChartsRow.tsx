@@ -16,6 +16,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import { AlertTriangle, ChartColumn, Table } from "lucide-react";
 import type { EChartsOption } from "echarts";
 import { api } from "@/lib/api";
+import { BRAND } from "@/lib/brandTheme";
 import { classificationColor, classificationLabel } from "@/lib/classification";
 import { formatDuration, localDateOf, parseHmToMinutes } from "@/lib/format";
 import { genericErrorMessage } from "@/lib/messages";
@@ -35,18 +36,18 @@ import { EChart } from "@/components/charts/EChart";
 /** Altura fixa dos gráficos - skeleton/vazio/erro com a mesma geometria. */
 const CHART_H = 280;
 
-// Cores canônicas: ativo/ocioso iguais ao canvas da timeline (Seção 8.5);
-// classificação: +1 verde, 0 cinza-azulado, -1 vermelho suave; sem categoria é
-// o mesmo appUncategorized do TimelineCanvas (#94a3b8).
+// Cores canônicas da marca (lib/brandTheme.ts): ativo/ocioso iguais ao canvas
+// da timeline e à legenda do site; classificação vem da mesma paleta de
+// dataviz (verde de atividade, azul neutro, âmbar, cinza-azulado).
 const COLOR = {
-  active: "#16a34a",
-  idle: "#d97706",
-  workRelated: "#16a34a",
-  neutral: "#64748b",
-  notWorkRelated: "#f87171",
-  uncategorized: "#94a3b8",
-  axisText: "#64748b",
-  grid: "#e2e8f0",
+  active: BRAND.vizProdutivo,
+  idle: BRAND.vizOcioso,
+  workRelated: BRAND.vizProdutivo,
+  neutral: BRAND.vizNeutro,
+  notWorkRelated: BRAND.vizImprodutivo,
+  uncategorized: BRAND.slate,
+  axisText: BRAND.chartText,
+  grid: BRAND.chartGrid,
 } as const;
 
 type WeekChoice = "current" | "previous";
@@ -555,7 +556,7 @@ function buildTopAppsOption(items: TopAppItem[], empty: boolean): EChartsOption 
       data: items.map((i) => i.custom_display_name ?? i.display_name),
       axisTick: { show: false },
       axisLine: { lineStyle: { color: COLOR.grid } },
-      axisLabel: { color: "#334155", fontSize: 11, width: 118, overflow: "truncate" },
+      axisLabel: { color: BRAND.ink2, fontSize: 11, width: 118, overflow: "truncate" },
     },
     series: [
       {

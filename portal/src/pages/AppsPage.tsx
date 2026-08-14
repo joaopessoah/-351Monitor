@@ -24,6 +24,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import { AlertTriangle, ChartColumn, Info, Table, Tags } from "lucide-react";
 import type { EChartsOption } from "echarts";
 import { api } from "@/lib/api";
+import { BRAND } from "@/lib/brandTheme";
 import {
   classificationColor,
   classificationColors,
@@ -73,8 +74,8 @@ const PAGE_SIZE = 50;
 /** page_size máximo do contrato - usado no modo de filtro client-side. */
 const MAX_PAGE_SIZE = 100;
 
-const AXIS_TEXT = "#64748b";
-const GRID_LINE = "#e2e8f0";
+const AXIS_TEXT = BRAND.chartText;
+const GRID_LINE = BRAND.chartGrid;
 
 const selectClass = cn(
   "h-9 rounded-md border border-input bg-card px-3 text-sm",
@@ -332,8 +333,8 @@ export function AppsPage() {
           type="button"
           onClick={goToUncategorized}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs text-amber-800",
-            "transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            "inline-flex items-center gap-1.5 rounded-full border border-viz-improdutivo/40 bg-viz-improdutivo/10 px-2.5 py-0.5 text-xs text-viz-improdutivo",
+            "transition-colors hover:bg-viz-improdutivo/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
           )}
         >
           <Tags className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -478,7 +479,7 @@ export function AppsPage() {
         {admin && (
           <div
             role="note"
-            className="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900"
+            className="flex items-start gap-2 rounded-md border border-viz-neutro/30 bg-viz-neutro/10 px-3 py-2 text-sm text-viz-neutro"
           >
             <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             <span>
@@ -851,8 +852,8 @@ function buildDonutOption(slices: DonutSlice[], total: number, empty: boolean): 
           : {
               text: `${formatDuration(total)}\ntempo ativo`,
               align: "center",
-              fill: "#334155",
-              font: "13px system-ui, -apple-system, sans-serif",
+              fill: BRAND.ink,
+              font: '600 13px "Space Grotesk", "Segoe UI", sans-serif',
             },
       },
     ],
@@ -986,7 +987,7 @@ function buildCategoryBarsOption(items: UsageCategoryItem[], empty: boolean): EC
       data: items.map((i) => i.name ?? "Não categorizado"),
       axisTick: { show: false },
       axisLine: { lineStyle: { color: GRID_LINE } },
-      axisLabel: { color: "#334155", fontSize: 11, width: 118, overflow: "truncate" },
+      axisLabel: { color: BRAND.ink2, fontSize: 11, width: 118, overflow: "truncate" },
     },
     series: [
       {

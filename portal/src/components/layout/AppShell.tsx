@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { BrandLogo } from "@/components/BrandLogo";
 import { roleLabels, timezoneBadge } from "@/lib/format";
 import type { MeResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -61,7 +62,9 @@ export function AppShell() {
     return (
       <div className="flex min-h-screen items-center justify-center p-6">
         <div className="w-full max-w-md space-y-4 text-center">
-          <h1 className="text-lg font-semibold">+351 Monitor</h1>
+          <h1 className="flex justify-center text-lg font-semibold">
+            <BrandLogo size={26} />
+          </h1>
           <FormError message={genericErrorMessage(meQuery.error)} />
           <div className="flex justify-center gap-2">
             <Button variant="outline" onClick={() => void meQuery.refetch()}>
@@ -98,9 +101,7 @@ export function AppShell() {
         )}
       >
         <div className={cn("flex h-14 items-center border-b px-4", collapsed && "justify-center px-2")}>
-          <span className="text-base font-bold tracking-tight text-primary">
-            {collapsed ? "+351" : "+351 Monitor"}
-          </span>
+          <BrandLogo word={!collapsed} size={24} />
         </div>
         <nav className="flex-1 space-y-1 p-2" aria-label="Navegação principal">
           {navItems.map(({ to, label, icon: Icon }) => (

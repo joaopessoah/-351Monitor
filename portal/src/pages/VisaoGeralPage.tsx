@@ -205,14 +205,14 @@ export function VisaoGeralPage() {
           <CountCardBody
             count={counts.active}
             label="Ativos"
-            swatch={<span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-full bg-emerald-500" />}
+            swatch={<span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-full bg-viz-produtivo" />}
           />
         </Card>
         <Card title={IDLE_HINT}>
           <CountCardBody
             count={counts.idle}
             label="Ociosos"
-            swatch={<span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-full bg-amber-500" />}
+            swatch={<span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-full bg-viz-improdutivo" />}
             labelIcon={<Info role="img" aria-label={IDLE_HINT} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
           />
         </Card>
@@ -220,7 +220,7 @@ export function VisaoGeralPage() {
           <CountCardBody
             count={counts.lockedNoSession}
             label="Bloqueados / sem usuário"
-            swatch={<span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-full bg-slate-500" />}
+            swatch={<span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-full bg-brand-slate" />}
           />
         </Card>
         {/* off_clean é estado esperado: cinza claro, apenas contorno, sem alerta. */}
@@ -228,7 +228,7 @@ export function VisaoGeralPage() {
           <CountCardBody
             count={counts.offClean}
             label="Desligadas"
-            swatch={<span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-full border-2 border-slate-300" />}
+            swatch={<span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-full border-2 border-border" />}
           />
         </Card>
         {/* no_data é clicável: filtra a tabela abaixo; clicar de novo desfaz. */}
@@ -240,14 +240,14 @@ export function VisaoGeralPage() {
           className={cn(
             "rounded-lg border bg-card text-left text-card-foreground shadow-sm transition-colors hover:bg-accent",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            noDataFilter && "border-red-500 ring-2 ring-red-500/30",
+            noDataFilter && "border-brand-red ring-2 ring-brand-red/30",
           )}
         >
           <CountCardBody
             count={counts.noData}
             label="Sem comunicação"
             swatch={<span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-sm" style={noDataHatch} />}
-            labelIcon={<AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-600" aria-hidden />}
+            labelIcon={<AlertTriangle className="h-3.5 w-3.5 shrink-0 text-brand-red" aria-hidden />}
           />
         </button>
       </div>
@@ -366,14 +366,14 @@ function PresenceRow({
       className={cn(
         "cursor-pointer border-b transition-colors last:border-b-0",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-        isNoData ? "bg-red-50 hover:bg-red-100" : "hover:bg-accent",
+        isNoData ? "bg-brand-red/10 hover:bg-brand-red/15" : "hover:bg-accent",
       )}
     >
       <td className="px-6 py-2.5">
         <span className="flex items-center gap-2 whitespace-nowrap">
           <StateDot state={item.presence_state} />
           <span>{stateLabels[item.presence_state]}</span>
-          {isNoData && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-600" aria-hidden />}
+          {isNoData && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-brand-red" aria-hidden />}
         </span>
       </td>
       <td className="px-3 py-2.5">
@@ -410,13 +410,13 @@ function StateDot({ state }: { state: PresenceState }) {
     return <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-sm" style={noDataHatch} />;
   }
   if (state === "off_clean") {
-    return <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full border-2 border-slate-300" />;
+    return <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full border-2 border-border" />;
   }
   const solid: Record<"active" | "idle" | "locked" | "no_session", string> = {
-    active: "bg-emerald-500",
-    idle: "bg-amber-500",
-    locked: "bg-slate-500",
-    no_session: "bg-slate-400",
+    active: "bg-viz-produtivo",
+    idle: "bg-viz-improdutivo",
+    locked: "bg-brand-slate",
+    no_session: "bg-brand-slate",
   };
   return <span aria-hidden className={cn("h-2.5 w-2.5 shrink-0 rounded-full", solid[state])} />;
 }

@@ -38,7 +38,7 @@ function NoteCell({ note }: { note: JornadaRow["note"] }) {
   if (note === null) return null;
   if (note === "sem_comunicacao") {
     return (
-      <span className="inline-flex items-center gap-1.5 text-amber-700">
+      <span className="inline-flex items-center gap-1.5 text-viz-improdutivo">
         <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
         Agente sem comunicação
       </span>

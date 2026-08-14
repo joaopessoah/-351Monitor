@@ -179,7 +179,7 @@ export function TeamTimelineCanvas({
     }
 
     const emptyHatch = makeHatch(ctx, COLOR.emptyHatch, null);
-    const noDataHatch = makeHatch(ctx, COLOR.noData, "rgba(220, 38, 38, 0.08)");
+    const noDataHatch = makeHatch(ctx, COLOR.noData, "rgba(255, 139, 139, 0.08)");
 
     indexedLanes.forEach(({ items }, i) => {
       const laneY = laneYOf(i);
@@ -336,7 +336,7 @@ export function TeamTimelineCanvas({
             <span className="min-w-0 flex-1 truncate font-medium">{lane.device_name}</span>
             {lane.data_incomplete && (
               <AlertTriangle
-                className="h-3.5 w-3.5 shrink-0 text-amber-600"
+                className="h-3.5 w-3.5 shrink-0 text-viz-improdutivo"
                 aria-label="dados incompletos"
               />
             )}
@@ -380,7 +380,7 @@ export function TeamTimelineCanvas({
             {divergentTz !== null && (
               <p className="text-muted-foreground">Máquina em {divergentTz}</p>
             )}
-            {tooltip.iv.data_incomplete && <p className="text-amber-700">⚠ dados incompletos</p>}
+            {tooltip.iv.data_incomplete && <p className="text-viz-improdutivo">⚠ dados incompletos</p>}
           </div>
         )}
       </div>

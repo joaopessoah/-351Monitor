@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Direção visual | Re-tema do painel +351 Monitor</title>
+<style>
+/* ============================================================
+   MOCKUP DESCARTÁVEL — direção visual do re-tema do portal.
+   Tokens copiados de site/assets/css/home.css (identidade aprovada).
+   Não é código do portal: é a referência visual da Onda A.
+   ============================================================ */
+@font-face {
+  font-family: 'Space Grotesk';
+  src: url('/site/assets/fonts/space-grotesk-var.woff2') format('woff2');
+  font-weight: 300 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Open Sans';
+  src: url('/site/assets/fonts/open-sans-var.woff2') format('woff2');
+  font-weight: 300 800;
+  font-display: swap;
+}
+:root {
+  --bg: #05070D;
+  --bg-2: #070B13;
+  --panel: #0A101B;
+  --panel-2: #0A111D;
+  --line: #131D2E;
+  --line-2: #1C2940;
+  --green: #B6FF3C;
+  --green-ink: #081109;
+  --green-soft: #D8FFA3;
+  --ink: #F2F6FC;
+  --ink-2: #A9B4C8;
+  --ink-3: #66738C;
+  --red: #FF8B8B;
+  --viz-p: #A4E84D;
+  --viz-n: #6FA9DD;
+  --viz-d: #F2B45A;
+  --viz-o: #3A455C;
+  --display: 'Space Grotesk', 'Segoe UI', sans-serif;
+  --body: 'Open Sans', 'Segoe UI', sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink-2);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+img, svg { display: block; max-width: 100%; }
+h1, h2, h3 { font-family: var(--display); color: var(--ink); letter-spacing: -0.02em; margin: 0; }
+.wrap { width: min(1240px, 94vw); margin-inline: auto; }
+
+/* ---------- faixa explicativa ---------- */
+.brief { padding: 56px 0 40px; border-bottom: 1px solid var(--line); }
+.eyebrow {
+  font: 600 11px var(--display);
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--green);
+  margin: 0 0 14px;
+}
+.brief h1 { font-size: clamp(26px, 3.4vw, 38px); max-width: 24em; }
+.brief p { max-width: 62em; margin: 14px 0 0; }
+.brief .note { color: var(--ink-3); font-size: 13px; }
+
+.tokens { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 28px; align-items: flex-end; }
+.swatches { display: flex; gap: 8px; }
+.swatch { width: 64px; }
+.swatch i {
+  display: block;
+  height: 40px;
+  border-radius: 9px;
+  border: 1px solid var(--line-2);
+}
+.swatch b { display: block; font: 600 9.5px var(--display); color: var(--ink-3); letter-spacing: 0.04em; margin-top: 6px; text-transform: uppercase; }
+.typespec { border-left: 1px solid var(--line); padding-left: 28px; }
+.typespec .t1 { font: 600 22px var(--display); color: var(--ink); letter-spacing: -0.02em; }
+.typespec .t2 { font: 400 13px var(--body); color: var(--ink-2); margin-top: 2px; }
+
+/* ---------- molduras das telas ---------- */
+.frame { padding: 56px 0 12px; }
+.frame > .wrap > h2 { font-size: 20px; }
+.frame .what { margin: 6px 0 22px; color: var(--ink-3); font-size: 13.5px; max-width: 70em; }
+.frame .what b { color: var(--green-soft); font-weight: 600; }
+
+.chrome {
+  border: 1px solid rgba(182, 255, 60, 0.28);
+  border-radius: 18px;
+  background: var(--bg-2);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.5), 0 0 64px rgba(182, 255, 60, 0.05);
+  overflow: hidden;
+}
+.chrome-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: #080E18;
+  font: 500 11px var(--display);
+  color: var(--ink-3);
+}
+.chrome-bar i { width: 9px; height: 9px; border-radius: 50%; background: #1C2940; }
+.chrome-bar span { margin-left: 10px; }
+
+/* ============================================================
+   TELA 1 — LOGIN
+   ============================================================ */
+.login {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  min-height: 560px;
+}
+.login-brand {
+  position: relative;
+  padding: 56px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background:
+    radial-gradient(640px 360px at 12% -12%, rgba(182, 255, 60, 0.08), transparent 62%),
+    var(--bg);
+  border-right: 1px solid var(--line);
+  overflow: hidden;
+}
+.brand { display: inline-flex; align-items: center; gap: 11px; color: var(--ink); text-decoration: none; }
+.brand svg { width: 30px; height: 30px; }
+.brand-word { font: 600 17px var(--display); letter-spacing: -0.02em; }
+.brand-word em { font-style: normal; color: var(--green); }
+.brand-word span { color: var(--ink-2); font-weight: 500; }
+
+.login-pulse { position: absolute; inset: auto -2% 34%; opacity: 0.9; }
+.login-pulse path {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 14px rgba(182, 255, 60, 0.35));
+}
+.login-belt { position: relative; }
+.login-belt p {
+  font: 500 clamp(19px, 1.9vw, 24px) var(--display);
+  color: var(--ink);
+  letter-spacing: -0.015em;
+  max-width: 15em;
+  margin: 0;
+}
+.login-belt p span { color: var(--green); }
+.login-belt small { display: block; margin-top: 14px; color: var(--ink-3); font-size: 12.5px; }
+
+.login-form { padding: 56px; display: flex; flex-direction: column; justify-content: center; background: var(--bg-2); }
+.login-form h3 { font-size: 22px; margin-bottom: 4px; }
+.login-form .sub { margin: 0 0 30px; color: var(--ink-3); font-size: 13.5px; }
+.field { margin-bottom: 18px; max-width: 380px; }
+.field label {
+  display: block;
+  font: 600 10.5px var(--display);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  margin-bottom: 8px;
+}
+.field input {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  border-radius: 11px;
+  color: var(--ink);
+  font: 600 14.5px var(--display);
+  padding: 12px 14px;
+  outline: none;
+}
+.field input:focus { border-color: rgba(182, 255, 60, 0.55); box-shadow: 0 0 0 3px rgba(182, 255, 60, 0.12); }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  font: 600 14px var(--display);
+  padding: 13px 22px;
+  border-radius: 11px;
+  border: 0;
+  cursor: pointer;
+  background: var(--green);
+  color: var(--green-ink);
+  max-width: 380px;
+  width: 100%;
+  margin-top: 6px;
+}
+.btn:hover { filter: brightness(1.05); }
+.login-form .aux { margin-top: 18px; font-size: 13px; }
+.login-form .aux a { color: var(--green); text-decoration: none; }
+.login-form .lgpd { margin-top: 40px; color: var(--ink-3); font-size: 11.5px; max-width: 40em; }
+
+/* ============================================================
+   TELA 2 — DASHBOARD
+   ============================================================ */
+.app { display: grid; grid-template-columns: 232px 1fr; min-height: 780px; background: var(--bg); }
+
+.side {
+  border-right: 1px solid var(--line);
+  background: var(--bg-2);
+  padding: 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+.side .brand { padding: 4px 10px; }
+.nav { display: flex; flex-direction: column; gap: 3px; }
+.nav a {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  color: var(--ink-2);
+  font: 600 13px var(--display);
+  text-decoration: none;
+}
+.nav a svg { width: 17px; height: 17px; color: var(--ink-3); }
+.nav a:hover { color: var(--ink); background: rgba(182, 255, 60, 0.04); }
+.nav a.on { color: var(--green); background: rgba(182, 255, 60, 0.10); }
+.nav a.on svg { color: var(--green); }
+.side-user {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  font: 600 12px var(--body);
+  color: var(--ink-2);
+}
+.avatar {
+  width: 28px; height: 28px; flex: none;
+  border-radius: 50%;
+  background: #16233B;
+  color: #9FB2D4;
+  font: 600 10px var(--display);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.side-user small { display: block; color: var(--ink-3); font-weight: 400; font-size: 11px; }
+
+.main { padding: 26px 30px 40px; min-width: 0; }
+.topbar { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
+.topbar h3 { font-size: 19px; }
+.chip {
+  font: 600 11px var(--display);
+  color: var(--green);
+  border: 1px solid rgba(182, 255, 60, 0.35);
+  padding: 4px 13px;
+  border-radius: 99px;
+}
+.topbar .right { margin-left: auto; display: flex; align-items: center; gap: 12px; color: var(--ink-3); font-size: 12.5px; }
+
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 14px; }
+.kpi {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 16px 18px;
+  min-width: 0;
+}
+.kpi .l { font: 600 10.5px var(--body); color: var(--ink-3); letter-spacing: 0.05em; text-transform: uppercase; }
+.kpi .v { font: 600 30px/1.15 var(--display); color: var(--ink); letter-spacing: -0.025em; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.kpi .d { font: 600 11.5px var(--body); color: #93C93E; margin-top: 2px; }
+.kpi .d.neutral { color: var(--ink-3); font-weight: 400; }
+.live { display: inline-flex; align-items: center; gap: 7px; }
+.live i {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 0 rgba(182, 255, 60, 0.5);
+  animation: ping 2.4s ease-out infinite;
+}
+@keyframes ping {
+  0% { box-shadow: 0 0 0 0 rgba(182, 255, 60, 0.45); }
+  70% { box-shadow: 0 0 0 9px rgba(182, 255, 60, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(182, 255, 60, 0); }
+}
+
+.grid2 { display: grid; grid-template-columns: 1.55fr 1fr; gap: 14px; margin-bottom: 14px; }
+.card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 18px;
+  min-width: 0;
+}
+.card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.card-head h4 { font: 600 13.5px var(--display); color: #C6D1E4; margin: 0; letter-spacing: -0.01em; }
+.legend { display: flex; align-items: center; gap: 6px; font: 500 11px var(--body); color: var(--ink-3); }
+.legend i { width: 14px; height: 2.5px; background: var(--green); border-radius: 2px; }
+
+.chart { width: 100%; height: auto; }
+.chart .grid line { stroke: #15202F; stroke-width: 1; stroke-dasharray: 3 4; }
+.chart .area { fill: rgba(182, 255, 60, 0.08); }
+.chart .line {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.chart .dots circle { fill: var(--panel); stroke: var(--green); stroke-width: 1.6; }
+.hours { display: flex; justify-content: space-between; font: 500 10.5px var(--display); color: #63718C; padding-top: 8px; }
+
+.apps { display: flex; flex-direction: column; gap: 12px; }
+.app-row { display: grid; grid-template-columns: 84px 1fr 42px; gap: 10px; align-items: center; }
+.app-row .n { font: 500 12px var(--body); color: #93A2BD; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app-row .t { height: 7px; border-radius: 99px; background: #121B2A; overflow: hidden; }
+.app-row .t i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #7DBE2E, var(--green)); }
+.app-row .v { font: 600 11.5px var(--display); color: #C6D1E4; text-align: right; font-variant-numeric: tabular-nums; }
+
+.table { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); overflow: hidden; }
+.thead, .trow {
+  display: grid;
+  grid-template-columns: 1.4fr 0.6fr 0.55fr 1.6fr;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 18px;
+}
+.thead {
+  font: 600 10px var(--body);
+  color: #63718C;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+}
+.trow { border-bottom: 1px solid #0E1724; }
+.trow:last-child { border-bottom: 0; }
+.who { display: flex; align-items: center; gap: 10px; font: 600 12.5px var(--body); color: #D4DEEE; }
+.badge { font: 600 11px var(--body); display: inline-flex; align-items: center; gap: 6px; }
+.badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.badge.on { color: var(--viz-p); }
+.badge.idle { color: var(--viz-d); }
+.badge.off { color: #5B6982; }
+.time { font: 600 12.5px var(--display); color: #C6D1E4; font-variant-numeric: tabular-nums; }
+.bar { display: flex; height: 8px; border-radius: 99px; background: #101927; overflow: hidden; }
+.bar i { height: 100%; }
+.bar .p { background: var(--viz-p); }
+.bar .n { background: var(--viz-n); }
+.bar .d { background: var(--viz-d); }
+.bar .o { background: var(--viz-o); }
+.legend-row {
+  display: flex; flex-wrap: wrap; gap: 8px 18px;
+  padding: 12px 18px;
+  font: 500 11px var(--body);
+  color: #7887A3;
+  border-top: 1px solid var(--line);
+  background: var(--panel-2);
+}
+.legend-row span { display: flex; align-items: center; gap: 6px; }
+.legend-row i { width: 9px; height: 9px; border-radius: 3px; }
+.legend-row .p { background: var(--viz-p); } .legend-row .n { background: var(--viz-n); }
+.legend-row .d { background: var(--viz-d); } .legend-row .o { background: var(--viz-o); }
+
+/* ---------- rodapé do documento ---------- */
+.scope { padding: 44px 0 72px; }
+.scope .card { padding: 24px 26px; }
+.scope h4 { font: 600 15px var(--display); color: var(--ink); margin: 0 0 8px; }
+.scope ul { margin: 0; padding-left: 18px; font-size: 13.5px; }
+.scope li { margin-bottom: 5px; }
+.scope b { color: var(--green-soft); font-weight: 600; }
+
+@media (max-width: 940px) {
+  .login { grid-template-columns: 1fr; }
+  .login-brand { min-height: 300px; }
+  .app { grid-template-columns: 1fr; }
+  .side { flex-direction: row; align-items: center; gap: 14px; overflow-x: auto; }
+  .side .nav { flex-direction: row; }
+  .side-user { display: none; }
+  .kpis { grid-template-columns: 1fr 1fr; }
+  .grid2 { grid-template-columns: 1fr; }
+  .thead > :nth-child(3), .trow > :nth-child(3) { display: none; }
+  .thead, .trow { grid-template-columns: 1.3fr 0.7fr 1.4fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live i { animation: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="brief">
+  <div class="wrap">
+    <p class="eyebrow">Direção visual do portal · Onda A</p>
+    <h1>O painel com a cara da +351 Monitor: o produto que o cliente usa é o mesmo que ele viu no site.</h1>
+    <p>Mockup estático com dados ilustrativos. A proposta re-tematiza o portal real (React + Tailwind, tokens centralizados) sem mudar layout, fluxos ou funcionalidades. A assinatura da marca no produto: <strong style="color:var(--ink)">o pulso do logo é o próprio gráfico de atividade</strong>, e presença ao vivo pulsa em verde.</p>
+    <div class="tokens">
+      <div class="swatches">
+        <div class="swatch"><i style="background:#05070D"></i><b>Fundo</b></div>
+        <div class="swatch"><i style="background:#0A101B"></i><b>Painel</b></div>
+        <div class="swatch"><i style="background:#B6FF3C"></i><b>Ação</b></div>
+        <div class="swatch"><i style="background:#A4E84D"></i><b>Produtivo</b></div>
+        <div class="swatch"><i style="background:#6FA9DD"></i><b>Neutro</b></div>
+        <div class="swatch"><i style="background:#F2B45A"></i><b>Improdutivo</b></div>
+        <div class="swatch"><i style="background:#3A455C"></i><b>Ocioso</b></div>
+      </div>
+      <div class="typespec">
+        <div class="t1">Space Grotesk para números e navegação</div>
+        <div class="t2">Open Sans para leitura e dados de tabela, no lugar da Inter atual</div>
+      </div>
+    </div>
+    <p class="note">Tokens idênticos aos de site/assets/css/home.css. Nada aqui é cor nova: é a identidade aprovada aplicada ao produto.</p>
+  </div>
+</header>
+
+<section class="frame">
+  <div class="wrap">
+    <h2>1 · Entrar</h2>
+    <p class="what">Primeiro contato do cliente com o produto: metade marca (pulso vivo + a frase do site), metade ação. Hoje esta tela é branca com botão azul. <b>Muda:</b> tema, tipografia e o momento de marca. <b>Não muda:</b> fluxo de login, MFA, recuperação.</p>
+    <div class="chrome">
+      <div class="chrome-bar"><i></i><i></i><i></i><span>Painel +351 Monitor · entrar</span></div>
+      <div class="login">
+        <div class="login-brand">
+          <a class="brand" href="#" aria-label="+351 Monitor">
+            <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+              <rect x="3" y="7" width="58" height="42" rx="7" stroke="#F2F6FC" stroke-width="3.6"/>
+              <path d="M11 30h7l5.5-11L31 41l5-11 3.5 6H53" stroke="#B6FF3C" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M23 57h18" stroke="#F2F6FC" stroke-width="3.6" stroke-linecap="round"/>
+              <path d="M32 49v8" stroke="#F2F6FC" stroke-width="3.6"/>
+            </svg>
+            <span class="brand-word"><em>+</em>351 <span>Monitor</span></span>
+          </a>
+          <svg class="login-pulse" viewBox="0 0 560 120" aria-hidden="true" preserveAspectRatio="none">
+            <path d="M0 78 H96 l26-44 34 74 24-52 16 22 H320 l22-36 30 58 20-30 H560"/>
+          </svg>
+          <div class="login-belt">
+            <p>Informação para a <span>empresa</span>. Respeito para as <span>pessoas</span>.</p>
+            <small>Monitoramento transparente de produtividade, com LGPD por design.</small>
+          </div>
+        </div>
+        <div class="login-form">
+          <h3>Entrar no painel</h3>
+          <p class="sub">Use o e-mail corporativo cadastrado pela sua organização.</p>
+          <div class="field">
+            <label for="mock-email">E-mail</label>
+            <input id="mock-email" type="email" value="demo@empresademo.com.br">
+          </div>
+          <div class="field">
+            <label for="mock-pass">Senha</label>
+            <input id="mock-pass" type="password" value="············">
+          </div>
+          <button class="btn" type="button">Entrar no painel</button>
+          <p class="aux"><a href="#">Esqueci minha senha</a></p>
+          <p class="lgpd">Este painel exibe dados de atividade de dispositivos corporativos tratados conforme a Política de Privacidade da sua organização.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="frame">
+  <div class="wrap">
+    <h2>2 · Visão geral</h2>
+    <p class="what">A tela que o gestor abre todo dia, com a estética dos mockups do site: sidebar escura com item ativo em verde, KPIs em Space Grotesk, o pulso como gráfico e a composição da jornada nas quatro cores de dataviz. <b>Muda:</b> tema, tipografia, tema dos gráficos ECharts. <b>Não muda:</b> estrutura, dados, navegação.</p>
+    <div class="chrome">
+      <div class="chrome-bar"><i></i><i></i><i></i><span>Painel +351 Monitor · visão geral</span></div>
+      <div class="app">
+        <aside class="side">
+          <a class="brand" href="#" aria-label="+351 Monitor">
+            <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+              <rect x="3" y="7" width="58" height="42" rx="7" stroke="#F2F6FC" stroke-width="3.6"/>
+              <path d="M11 30h7l5.5-11L31 41l5-11 3.5 6H53" stroke="#B6FF3C" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M23 57h18" stroke="#F2F6FC" stroke-width="3.6" stroke-linecap="round"/>
+              <path d="M32 49v8" stroke="#F2F6FC" stroke-width="3.6"/>
+            </svg>
+            <span class="brand-word"><em>+</em>351 <span>Monitor</span></span>
+          </a>
+          <nav class="nav" aria-label="Navegação do painel">
+            <a class="on" href="#"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="7" height="9" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="4" y="16" width="7" height="4" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="14" y="4" width="6" height="4" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="14" y="11" width="6" height="9" rx="1.6" stroke="currentColor" stroke-width="1.7"/></svg>Visão geral</a>
+            <a href="#"><svg viewBox="0 0 24 24" fill="none"><path d="M3.5 12h5l2.2-4.6 2.6 9.2 2.2-4.6h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Linha do tempo</a>
+            <a href="#"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.7"/><path d="M3.8 19c.7-3 2.7-4.6 5.2-4.6s4.5 1.6 5.2 4.6M15.5 5.6a3.2 3.2 0 0 1 0 4.8M17.6 14.6c1.5.7 2.5 2 2.9 4.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>Colaboradores</a>
+            <a href="#"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="13.4" y="4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="4" y="13.4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="13.4" y="13.4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/></svg>Aplicativos</a>
+            <a href="#"><svg viewBox="0 0 24 24" fill="none"><path d="M5 19V9M12 19V5M19 19v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Relatórios</a>
+            <a href="#"><svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="5" width="17" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 20h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>Dispositivos</a>
+            <a href="#"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.7"/><path d="M12 4.5v2M12 17.5v2M4.5 12h2M17.5 12h2M6.7 6.7l1.4 1.4M15.9 15.9l1.4 1.4M6.7 17.3l1.4-1.4M15.9 8.1l1.4-1.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>Configurações</a>
+          </nav>
+          <div class="side-user">
+            <span class="avatar">DE</span>
+            <span>Demonstração<small>Empresa Demo · viewer</small></span>
+          </div>
+        </aside>
+        <div class="main">
+          <div class="topbar">
+            <h3>Visão geral</h3>
+            <span class="chip">Hoje</span>
+            <div class="right"><span>qua, 13 ago 2026</span><span class="avatar">DE</span></div>
+          </div>
+
+          <div class="kpis">
+            <div class="kpi">
+              <div class="l">Colaboradores ativos</div>
+              <div class="v"><span class="live"><i></i>27</span></div>
+              <div class="d">agora, de 29 monitorados</div>
+            </div>
+            <div class="kpi">
+              <div class="l">Tempo ativo médio</div>
+              <div class="v">6h48</div>
+              <div class="d">+4% vs ontem</div>
+            </div>
+            <div class="kpi">
+              <div class="l">Ociosidade média</div>
+              <div class="v">52min</div>
+              <div class="d">−6min vs ontem</div>
+            </div>
+            <div class="kpi">
+              <div class="l">Horas registradas</div>
+              <div class="v">872</div>
+              <div class="d neutral">hoje, até agora</div>
+            </div>
+          </div>
+
+          <div class="grid2">
+            <div class="card">
+              <div class="card-head">
+                <h4>Atividade ao longo do dia</h4>
+                <span class="legend"><i></i>Atividade da equipe</span>
+              </div>
+              <svg class="chart" viewBox="0 0 560 190" preserveAspectRatio="none" aria-hidden="true">
+                <g class="grid">
+                  <line x1="10" y1="30" x2="550" y2="30"/>
+                  <line x1="10" y1="80" x2="550" y2="80"/>
+                  <line x1="10" y1="130" x2="550" y2="130"/>
+                  <line x1="10" y1="176" x2="550" y2="176"/>
+                </g>
+                <path class="area" d="M10 148 L78 110 L144 84 L200 98 L256 142 L312 100 L368 74 L424 92 L480 112 L550 140 L550 176 L10 176 Z"/>
+                <path class="line" d="M10 148 L78 110 L144 84 L200 98 L256 142 L312 100 L368 74 L424 92 L480 112 L550 140"/>
+                <g class="dots">
+                  <circle cx="10" cy="148" r="3"/><circle cx="144" cy="84" r="3"/><circle cx="256" cy="142" r="3"/><circle cx="368" cy="74" r="3"/><circle cx="480" cy="112" r="3"/>
+                </g>
+              </svg>
+              <div class="hours"><span>08h</span><span>10h</span><span>12h</span><span>14h</span><span>16h</span><span>18h</span></div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h4>Aplicativos mais utilizados</h4><span class="chip">Hoje</span></div>
+              <div class="apps">
+                <div class="app-row"><span class="n">ERP</span><span class="t"><i style="width:92%"></i></span><span class="v">6h12</span></div>
+                <div class="app-row"><span class="n">Excel</span><span class="t"><i style="width:74%"></i></span><span class="v">4h45</span></div>
+                <div class="app-row"><span class="n">Navegador</span><span class="t"><i style="width:60%"></i></span><span class="v">3h58</span></div>
+                <div class="app-row"><span class="n">Outlook</span><span class="t"><i style="width:38%"></i></span><span class="v">2h30</span></div>
+                <div class="app-row"><span class="n">Teams</span><span class="t"><i style="width:28%"></i></span><span class="v">1h47</span></div>
+                <div class="app-row"><span class="n">Não categorizado</span><span class="t"><i style="width:16%; background:#3A455C"></i></span><span class="v">58min</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="table">
+            <div class="thead"><span>Colaborador</span><span>Status</span><span>Tempo ativo</span><span>Jornada de hoje</span></div>
+            <div class="trow"><span class="who"><span class="avatar">AO</span>Ana Oliveira</span><span class="badge on">Ativo</span><span class="time">6h52</span><span class="bar"><i class="p" style="width:62%"></i><i class="n" style="width:16%"></i><i class="d" style="width:6%"></i><i class="o" style="width:10%"></i></span></div>
+            <div class="trow"><span class="who"><span class="avatar">BS</span>Bruno Santos</span><span class="badge on">Ativo</span><span class="time">6h31</span><span class="bar"><i class="p" style="width:58%"></i><i class="n" style="width:20%"></i><i class="d" style="width:8%"></i><i class="o" style="width:8%"></i></span></div>
+            <div class="trow"><span class="who"><span class="avatar">CF</span>Carla Ferreira</span><span class="badge idle">Ocioso</span><span class="time">4h58</span><span class="bar"><i class="p" style="width:44%"></i><i class="n" style="width:12%"></i><i class="d" style="width:4%"></i><i class="o" style="width:30%"></i></span></div>
+            <div class="trow"><span class="who"><span class="avatar">DL</span>Diego Lima</span><span class="badge on">Ativo</span><span class="time">6h05</span><span class="bar"><i class="p" style="width:55%"></i><i class="n" style="width:22%"></i><i class="d" style="width:9%"></i><i class="o" style="width:6%"></i></span></div>
+            <div class="trow"><span class="who"><span class="avatar">EC</span>Elisa Costa</span><span class="badge off">Sem comunicação</span><span class="time">2h40</span><span class="bar"><i class="p" style="width:28%"></i><i class="n" style="width:8%"></i><i class="d" style="width:2%"></i><i class="o" style="width:6%"></i></span></div>
+            <div class="legend-row">
+              <span><i class="p"></i>Produtivo</span>
+              <span><i class="n"></i>Neutro</span>
+              <span><i class="d"></i>Improdutivo</span>
+              <span><i class="o"></i>Ocioso</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="scope">
+  <div class="wrap">
+    <div class="card">
+      <h4>Escopo da Onda A, se você aprovar esta direção</h4>
+      <ul>
+        <li><b>Troca de tokens</b> no portal (CSS vars + Tailwind): fundo, painéis, bordas, verde de ação, tipografia Space Grotesk/Open Sans.</li>
+        <li><b>Tema ECharts da marca</b> para todos os gráficos + cores da timeline canvas mapeadas para a paleta de dataviz.</li>
+        <li><b>Tela de login</b> como momento de marca (única tela com mudança de composição).</li>
+        <li><b>Sem mudanças</b> de layout, fluxo, dados ou funcionalidade nas demais telas; página pública de transparência continua imprimindo em papel branco.</li>
+        <li>QA visual tela a tela no staging usando o tenant Empresa Demo.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

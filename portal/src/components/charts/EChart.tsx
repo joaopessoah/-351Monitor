@@ -16,6 +16,7 @@ import {
   TooltipComponent,
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
+import { ECHARTS_BRAND_THEME } from "@/lib/brandTheme";
 // Imports SÓ de tipo do pacote completo - apagados na compilação, sem custo de bundle.
 import type { ECElementEvent, EChartsOption, EChartsType } from "echarts";
 
@@ -31,6 +32,10 @@ echarts.use([
   TooltipComponent,
   CanvasRenderer,
 ]);
+
+// Tema da marca (dark + tipografia + eixos discretos + tooltip escuro): os
+// defaults de TODO gráfico do portal; as options continuam podendo sobrescrever.
+echarts.registerTheme("m351", ECHARTS_BRAND_THEME);
 
 export interface EChartProps {
   option: EChartsOption;
@@ -54,7 +59,7 @@ export function EChart({ option, height, className, ariaHidden = false, onItemCl
   useEffect(() => {
     const el = elRef.current;
     if (el === null) return;
-    const chart = echarts.init(el);
+    const chart = echarts.init(el, "m351");
     chartRef.current = chart;
     chart.on("click", (params) => clickRef.current?.(params as ECElementEvent));
     const ro = new ResizeObserver((entries) => {

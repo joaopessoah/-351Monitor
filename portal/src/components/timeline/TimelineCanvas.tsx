@@ -11,6 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { TimelineInterval } from "@/lib/types";
+import { BRAND } from "@/lib/brandTheme";
 import { formatDuration, formatHm, stateLabels } from "@/lib/format";
 
 // -----------------------------------------------------------------------------
@@ -58,20 +59,23 @@ const PAD_BOTTOM = 6;
 export const TIMELINE_CANVAS_HEIGHT = AXIS_H + STATE_H + LANE_GAP + APP_H + PAD_BOTTOM;
 
 // Cores canônicas da Seção 8.5 — também usadas pelo TeamTimelineCanvas (F3.4).
+// Paleta da marca (lib/brandTheme.ts, a mesma legenda do site): ativo verde de
+// atividade, ocioso grafite, bloqueado cinza-azulado; a linha "agora" usa o
+// verde vivo de AÇÃO da marca (mesma cor do indicador de presença ao vivo).
 export const COLOR = {
-  active: "#16a34a",
-  idle: "#d97706",
-  locked: "#64748b",
-  offCleanStroke: "#9ca3af",
-  noData: "#dc2626",
-  // Sub-faixa de apps: cor única "Não categorizado" (slate-400) — cores por
-  // categoria chegam na F3.
-  appUncategorized: "#94a3b8",
-  emptyHatch: "#e5e7eb",
-  now: "#ef4444",
-  grid: "#e2e8f0",
-  laneBg: "#f8fafc",
-  text: "#64748b",
+  active: BRAND.vizProdutivo,
+  idle: BRAND.vizOcioso,
+  locked: BRAND.slate,
+  offCleanStroke: BRAND.ink3,
+  noData: BRAND.red,
+  // Sub-faixa de apps: cor única "Não categorizado" — cores por categoria
+  // chegam na F3.
+  appUncategorized: BRAND.slate,
+  emptyHatch: BRAND.line,
+  now: BRAND.green,
+  grid: BRAND.chartGrid,
+  laneBg: BRAND.panel,
+  text: BRAND.chartText,
 } as const;
 
 const TOOLTIP_W = 280;
@@ -211,7 +215,7 @@ export function TimelineCanvas({
     }
 
     if (indexed.length > 0) {
-      const noDataHatch = makeHatch(ctx, COLOR.noData, "rgba(220, 38, 38, 0.08)");
+      const noDataHatch = makeHatch(ctx, COLOR.noData, "rgba(255, 139, 139, 0.08)");
       for (const { startMs, endMs, iv } of indexed) {
         const rx0 = xOf(startMs);
         const rx1 = xOf(endMs);
@@ -348,7 +352,7 @@ export function TimelineCanvas({
           {tooltip.iv.window_title !== null && (
             <p className="truncate text-muted-foreground">{tooltip.iv.window_title}</p>
           )}
-          {tooltip.iv.data_incomplete && <p className="text-amber-700">⚠ dados incompletos</p>}
+          {tooltip.iv.data_incomplete && <p className="text-viz-improdutivo">⚠ dados incompletos</p>}
         </div>
       )}
     </div>
@@ -391,12 +395,12 @@ export function drawAlertTriangle(ctx: CanvasRenderingContext2D, cx: number, cy:
   ctx.lineTo(cx + 5.5, cy + 4);
   ctx.lineTo(cx - 5.5, cy + 4);
   ctx.closePath();
-  ctx.fillStyle = "#dc2626";
+  ctx.fillStyle = BRAND.red;
   ctx.fill();
-  ctx.strokeStyle = "#ffffff";
+  ctx.strokeStyle = BRAND.bg;
   ctx.lineWidth = 1;
   ctx.stroke();
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = BRAND.bg;
   ctx.fillRect(cx - 0.75, cy - 2.5, 1.5, 3.5);
   ctx.fillRect(cx - 0.75, cy + 1.75, 1.5, 1.5);
 }

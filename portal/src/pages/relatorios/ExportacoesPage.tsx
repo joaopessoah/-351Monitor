@@ -93,11 +93,11 @@ function uiStatus(item: ExportJobItem): "queued" | "running" | "done" | "failed"
 }
 
 const STATUS_BADGE: Record<ReturnType<typeof uiStatus>, { label: string; className: string }> = {
-  queued: { label: "Na fila", className: "border-slate-200 bg-slate-50 text-slate-700" },
-  running: { label: "Gerando", className: "border-blue-200 bg-blue-50 text-blue-800" },
-  done: { label: "Pronto", className: "border-emerald-200 bg-emerald-50 text-emerald-800" },
+  queued: { label: "Na fila", className: "border-border bg-muted text-secondary-foreground" },
+  running: { label: "Gerando", className: "border-viz-neutro/30 bg-viz-neutro/10 text-viz-neutro" },
+  done: { label: "Pronto", className: "border-viz-produtivo/30 bg-viz-produtivo/10 text-viz-produtivo" },
   failed: { label: "Falhou", className: "border-destructive/30 bg-destructive/10 text-destructive" },
-  expired: { label: "Expirado", className: "border-slate-200 bg-muted text-muted-foreground" },
+  expired: { label: "Expirado", className: "border-border bg-muted text-muted-foreground" },
 };
 
 function StatusBadge({ item }: { item: ExportJobItem }) {
@@ -111,7 +111,7 @@ function StatusBadge({ item }: { item: ExportJobItem }) {
       )}
     >
       {status === "running" && (
-        <span aria-hidden className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-600" />
+        <span aria-hidden className="h-1.5 w-1.5 animate-pulse rounded-full bg-viz-neutro" />
       )}
       {badge.label}
     </span>
@@ -313,7 +313,7 @@ export function ExportacoesPage() {
                           )}
                           {item.truncated && (
                             <span
-                              className="ml-2 inline-flex items-center gap-1 text-xs font-medium text-amber-700"
+                              className="ml-2 inline-flex items-center gap-1 text-xs font-medium text-viz-improdutivo"
                               title="O arquivo parou no teto de 500.000 linhas. Estreite o período ou os dispositivos e exporte novamente para obter o restante."
                             >
                               <AlertTriangle className="h-3 w-3" aria-hidden />

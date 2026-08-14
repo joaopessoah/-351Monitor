@@ -61,7 +61,7 @@ function IntervalCells({ iv, timezone }: { iv: TimelineInterval; timezone: strin
       </td>
       <td className="whitespace-nowrap px-3 py-1.5">
         {iv.data_incomplete ? (
-          <span className="flex items-center gap-1 text-amber-700">
+          <span className="flex items-center gap-1 text-viz-improdutivo">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
             dados incompletos
           </span>
@@ -171,7 +171,7 @@ function DeviceCell({ lane, rowSpan }: { lane: TeamTimelineLane; rowSpan: number
         {lane.device_name}
       </span>
       {lane.data_incomplete && (
-        <span className="mt-0.5 flex items-center gap-1 text-xs text-amber-700">
+        <span className="mt-0.5 flex items-center gap-1 text-xs text-viz-improdutivo">
           <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />
           dados incompletos
         </span>

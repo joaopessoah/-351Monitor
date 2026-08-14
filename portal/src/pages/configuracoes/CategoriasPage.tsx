@@ -605,7 +605,7 @@ function MapeamentoTab({ admin }: { admin: boolean }) {
           </div>
           {data !== undefined &&
             (data.uncategorized_count > 0 ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs text-amber-800">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-viz-improdutivo/40 bg-viz-improdutivo/10 px-2.5 py-0.5 text-xs text-viz-improdutivo">
                 <Tags className="h-3.5 w-3.5 shrink-0" aria-hidden />
                 {data.uncategorized_count === 1
                   ? "1 app sem categoria"
@@ -643,7 +643,7 @@ function MapeamentoTab({ admin }: { admin: boolean }) {
       {admin && (
         <div
           role="note"
-          className="flex items-start gap-2 border-b bg-blue-50/60 px-6 py-2.5 text-sm text-blue-900"
+          className="flex items-start gap-2 border-b bg-viz-neutro/10 px-6 py-2.5 text-sm text-viz-neutro"
         >
           <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <span>
