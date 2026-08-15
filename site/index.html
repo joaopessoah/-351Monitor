@@ -348,53 +348,114 @@
   <!-- ============ CALCULADORA ============ -->
   <section class="section" id="para-empresas">
     <div class="container">
-      <p class="eyebrow reveal">Quanto pode representar?</p>
-      <h2 class="reveal">Quanto <span class="hl" id="calc-title-minutos">30 minutos</span> representam na escala da sua empresa?</h2>
-      <p class="section-lead reveal">Pequenos períodos diários podem representar centenas ou até milhares de horas quando multiplicados por toda a operação. Faça uma simulação.</p>
+      <p class="eyebrow reveal">Simulador de impacto financeiro</p>
+      <h2 class="reveal">Quanto a improdutividade <span class="hl">pode estar custando</span> para sua empresa?</h2>
+      <p class="section-lead reveal">Pequenos períodos de baixa produtividade podem parecer irrelevantes quando analisados individualmente. Em escala, podem representar centenas de horas e milhares de reais todos os meses. Faça uma simulação e veja o impacto potencial na sua operação.</p>
 
       <form class="calc reveal" id="calc" novalidate>
         <div class="calc-fields">
           <div class="field">
-            <label for="calc-colab">Número de colaboradores</label>
-            <input type="number" id="calc-colab" inputmode="numeric" min="1" max="100000" value="100">
+            <label for="calc-colab">Quantos colaboradores você quer analisar?</label>
+            <div class="input-unit" id="wrap-colab">
+              <input type="number" id="calc-colab" inputmode="numeric" min="1" max="100000" value="100">
+              <span class="unit">colaboradores</span>
+            </div>
+            <p class="field-error" id="err-colab" hidden></p>
+          </div>
+
+          <div class="field">
+            <label for="calc-custo">Qual é o custo médio mensal de um colaborador para a empresa?</label>
+            <div class="input-unit" id="wrap-custo">
+              <span class="unit unit-prefix">R$</span>
+              <input type="text" id="calc-custo" inputmode="numeric" autocomplete="off" value="10.000">
+            </div>
+            <p class="field-hint">Considere salário, encargos, benefícios e demais custos relacionados ao colaborador. Se não souber o valor exato, utilize uma estimativa.</p>
+            <p class="field-error" id="err-custo" hidden></p>
           </div>
 
           <fieldset class="field">
-            <legend>Período diário por colaborador</legend>
-            <p class="field-hint">Quanto tempo por dia você quer simular?</p>
+            <legend>E se, em média, este tempo por dia não estiver sendo produtivo?</legend>
             <div class="segmented" role="group">
               <label><input type="radio" name="minutos" value="15"><span>15 min</span></label>
               <label><input type="radio" name="minutos" value="30" checked><span>30 min</span></label>
               <label><input type="radio" name="minutos" value="45"><span>45 min</span></label>
               <label><input type="radio" name="minutos" value="60"><span>60 min</span></label>
             </div>
+            <p class="field-hint">Escolha um período apenas para simular o possível impacto financeiro. Isso não significa que esse tempo seja necessariamente improdutivo na sua empresa.</p>
           </fieldset>
 
-          <div class="field">
-            <label for="calc-dias">Dias úteis por mês</label>
-            <input type="number" id="calc-dias" inputmode="numeric" min="1" max="31" value="22">
+          <div class="calc-premissas">
+            <p class="calc-premissas-txt">Simulação considerando <b id="calc-prem-dias">22 dias úteis/mês</b> e jornada de <b id="calc-prem-horas">8 horas/dia</b>. <button type="button" class="premissas-toggle" id="calc-premissas-btn" aria-expanded="false" aria-controls="calc-premissas-campos">Alterar premissas</button></p>
+            <div class="calc-premissas-campos" id="calc-premissas-campos" hidden>
+              <div class="field">
+                <label for="calc-dias">Dias úteis por mês</label>
+                <div class="input-unit" id="wrap-dias">
+                  <input type="number" id="calc-dias" inputmode="numeric" min="1" max="31" value="22">
+                  <span class="unit">dias</span>
+                </div>
+                <p class="field-error" id="err-dias" hidden></p>
+              </div>
+              <div class="field">
+                <label for="calc-jornada">Horas de jornada por dia</label>
+                <div class="input-unit" id="wrap-jornada">
+                  <input type="number" id="calc-jornada" inputmode="numeric" min="1" max="24" value="8">
+                  <span class="unit">horas</span>
+                </div>
+                <p class="field-error" id="err-jornada" hidden></p>
+              </div>
+            </div>
           </div>
 
-          <button type="submit" class="btn btn-primary">Calcular impacto na operação</button>
+          <button type="submit" class="btn btn-primary btn-lg">Calcular impacto financeiro <span class="arr" aria-hidden="true">→</span></button>
         </div>
 
         <div class="calc-result">
-          <p class="calc-context" id="calc-context" aria-hidden="true">30 minutos/dia × 100 colaboradores</p>
-          <span class="calc-value" id="calc-valor" aria-hidden="true"><b id="calc-horas">1.100</b> <span>horas</span></span>
-          <p class="calc-permes" aria-hidden="true">por mês na sua operação</p>
-          <p class="calc-jornadas" id="calc-jornadas" aria-hidden="true">O equivalente a aproximadamente <b>137</b> jornadas de trabalho de 8 horas.</p>
-          <p class="calc-conta" id="calc-conta" aria-hidden="true">100 colaboradores × 30 minutos × 22 dias = 1.100 horas/mês</p>
-          <p class="sr-only" aria-live="polite" id="calc-sr">1.100 horas por mês na sua operação, o equivalente a aproximadamente 137 jornadas de trabalho de 8 horas.</p>
+          <p class="calc-context" id="calc-context">30 minutos por dia podem parecer pouco.</p>
+          <div class="calc-value" id="calc-valor" aria-hidden="true"><b id="calc-mensal">R$&nbsp;62.500</b><span class="calc-per">/mês</span></div>
+          <p class="calc-explain" id="calc-explain">Esse seria o impacto financeiro potencial se 30 minutos da jornada diária dos 100 colaboradores analisados não estivessem gerando produtividade.</p>
+          <p class="calc-anual"><b id="calc-anual">R$&nbsp;750.000</b><span>/ano</span></p>
+          <p class="calc-anual-note">em capacidade de trabalho potencialmente comprometida.</p>
 
-          <div class="calc-hook">
-            <p class="calc-pergunta">Você sabe como esse tempo está sendo utilizado?</p>
-            <p class="calc-explica">A +351 Monitor permite visualizar como a jornada acontece na prática, transformando a atividade nos dispositivos corporativos em dados objetivos para apoiar decisões de produtividade, eficiência e gestão.</p>
-            <a class="btn btn-primary" id="calc-demo" href="https://wa.me/5511925690601?text=Ol%C3%A1!%20Quero%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20do%20%2B351%20Monitor." target="_blank" rel="noopener">Solicitar uma demonstração</a>
+          <div class="calc-ops">
+            <span class="calc-op" id="calc-op-horas"><b>1.100</b> horas/mês</span>
+            <span class="calc-op" id="calc-op-jornadas">≈ <b>137</b> jornadas de trabalho de 8 horas</span>
           </div>
 
-          <p class="calc-disclaimer">Esta é uma simulação matemática baseada no período informado. O resultado não representa horas improdutivas identificadas, desperdício comprovado ou promessa de economia. A +351 Monitor permite medir e analisar como o tempo de trabalho é efetivamente utilizado na operação.</p>
+          <div class="calc-cenarios">
+            <h3>E se apenas uma parte desse período estiver sendo perdida?</h3>
+            <div class="cenario-cards">
+              <div class="cenario">
+                <span class="cenario-pct">10% do período</span>
+                <b id="cen-10-mes">R$&nbsp;6.250/mês</b>
+                <span class="cenario-ano" id="cen-10-ano">R$&nbsp;75.000/ano</span>
+              </div>
+              <div class="cenario">
+                <span class="cenario-pct">25% do período</span>
+                <b id="cen-25-mes">R$&nbsp;15.625/mês</b>
+                <span class="cenario-ano" id="cen-25-ano">R$&nbsp;187.500/ano</span>
+              </div>
+              <div class="cenario">
+                <span class="cenario-pct">50% do período</span>
+                <b id="cen-50-mes">R$&nbsp;31.250/mês</b>
+                <span class="cenario-ano" id="cen-50-ano">R$&nbsp;375.000/ano</span>
+              </div>
+            </div>
+          </div>
+
+          <p class="sr-only" aria-live="polite" id="calc-sr">Impacto financeiro potencial de R$ 62.500 por mês e R$ 750.000 por ano, correspondente a 1.100 horas por mês.</p>
+
+          <div class="calc-hook">
+            <p class="calc-hook-lead">Mas existe uma informação que essa calculadora não consegue responder.</p>
+            <h3 class="calc-pergunta">Quanto desse tempo é realmente improdutivo na sua empresa?</h3>
+            <p class="calc-explica">A simulação mostra o impacto que pequenos períodos podem representar quando multiplicados pela operação. Mas somente dados reais conseguem mostrar como o tempo de trabalho está sendo utilizado na prática.</p>
+            <p class="calc-explica"><strong>É justamente aí que entra a +351 Monitor.</strong> A plataforma transforma a atividade nos dispositivos corporativos em dados objetivos, permitindo visualizar padrões de atividade, períodos de ociosidade, utilização de aplicativos e comportamento da jornada ao longo do dia.</p>
+            <p class="calc-manifesto">Produtividade não deveria ser uma percepção.<br><span>Meça. Entenda. Decida.</span></p>
+            <a class="btn btn-primary" id="calc-demo" href="https://wa.me/5511925690601?text=Ol%C3%A1!%20Usei%20a%20calculadora%20do%20site%20e%20quero%20entender%20o%20impacto%20na%20minha%20opera%C3%A7%C3%A3o.%20Quero%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20do%20%2B351%20Monitor." target="_blank" rel="noopener">Quero entender o impacto na minha operação <span class="arr" aria-hidden="true">→</span></a>
+          </div>
         </div>
       </form>
+
+      <p class="calc-disclaimer reveal">Esta calculadora apresenta uma simulação de impacto financeiro potencial com base nos dados informados. Os valores não representam necessariamente perdas efetivas, horas improdutivas comprovadas ou economia garantida. A realidade de cada operação deve ser analisada com base em dados concretos.</p>
     </div>
   </section>
 
