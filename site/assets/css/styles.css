@@ -1045,7 +1045,8 @@ details[open] .faq-icon::after { transform: rotate(90deg); }
 
 /* ---------- Página de conteúdo (privacidade etc.) ---------- */
 .page-hero {
-  padding-top: calc(var(--nav-h) + clamp(3rem, 7vw, 5rem));
+  /* 32px abaixo do menu, mesmo respiro da chegada por âncora na home */
+  padding-top: calc(var(--nav-h) + 32px);
   padding-bottom: clamp(2rem, 4vw, 3rem);
 }
 .page-hero h1 {
