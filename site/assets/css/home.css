@@ -52,8 +52,8 @@
 
 /* ---------- Base ---------- */
 *, *::before, *::after { box-sizing: border-box; }
-/* 90% na raiz reduz toda a tipografia do site (tudo em rem) sem mexer nos espaçamentos em px */
-html { font-size: 90%; scroll-behavior: smooth; scroll-padding-top: calc(var(--nav-h) + 20px); }
+/* 80% na raiz reduz toda a tipografia do site (tudo em rem) sem mexer nos espaçamentos em px */
+html { font-size: 80%; scroll-behavior: smooth; scroll-padding-top: calc(var(--nav-h) + 20px); }
 body {
   margin: 0;
   background: var(--bg);

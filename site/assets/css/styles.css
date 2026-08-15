@@ -53,8 +53,8 @@
 
 /* ---------- Reset ---------- */
 *, *::before, *::after { box-sizing: border-box; }
-/* 90% na raiz reduz toda a tipografia das páginas internas (tudo em rem) */
-html { font-size: 90%; scroll-behavior: smooth; scroll-padding-top: calc(var(--nav-h) + 16px); }
+/* 80% na raiz reduz toda a tipografia das páginas internas (tudo em rem) */
+html { font-size: 80%; scroll-behavior: smooth; scroll-padding-top: calc(var(--nav-h) + 16px); }
 body {
   margin: 0;
   background: var(--bg);
