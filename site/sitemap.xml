@@ -2,8 +2,28 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://www.mais351monitor.com.br/</loc>
-    <lastmod>2026-08-13</lastmod>
+    <lastmod>2026-08-15</lastmod>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://www.mais351monitor.com.br/conteudos/</loc>
+    <lastmod>2026-08-15</lastmod>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://www.mais351monitor.com.br/conteudos/e-legal-monitorar-o-computador-dos-funcionarios.html</loc>
+    <lastmod>2026-08-15</lastmod>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.mais351monitor.com.br/conteudos/5-sinais-de-que-sua-empresa-esta-perdendo-produtividade.html</loc>
+    <lastmod>2026-08-15</lastmod>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.mais351monitor.com.br/conteudos/quanto-a-baixa-produtividade-esta-custando-para-sua-empresa.html</loc>
+    <lastmod>2026-08-15</lastmod>
+    <priority>0.6</priority>
   </url>
   <url>
     <loc>https://www.mais351monitor.com.br/privacidade.html</loc>
