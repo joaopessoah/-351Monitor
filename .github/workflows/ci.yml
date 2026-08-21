@@ -140,6 +140,9 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Testes do agente
+        run: dotnet test agent/M351.Agent.sln --configuration Release
+
       - name: Instalar WiX v5 (dotnet tool) + extensao Util
         shell: pwsh
         run: |

@@ -26,7 +26,11 @@ param(
     # porta 22 tem 'ufw limit' (6 conexoes/30s) e o IP NAT compartilhado do runner Azure
     # vive saturado — o aceite usa o listener dedicado 2222 (ufw allow, sem rate limit)
     [string]$SshPort    = $(if ($env:F1_SSH_PORT) { $env:F1_SSH_PORT } else { '22' }),
-    [int]$OutageSeconds = 600
+    [int]$OutageSeconds = 600,
+    # Modo reduzido (smoke semanal, .github/workflows/smoke-e2e-semanal.yml): roda apenas
+    # enroll + ingest visivel em < 2 min (C1) e UNENROLL (C4); pula a queda de rede de
+    # 10 min (C2) e a troca de config (C3). Evidencias apenas como artifact, sem commit.
+    [switch]$Smoke
 )
 
 $ErrorActionPreference = 'Stop'
@@ -533,6 +537,7 @@ function Write-Report([string]$status, [string]$erro) {
 # Aceite F1 — teste em VM limpa
 
 - **Status geral:** $status
+- **Modo:** $(if ($Smoke) { 'smoke (apenas C1 + C4)' } else { 'aceite completo (C1 a C4)' })
 - **Data (UTC):** $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm'))
 - **VM:** runner GitHub Actions efemero (VM limpa recem-provisionada)
 - **Run:** $runUrl
@@ -587,12 +592,18 @@ $($Transcript -join "`n")
 
 # ---------------------------------------------------------------- main
 $fatal = $null
+# no modo -Smoke so C1 e C4 sao avaliados (2 criterios); no aceite completo, 4
+$ExpectedCriterios = if ($Smoke) { 2 } else { 4 }
 try {
     Phase-Context
     Phase-Backoffice
     Phase-InstallAndC1
-    Phase-OutageC2
-    Phase-PolicyC3
+    if (-not $Smoke) {
+        Phase-OutageC2
+        Phase-PolicyC3
+    } else {
+        Log 'modo SMOKE: pulando C2 (queda de rede de 10 min) e C3 (troca de config)'
+    }
     Phase-UnenrollC4
 } catch {
     $fatal = "$_`n$($_.ScriptStackTrace)"
@@ -605,13 +616,16 @@ try {
 
     $fails = @($Criterios | Where-Object { $_.Resultado -eq 'FAIL' }).Count
     $total = $Criterios.Count
-    $status = if ($fatal) { "ERRO FATAL (criterios avaliados: $total/4)" }
-              elseif ($fails -eq 0 -and $total -eq 4) { 'APROVADO — 4/4 criterios PASS: F1 fechada' }
+    $status = if ($fatal) { "ERRO FATAL (criterios avaliados: $total/$ExpectedCriterios)" }
+              elseif ($fails -eq 0 -and $total -eq $ExpectedCriterios) {
+                  if ($Smoke) { "APROVADO, $total/$ExpectedCriterios criterios PASS (modo smoke: C1 + C4)" }
+                  else { 'APROVADO — 4/4 criterios PASS: F1 fechada' }
+              }
               else { "REPROVADO — $fails de $total criterios FAIL" }
     Write-Report $status $fatal
     Log "=== RESULTADO: $status ==="
     if ($env:GITHUB_STEP_SUMMARY) { Get-Content (Join-Path $EvidDir 'ACEITE-F1-RELATORIO.md') -Raw | Out-File $env:GITHUB_STEP_SUMMARY -Encoding utf8NoBOM }
 }
 
-if ($fatal -or $fails -gt 0 -or $total -lt 4) { exit 1 }
+if ($fatal -or $fails -gt 0 -or $total -lt $ExpectedCriterios) { exit 1 }
 exit 0
