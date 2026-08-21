@@ -15,12 +15,21 @@ public sealed class TitleMasker
     public const int MaxTitleLength = 256;
     public const string PrivateProcessName = "(privado)";
 
-    /// <summary>Heurística best-effort por sufixo de título, case-insensitive (Seção 6.3).</summary>
+    /// <summary>
+    /// Heurística best-effort por sufixo de título, case-insensitive (Seção 6.3). A comparação
+    /// OrdinalIgnoreCase NÃO normaliza acentos, então pt-BR ("anônima") e pt-PT ("anónima") são
+    /// entradas distintas. Sem as variantes en-US, um Windows em inglês vazaria o título da
+    /// janela anônima sob FULL/MASKED_PATTERNS — vazamento LGPD real.
+    /// </summary>
     private static readonly string[] PrivateBrowsingSuffixes =
     [
-        "(navegação anônima)",   // Chrome
-        "InPrivate",             // Edge
-        "(navegação privativa)"  // Firefox
+        "(navegação anônima)",   // Chrome pt-BR
+        "(navegação anónima)",   // Chrome pt-PT (acento agudo)
+        "(Incognito)",           // Chrome en-US
+        "InPrivate",             // Edge (mesmo sufixo em qualquer idioma)
+        "(navegação privativa)", // Firefox pt-BR
+        "(navegação privada)",   // Firefox pt-PT
+        "(Private Browsing)"     // Firefox en-US
     ];
 
     /// <summary>Defaults de fábrica sempre aplicados (além da lista do tenant) + processos do próprio agente.</summary>
@@ -74,7 +83,7 @@ public sealed class TitleMasker
         return new ActiveWindowData
         {
             ProcessName = processName,
-            ExePath = sample.ExePath,
+            ExePath = NormalizeExePath(sample.ExePath),
             AppId = sample.AppId,
             WindowTitle = finalTitle,
             TitleMasked = masked
@@ -89,6 +98,25 @@ public sealed class TitleMasker
             if (string.Equals(p, processName, StringComparison.OrdinalIgnoreCase)) return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Normalização determinística do exe_path, aplicada ANTES de persistir na fila (Seção 6.3):
+    /// o prefixo "C:\Users\&lt;qualquer&gt;\" vira "%USERPROFILE%\" para não vazar o nome da pasta do
+    /// usuário (muitas vezes o nome civil) em apps instalados em %LOCALAPPDATA%. Verificado no
+    /// backend (backend/src): nada lê exe_path — ele fica apenas no payload JSON bruto, como
+    /// informação; o agrupamento de apps é por process_name via app_catalog (IntervalizationService,
+    /// dashboards/relatórios agrupam por app_id/process_name), então a reescrita não afeta agregação.
+    /// Deliberadamente NÃO aplica as masked_patterns/regex do tenant: path não é título.
+    /// </summary>
+    public static string? NormalizeExePath(string? exePath)
+    {
+        const string prefix = @"C:\Users\";
+        if (exePath is null || !exePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return exePath;
+        var afterUser = exePath.IndexOf('\\', prefix.Length);
+        if (afterUser < 0) return exePath; // "C:\Users\nome" sem componente após o usuário
+        return "%USERPROFILE%" + exePath[afterUser..];
     }
 
     public static bool IsPrivateBrowsing(string title)

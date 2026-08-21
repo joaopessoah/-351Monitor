@@ -429,7 +429,7 @@ Aplicado **antes de persistir na fila SQLite** — dado mascarado nunca toca o d
   - `FULL`: título completo (truncado a 256 chars).
   - `MASKED_PATTERNS` (**default de fábrica**): aplica as regex de `masked_patterns[]` ao título; trecho que casa é substituído por `***`; `title_masked: true` quando houve substituição.
   - `APP_ONLY`: `window_title: null`, só `process_name`.
-- **Rebaixamento automático para `APP_ONLY` em navegação anônima/privada** (heurística best-effort por sufixo de título, qualquer que seja a política vigente): `"(navegação anônima)"` (Chrome), `"InPrivate"` (Edge), `"(navegação privativa)"` (Firefox). Case-insensitive, comparação no fim do título.
+- **Rebaixamento automático para `APP_ONLY` em navegação anônima/privada** (heurística best-effort por sufixo de título, qualquer que seja a política vigente): `"(navegação anônima)"` / `"(navegação anónima)"` / `"(Incognito)"` (Chrome pt-BR / pt-PT / en-US), `"InPrivate"` (Edge, mesmo sufixo em qualquer idioma), `"(navegação privativa)"` / `"(navegação privada)"` / `"(Private Browsing)"` (Firefox pt-BR / pt-PT / en-US). Case-insensitive, comparação no fim do título.
 - `ignored_processes[]` (lista do tenant + defaults de fábrica: `keepass.exe`, `1password.exe`, `bitwarden.exe`, `logonui.exe`, `lockapp.exe`, `consent.exe` + processos do próprio agente): emite `ACTIVE_WINDOW_CHANGED` com `process_name: "(privado)"` e `window_title: null` — **o tempo conta, o conteúdo não**.
 - `collection_window` (da config): em `mode: BUSINESS_HOURS`, fora de `days/start/end` o helper NÃO coleta janela ativa nem idle; o serviço continua emitindo eventos de sessão/energia e heartbeat de máquina (uptime/login apenas). Em `mode: ALWAYS`, coleta contínua. A escolha é do tenant no onboarding (Seção 8.3) — quem decide é a controladora.
 - Logs de diagnóstico **nunca** contêm títulos de janela nem nomes de usuário em nível Information (apenas em Debug, ativado por config com aviso).
@@ -987,7 +987,7 @@ O sistema coleta SOMENTE: identificação de máquina/usuário Windows, eventos 
 
 ### 9.2 Mascaramento de títulos (enforcement no agente — Seção 6.3)
 
-`window_title_policy` com 3 níveis (`FULL` / `MASKED_PATTERNS` / `APP_ONLY`); **default de fábrica: `MASKED_PATTERNS`** com lista padrão (termos de saúde, sindicais, religiosos, financeiros pessoais, padrões de CPF/cartão); **rebaixamento automático para `APP_ONLY` em navegação anônima/privada** (heurística por sufixo de título: "(navegação anônima)" Chrome, "InPrivate" Edge, "(navegação privativa)" Firefox). Aplicado ANTES de persistir na fila local. `ignored_processes` com defaults (gerenciadores de senha, telas de logon). Servidor JAMAIS loga `window_title`.
+`window_title_policy` com 3 níveis (`FULL` / `MASKED_PATTERNS` / `APP_ONLY`); **default de fábrica: `MASKED_PATTERNS`** com lista padrão (termos de saúde, sindicais, religiosos, financeiros pessoais, padrões de CPF/cartão); **rebaixamento automático para `APP_ONLY` em navegação anônima/privada** (heurística por sufixo de título: "(navegação anônima)" / "(navegação anónima)" / "(Incognito)" Chrome pt-BR / pt-PT / en-US, "InPrivate" Edge em qualquer idioma, "(navegação privativa)" / "(navegação privada)" / "(Private Browsing)" Firefox pt-BR / pt-PT / en-US). Aplicado ANTES de persistir na fila local. `ignored_processes` com defaults (gerenciadores de senha, telas de logon). Servidor JAMAIS loga `window_title`.
 
 ### 9.3 Direitos do titular (DSR) — GATE DE LANÇAMENTO (F4)
 

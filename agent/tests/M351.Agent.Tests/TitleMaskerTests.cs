@@ -75,9 +75,15 @@ public class TitleMaskerTests
     }
 
     [Theory]
-    [InlineData("Página secreta - Google Chrome (navegação anônima)")] // Chrome
+    [InlineData("Página secreta - Google Chrome (navegação anônima)")] // Chrome pt-BR
+    [InlineData("Pesquisa - Google Chrome (Navegação anónima)")]        // Chrome pt-PT (acento agudo)
+    [InlineData("Secret page - Google Chrome (Incognito)")]             // Chrome en-US
+    [InlineData("Search results - Google Chrome (INCOGNITO)")]          // en-US case-insensitive
     [InlineData("Pesquisa - Microsoft Edge InPrivate")]                 // Edge
     [InlineData("Algo - Mozilla Firefox (Navegação privativa)")]        // Firefox (case-insensitive)
+    [InlineData("Algo - Mozilla Firefox (Navegação privada)")]          // Firefox pt-PT
+    [InlineData("Some page - Mozilla Firefox (Private Browsing)")]      // Firefox en-US
+    [InlineData("Some page - Mozilla Firefox (private browsing)")]      // en-US case-insensitive
     [InlineData("Algo - Edge INPRIVATE")]                               // case-insensitive
     public void Navegacao_anonima_rebaixa_para_APP_ONLY_mesmo_em_FULL(string title)
     {
@@ -134,5 +140,45 @@ public class TitleMaskerTests
         var config = Config(TitlePolicies.MaskedPatterns, "[invalida", "(?i)senha");
         var data = new TitleMasker().Apply(Sample("chrome.exe", "minha senha"), config);
         Assert.Equal("minha ***", data.WindowTitle);
+    }
+
+    // ------------------------------------------------------- normalização do exe_path (Seção 6.3)
+
+    [Fact]
+    public void Exe_path_em_pasta_de_usuario_vira_USERPROFILE_no_Apply()
+    {
+        var sample = new ForegroundSample("app.exe",
+            @"C:\Users\joao.pessoa\AppData\Local\Programs\App\app.exe", null, "x");
+        var data = new TitleMasker().Apply(sample, Config(TitlePolicies.Full));
+        Assert.Equal(@"%USERPROFILE%\AppData\Local\Programs\App\app.exe", data.ExePath);
+    }
+
+    [Fact]
+    public void Exe_path_prefixo_case_insensitive_preserva_o_resto()
+    {
+        Assert.Equal(@"%USERPROFILE%\Tools\App.EXE",
+            TitleMasker.NormalizeExePath(@"c:\users\Fulana Da Silva\Tools\App.EXE"));
+    }
+
+    [Fact]
+    public void Exe_path_fora_de_Users_fica_intacto()
+    {
+        const string path = @"C:\Program Files\Microsoft Office\root\Office16\EXCEL.EXE";
+        Assert.Equal(path, TitleMasker.NormalizeExePath(path));
+    }
+
+    [Fact]
+    public void Exe_path_sem_componente_apos_o_usuario_fica_intacto()
+    {
+        Assert.Equal(@"C:\Users\fulana", TitleMasker.NormalizeExePath(@"C:\Users\fulana"));
+    }
+
+    [Fact]
+    public void Exe_path_null_continua_null()
+    {
+        Assert.Null(TitleMasker.NormalizeExePath(null));
+        var data = new TitleMasker().Apply(new ForegroundSample("app.exe", null, null, "x"),
+            Config(TitlePolicies.Full));
+        Assert.Null(data.ExePath);
     }
 }
