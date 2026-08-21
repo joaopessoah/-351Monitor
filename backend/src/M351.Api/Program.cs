@@ -22,6 +22,19 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog((context, loggerConfiguration) =>
     loggerConfiguration.ReadFrom.Configuration(context.Configuration));
 
+// Sentry (quem monitora o monitor): captura exceções não tratadas com contexto de request.
+// Ativo SOMENTE quando Sentry:Dsn está preenchida (env Sentry__Dsn, plumbada no
+// docker-compose.staging.yml a partir de SENTRY_DSN do infra/.env); vazia = desativado.
+var sentryDsn = builder.Configuration["Sentry:Dsn"];
+if (!string.IsNullOrWhiteSpace(sentryDsn))
+{
+    builder.WebHost.UseSentry(options =>
+    {
+        options.Dsn = sentryDsn;
+        options.Environment = builder.Environment.EnvironmentName;
+    });
+}
+
 builder.Services.AddM351Infrastructure(builder.Configuration);
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.Configure<PortalOptions>(builder.Configuration.GetSection(PortalOptions.SectionName));
@@ -241,6 +254,54 @@ app.MapGet("/healthz", async (M351DbContext db, CancellationToken ct) =>
     await db.Database.CanConnectAsync(ct)
         ? Results.Ok(new { status = "ok" })
         : Results.Problem(title: "Banco de dados indisponível.", statusCode: StatusCodes.Status503ServiceUnavailable));
+
+// /readyz (prontidão operacional, além do /healthz): exige conexão ao Postgres E que a
+// última execução com SUCESSO registrada em maintenance_runs (qualquer job) tenha menos
+// de 26 horas. Os jobs de manutenção são diários (02:00 a 03:00 BRT); 26 h dá folga de
+// fuso e de atraso sem mascarar um worker parado há mais de um ciclo. A consulta usa o
+// mesmo NpgsqlDataSource singleton da ingestão (mesma infraestrutura de acesso do banco
+// que o healthz valida via EF); a tabela maintenance_runs é gravada pelo
+// MaintenanceRunRecorder (M351.Infrastructure/Maintenance).
+app.MapGet("/readyz", async (NpgsqlDataSource dataSource, TimeProvider clock, CancellationToken ct) =>
+{
+    DateTimeOffset? lastSuccess;
+    try
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var command = new NpgsqlCommand(
+            "SELECT max(finished_at) FROM maintenance_runs WHERE status = 'ok'", connection);
+        var scalar = await command.ExecuteScalarAsync(ct);
+        lastSuccess = scalar switch
+        {
+            DateTimeOffset dto => dto,
+            DateTime dt => new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc)),
+            _ => null,
+        };
+    }
+    catch (Exception)
+    {
+        return Results.Problem(
+            title: "Banco de dados indisponível.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    if (lastSuccess is null)
+    {
+        return Results.Problem(
+            title: "Nenhuma execução de manutenção com sucesso registrada em maintenance_runs (worker ainda não rodou os jobs noturnos).",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    var age = clock.GetUtcNow() - lastSuccess.Value;
+    if (age > TimeSpan.FromHours(26))
+    {
+        return Results.Problem(
+            title: $"Última manutenção com sucesso há {age.TotalHours:F1} horas (limite: 26 horas). Verifique o worker.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    return Results.Ok(new { status = "ready" });
+});
 
 // Fallback do SPA (rotas client-side como /visao-geral): serve wwwroot/index.html,
 // mas NUNCA para /api/* — rota de API desconhecida segue respondendo 404.

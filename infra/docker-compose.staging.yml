@@ -63,7 +63,7 @@ services:
       # Serilog → Seq (sink configurado por env; índice 0 = Console no appsettings)
       Serilog__WriteTo__1__Name: Seq
       Serilog__WriteTo__1__Args__serverUrl: http://seq:5341
-      # Sem efeito até o SDK do Sentry ser adicionado ao backend (fase futura)
+      # Sentry ativo quando o DSN está preenchido (vazio = desativado; ver Program.cs)
       Sentry__Dsn: ${SENTRY_DSN:-}
       # F3.5 — CSVs exportados: o worker gera, a API serve o download (MESMO volume)
       Exports__Directory: /var/lib/m351/exports
@@ -89,8 +89,11 @@ services:
       # Serilog → Seq (sink configurado por env; índice 0 = Console no appsettings)
       Serilog__WriteTo__1__Name: Seq
       Serilog__WriteTo__1__Args__serverUrl: http://seq:5341
-      # Sem efeito até o SDK do Sentry ser adicionado ao backend (fase futura)
+      # Sentry ativo quando o DSN está preenchido (vazio = desativado; ver Program.cs)
       Sentry__Dsn: ${SENTRY_DSN:-}
+      # Dead-man switch: check do healthchecks.io pingado a cada 5 min pelo worker
+      # (vazio = job nem é registrado; ver DeadManSwitchJob no M351.Worker)
+      DeadMan__WorkerUrl: ${HEALTHCHECKS_WORKER_URL:-}
       # F3.5 — CSVs exportados: o worker gera, a API serve o download (MESMO volume)
       Exports__Directory: /var/lib/m351/exports
     volumes:

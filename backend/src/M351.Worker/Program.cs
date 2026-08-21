@@ -9,8 +9,29 @@ using Serilog;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddSerilog(loggerConfiguration =>
-    loggerConfiguration.ReadFrom.Configuration(builder.Configuration));
+// Sentry via logging (quem monitora o monitor): ativo SOMENTE quando Sentry:Dsn está
+// preenchida (env Sentry__Dsn, plumbada no docker-compose.staging.yml). writeToProviders:
+// o AddSerilog troca a ILoggerFactory pela do Serilog, que por padrão IGNORA os providers
+// MEL registrados; com writeToProviders=true o Serilog repassa os eventos ao
+// SentryLoggerProvider (erros dos jobs chegam ao Sentry, e o Init do SDK captura também
+// exceções não tratadas do processo).
+var sentryDsn = builder.Configuration["Sentry:Dsn"];
+var sentryEnabled = !string.IsNullOrWhiteSpace(sentryDsn);
+
+builder.Services.AddSerilog(
+    loggerConfiguration => loggerConfiguration.ReadFrom.Configuration(builder.Configuration),
+    writeToProviders: sentryEnabled);
+
+if (sentryEnabled)
+{
+    builder.Logging.AddSentry(options =>
+    {
+        options.Dsn = sentryDsn;
+        options.Environment = builder.Environment.EnvironmentName;
+        options.MinimumBreadcrumbLevel = LogLevel.Information;
+        options.MinimumEventLevel = LogLevel.Error;
+    });
+}
 
 // NpgsqlDataSource singleton (mesmo padrão da API); a infra injeta ConnectionStrings__Default
 var connectionString = builder.Configuration.GetConnectionString("Default")
@@ -99,6 +120,20 @@ builder.Services.AddQuartz(quartz =>
         .ForJob(housekeepingKey)
         .WithIdentity("housekeeping-0300-brt")
         .WithCronSchedule("0 0 3 * * ?", cron => cron.InTimeZone(saoPaulo)));
+
+    // Dead-man switch (quem monitora o monitor): GET a cada 5 min na URL de
+    // DeadMan:WorkerUrl (env DeadMan__WorkerUrl, um check do healthchecks.io).
+    // Sem URL configurada o job NEM É REGISTRADO, dev local fica limpo.
+    if (!string.IsNullOrWhiteSpace(builder.Configuration["DeadMan:WorkerUrl"]))
+    {
+        var deadManKey = new JobKey("dead-man-switch");
+        quartz.AddJob<DeadManSwitchJob>(options => options.WithIdentity(deadManKey));
+        quartz.AddTrigger(trigger => trigger
+            .ForJob(deadManKey)
+            .WithIdentity("dead-man-switch-5min")
+            .StartNow()
+            .WithSimpleSchedule(schedule => schedule.WithIntervalInMinutes(5).RepeatForever()));
+    }
 });
 builder.Services.AddQuartzHostedService(options => options.WaitForJobsToComplete = true);
 

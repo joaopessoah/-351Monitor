@@ -9,6 +9,9 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
     <!-- Quartz.NET: agendamento dos jobs da Seção 7.6 (Intervalization 60 s etc.) -->
     <PackageReference Include="Quartz.Extensions.Hosting" Version="3.13.1" />
+    <!-- Sentry via logging (quem monitora o monitor): erros dos jobs e exceções não
+         tratadas do worker; ativado SOMENTE quando Sentry:Dsn (env Sentry__Dsn) existe -->
+    <PackageReference Include="Sentry.Extensions.Logging" Version="6.9.0" />
     <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
     <PackageReference Include="Serilog.Settings.Configuration" Version="8.0.4" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />

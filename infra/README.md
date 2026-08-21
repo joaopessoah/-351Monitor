@@ -53,8 +53,27 @@ Sem os secrets `STAGING_SSH_*`, o job `deploy-staging` do CI faz **skip com avis
 ## Observabilidade
 
 - **Seq** (logs Serilog): exposto só em loopback da VPS — `ssh -L 8341:127.0.0.1:8341 deploy@<vps>` e abra `http://localhost:8341`.
-- **Sentry**: configure `SENTRY_DSN` no `.env`.
-- **Healthcheck**: `https://<STAGING_DOMAIN>/healthz` (aponte o monitor de uptime externo aqui).
+- **Sentry**: configure `SENTRY_DSN` no `.env` (API e worker reportam exceções não tratadas e erros dos jobs; vazio = desativado).
+- **Healthcheck**: `https://<STAGING_DOMAIN>/healthz` (banco conectável) e `https://<STAGING_DOMAIN>/readyz` (banco + última manutenção com sucesso há menos de 26 h).
+
+## Monitoramento do próprio SaaS
+
+Quem monitora o monitor: sem estes passos, uma queda do staging (ou do worker, ou do backup) passa despercebida.
+
+1. **Monitor de uptime gratuito** (UptimeRobot ou Better Stack): crie 2 monitores HTTP
+   apontando para `https://<STAGING_DOMAIN>/healthz` e `https://<STAGING_DOMAIN>/readyz`,
+   intervalo de 5 min, alerta por e-mail. O `/readyz` só responde 200 quando o banco
+   conecta E a última execução com sucesso em `maintenance_runs` tem menos de 26 horas,
+   ou seja, ele detecta worker parado mesmo com a API de pé.
+2. **healthchecks.io** (plano gratuito): crie 2 checks:
+   - **backup** (período: 1 dia, grace: 3 h): cole a URL de ping em
+     `HEALTHCHECKS_BACKUP_URL` no `infra/.env`. O `backup.sh` pinga só após dump e
+     cópia off-site validada; ping ausente = backup quebrado.
+   - **worker** (período: 5 min, grace: 10 min): cole a URL em
+     `HEALTHCHECKS_WORKER_URL` no `infra/.env`. O worker pinga a cada 5 min
+     (DeadManSwitchJob); ping ausente = worker morto ou travado.
+3. **Aplicar**: depois de preencher o `.env`, `docker compose ... up -d` para o worker
+   reler a env (o backup lê o `.env` a cada execução do cron).
 
 ## Dev local
 
