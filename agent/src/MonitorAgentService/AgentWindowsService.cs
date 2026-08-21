@@ -68,9 +68,10 @@ public sealed class AgentWindowsService : ServiceBase
         _cts = new CancellationTokenSource();
         _sessions = new SessionManager(_runtime, _log);
 
-        // F4.1: aplica config do MSI (SERVERURL/PROXYURL) e, em golden image (NOENROLL=1),
-        // faz o enroll no primeiro boot real com a key pendente gravada pelo instalador.
-        ApplyInstallConfigAndEnroll(dataDir);
+        // F4.1: aplica config do MSI (SERVERURL) de forma síncrona — só I/O local, sem rede,
+        // para o BatchSender já nascer com State.ServerUrl. O enroll de golden image (rede)
+        // é disparado em background ao FINAL do OnStart (ver FirstBootEnrollWithRetryAsync).
+        ApplyInstallConfig(dataDir);
 
         // Task.Run: o loop de envio do BatchSender nunca pode bloquear em IPC — um push
         // sincrono de config ao helper (pipe) congelou a cadencia de 30 s no aceite F1
@@ -94,6 +95,12 @@ public sealed class AgentWindowsService : ServiceBase
         _ = _runtime.TimeMonitorLoopAsync(ct);
         _ = MachineHeartbeatLoopAsync(ct);
         _ = StartUpdateLoop(dataDir, ct);
+
+        // F4.1 (golden image): o enroll de primeiro boot NUNCA roda dentro do OnStart — a versão
+        // síncrona anterior bloqueava em EnrollAsync com HttpClient de timeout 30 s e arriscava o
+        // erro 1053 do SCM no primeiro boot com DNS/proxy lento. Best-effort por contrato: falha
+        // aqui não impede o serviço de subir.
+        _ = Task.Run(() => FirstBootEnrollWithRetryAsync(dataDir, ct), ct);
 
         _log.Info("Serviço iniciado.");
     }
@@ -203,12 +210,12 @@ public sealed class AgentWindowsService : ServiceBase
     }
 
     /// <summary>
-    /// F4.1 — entrega do instalador. Persiste SERVERURL/PROXYURL do install.json onde o agente os
-    /// le (State.ServerUrl) e, se houver enrollment key pendente (golden image / NOENROLL=1) e o
-    /// device ainda nao estiver registrado, faz o enroll no primeiro boot real. Best-effort: falha
-    /// de rede aqui nao impede o servico de subir — o re-enroll (N15) e o boot seguinte reentram.
+    /// F4.1 — entrega do instalador (parte síncrona, só I/O local). Persiste SERVERURL do
+    /// install.json onde o agente o lê (State.ServerUrl). O PROXYURL é consumido pelo
+    /// AgentRuntime no ponto único do HttpClient; o enroll de golden image (rede) fica em
+    /// FirstBootEnrollWithRetryAsync, fora do caminho crítico do OnStart.
     /// </summary>
-    private void ApplyInstallConfigAndEnroll(string dataDir)
+    private void ApplyInstallConfig(string dataDir)
     {
         if (_runtime is null) return;
         var cfg = InstallConfig.TryLoad(dataDir, _log);
@@ -219,9 +226,29 @@ public sealed class AgentWindowsService : ServiceBase
             _runtime.State.ServerUrl = cfg.ServerUrl;
             _log.Info($"SERVERURL do instalador aplicado: {cfg.ServerUrl}.");
         }
+    }
 
-        var pendingKey = cfg.PendingEnrollKey;
-        if (string.IsNullOrWhiteSpace(pendingKey) || _runtime.State.IsEnrolled) return;
+    /// <summary>
+    /// F4.1 — enroll de golden image (NOENROLL=1) no primeiro boot real, em background com retry
+    /// exponencial curto (imediato, depois esperas de 5 s / 15 s / 45 s) e desistência logada.
+    /// Best-effort por contrato: falha aqui não impede o serviço de subir. Depois de desistir, a
+    /// key pendente continua no install.json e o próximo boot reentra; para device já enrolado
+    /// com token revogado (401), o re-enroll horário N15 do BatchSender cobre.
+    ///
+    /// Concorrência: é seguro o enroll terminar com o serviço já coletando. Até EnrollAsync
+    /// persistir device_token/device_id, State.IsEnrolled é false e o BatchSender apenas acumula
+    /// eventos na fila (TickAsync não envia); MaybeReenrollAsync (N15) não dispara em paralelo
+    /// porque State.EnrollmentKey só é persistida pelo próprio EnrollAsync no sucesso. As escritas
+    /// de estado são serializadas pelo lock da fila SQLite (SqliteEventQueue.KvSet). Após o
+    /// sucesso, o sender passa a enviar no tick seguinte; um 401 posterior segue coberto pelo N15
+    /// (o BatchSender trata 401 mantendo a fila e re-enrolando).
+    /// </summary>
+    private async Task FirstBootEnrollWithRetryAsync(string dataDir, CancellationToken ct)
+    {
+        if (_runtime is null) return;
+        var cfg = InstallConfig.TryLoad(dataDir, _log);
+        var pendingKey = cfg?.PendingEnrollKey;
+        if (cfg is null || string.IsNullOrWhiteSpace(pendingKey) || _runtime.State.IsEnrolled) return;
 
         var serverUrl = cfg.ServerUrl ?? _runtime.State.ServerUrl;
         if (string.IsNullOrWhiteSpace(serverUrl))
@@ -230,25 +257,38 @@ public sealed class AgentWindowsService : ServiceBase
             return;
         }
 
-        try
+        TimeSpan[] delays = [TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(45)];
+        for (var attempt = 0; ; attempt++)
         {
-            _log.Info("Golden image: enroll no primeiro boot real…");
-            var ok = _runtime.Enrollment.EnrollAsync(serverUrl, pendingKey!, _cts?.Token ?? CancellationToken.None)
-                .GetAwaiter().GetResult();
-            if (ok)
+            try
             {
-                // Consome a key pendente: o re-enroll futuro (N15) usa a enrollment key cifrada na fila.
-                (cfg with { PendingEnrollKey = null }).Save(dataDir, _log);
-                _log.Info("Enroll de primeiro boot concluido; key pendente removida do install.json.");
+                _log.Info($"Golden image: enroll no primeiro boot real (tentativa {attempt + 1} de {delays.Length + 1})…");
+                if (await _runtime.Enrollment.EnrollAsync(serverUrl, pendingKey!, ct))
+                {
+                    // Consome a key pendente: o re-enroll futuro (N15) usa a enrollment key cifrada na fila.
+                    (cfg with { PendingEnrollKey = null }).Save(dataDir, _log);
+                    _log.Info("Enroll de primeiro boot concluído; key pendente removida do install.json.");
+                    return;
+                }
             }
-            else
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                _log.Warn("Enroll de primeiro boot falhou — sera retentado no proximo boot/re-enroll.");
+                return; // serviço parando: o próximo boot reentra
             }
-        }
-        catch (Exception ex)
-        {
-            _log.Error("Falha no enroll de primeiro boot.", ex);
+            catch (Exception ex)
+            {
+                _log.Error("Falha no enroll de primeiro boot.", ex);
+            }
+
+            if (attempt >= delays.Length)
+            {
+                _log.Warn($"Enroll de primeiro boot desistiu após {delays.Length + 1} tentativas — " +
+                          "key pendente preservada; o próximo boot reentra e o re-enroll N15 cobre device já enrolado.");
+                return;
+            }
+
+            try { await Task.Delay(delays[attempt], ct); }
+            catch (OperationCanceledException) { return; }
         }
     }
 
@@ -347,8 +387,13 @@ public sealed class AgentWindowsService : ServiceBase
         var domain = ServiceNativeMethods.QuerySessionString(sessionId, ServiceNativeMethods.WTSDomainName);
         var user = ServiceNativeMethods.QuerySessionString(sessionId, ServiceNativeMethods.WTSUserName);
         var windowsUser = user is null ? null : $"{domain ?? Environment.MachineName}\\{user}";
-        _runtime.Queue.Enqueue(_runtime.Factory.Create(type, payload, sessionId,
-            _sessions?.GetSessionSid(sessionId), windowsUser));
+
+        // SESSION_START chega ANTES de EnsureHelper criar o host (o SID via token do helper ainda
+        // não existe e GetSessionSid retorna null). Fallback: resolve o SID do próprio windows_user
+        // com LookupAccountName (SessionSidResolver); se também falhar, o evento sai sem windows_sid.
+        var windowsSid = _sessions?.GetSessionSid(sessionId) ?? SessionSidResolver.TryResolve(windowsUser);
+
+        _runtime.Queue.Enqueue(_runtime.Factory.Create(type, payload, sessionId, windowsSid, windowsUser));
         _log.Info($"{type} emitido (sessão {sessionId}).");
     }
 }
