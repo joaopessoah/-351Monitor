@@ -65,15 +65,41 @@ Quem monitora o monitor: sem estes passos, uma queda do staging (ou do worker, o
    intervalo de 5 min, alerta por e-mail. O `/readyz` só responde 200 quando o banco
    conecta E a última execução com sucesso em `maintenance_runs` tem menos de 26 horas,
    ou seja, ele detecta worker parado mesmo com a API de pé.
-2. **healthchecks.io** (plano gratuito): crie 2 checks:
+2. **healthchecks.io** (plano gratuito): crie 3 checks:
    - **backup** (período: 1 dia, grace: 3 h): cole a URL de ping em
      `HEALTHCHECKS_BACKUP_URL` no `infra/.env`. O `backup.sh` pinga só após dump e
      cópia off-site validada; ping ausente = backup quebrado.
    - **worker** (período: 5 min, grace: 10 min): cole a URL em
      `HEALTHCHECKS_WORKER_URL` no `infra/.env`. O worker pinga a cada 5 min
      (DeadManSwitchJob); ping ausente = worker morto ou travado.
+   - **disco** (período: 30 min, grace: 1 h): cole a URL em `HEALTHCHECKS_DISK_URL`
+     no `infra/.env`. O `check-disk.sh` pinga sucesso abaixo de 80% de uso e
+     `URL/fail` acima.
 3. **Aplicar**: depois de preencher o `.env`, `docker compose ... up -d` para o worker
    reler a env (o backup lê o `.env` a cada execução do cron).
+
+## Higiene de disco
+
+- **Rotação de logs de container**: todos os serviços do compose usam o driver
+  `json-file` com `max-size: 10m` e `max-file: 3` (âncora `x-logging` no topo do
+  `docker-compose.staging.yml`); sem isso, logs de container enchem o disco.
+- **Limites de memória**: `mem_limit` de 768m na api e no worker e 1g no seq. O
+  postgres fica **sem** limite de propósito (o banco não pode ser alvo do OOM killer
+  do cgroup; o teto dos demais é o que protege a RAM dele).
+- **check-disk.sh**: agende no cron da VPS; acima de 80% de uso sai com erro e pinga
+  a URL de falha do check (`HEALTHCHECKS_DISK_URL/fail`):
+  ```
+  */30 * * * * /usr/bin/bash /opt/351monitor/infra/scripts/check-disk.sh >> /var/log/m351-disk.log 2>&1
+  ```
+- **Retenção do Seq**: o volume `seq_data` cresce sem limite se nenhuma política de
+  retenção existir. Aplique uma (ex.: apagar eventos após 14 dias) por um dos caminhos:
+  - **UI** (recomendado, uma vez): túnel `ssh -L 8341:127.0.0.1:8341 deploy@<vps>`,
+    abra `http://localhost:8341`, Settings, Retention, "Add retention policy".
+  - **seqcli**: `seqcli retention create --after 14d --delete-all-events -s http://127.0.0.1:8341`
+    (com `-a <api-key>` se o Seq tiver autenticação).
+  - **deploy**: o `deploy-staging.sh` tem um passo opcional, desligado por padrão;
+    exporte `SEQ_RETENTION_DAYS=14` na chamada do deploy para aplicá-lo via seqcli
+    (idempotente, só cria quando nenhuma política existe).
 
 ## Dev local
 

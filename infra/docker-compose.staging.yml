@@ -15,10 +15,20 @@
 
 name: m351-staging
 
+# Higiene de disco: rotação dos logs json-file em TODOS os serviços (sem isto os
+# logs dos containers crescem sem limite e enchem o disco da VPS). Âncora YAML
+# reutilizada em cada serviço via "logging: *default-logging".
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "80:80"
       - "443:443"
@@ -39,6 +49,9 @@ services:
       context: ..                     # raiz do repositório
       dockerfile: infra/docker/api.Dockerfile
     restart: unless-stopped
+    logging: *default-logging
+    # Teto de memória: numa VPS única, um vazamento na api não pode sufocar o postgres
+    mem_limit: 768m
     environment:
       ASPNETCORE_ENVIRONMENT: Staging
       ASPNETCORE_URLS: http://+:8080
@@ -83,6 +96,9 @@ services:
       context: ..                     # raiz do repositório
       dockerfile: infra/docker/worker.Dockerfile
     restart: unless-stopped
+    logging: *default-logging
+    # Teto de memória: numa VPS única, um vazamento no worker não pode sufocar o postgres
+    mem_limit: 768m
     environment:
       DOTNET_ENVIRONMENT: Staging
       ConnectionStrings__Default: Host=postgres;Port=5432;Database=${POSTGRES_DB:-m351_staging};Username=${POSTGRES_USER:-m351};Password=${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD em infra/.env}
@@ -110,6 +126,9 @@ services:
     # colateral de deploy. (Versão exige SEQ_FIRSTRUN_ADMINPASSWORDHASH definido.)
     image: datalust/seq@sha256:868a12e93ec0b8c993767a7dd4cd6c8ebc441511c79e4cfac66c911f62d4db65
     restart: unless-stopped
+    logging: *default-logging
+    # O Seq é guloso de RAM por padrão; 1g basta para o volume de logs do staging
+    mem_limit: 1g
     environment:
       ACCEPT_EULA: "Y"
       # Gere com: echo 'SuaSenha' | docker run --rm -i datalust/seq config hash
@@ -124,6 +143,9 @@ services:
   postgres:
     image: postgres:16
     restart: unless-stopped
+    logging: *default-logging
+    # SEM mem_limit de propósito: o banco é o serviço que não pode ser morto pelo
+    # OOM killer do cgroup; o teto dos demais serviços protege a RAM dele
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-m351_staging}
       POSTGRES_USER: ${POSTGRES_USER:-m351}
