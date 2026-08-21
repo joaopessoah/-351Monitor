@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { PREF_SIDEBAR_COLLAPSED, readPref, writePref } from "@/lib/prefs";
 import { BrandLogo } from "@/components/BrandLogo";
 import { roleLabels, timezoneBadge } from "@/lib/format";
 import type { MeResponse } from "@/lib/types";
@@ -44,9 +45,16 @@ const navItems = [
 
 /** Layout persistente das rotas protegidas: sidebar colapsável + topbar. */
 export function AppShell() {
-  const [collapsed, setCollapsed] = useState(false);
+  // Preferência persistida no navegador (todo acesso ao storage em try/catch).
+  const [collapsed, setCollapsed] = useState(() => readPref(PREF_SIDEBAR_COLLAPSED) === "1");
   const { signOut } = useAuth();
   const navigate = useNavigate();
+
+  function toggleCollapsed(): void {
+    const next = !collapsed;
+    setCollapsed(next);
+    writePref(PREF_SIDEBAR_COLLAPSED, next ? "1" : "0");
+  }
 
   const meQuery = useQuery({
     queryKey: ["me"],
@@ -145,7 +153,7 @@ export function AppShell() {
             variant="ghost"
             size="sm"
             className={cn("w-full justify-start gap-3 text-muted-foreground", collapsed && "justify-center")}
-            onClick={() => setCollapsed((c) => !c)}
+            onClick={toggleCollapsed}
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
           >
             {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}

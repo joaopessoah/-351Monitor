@@ -45,6 +45,8 @@ import type {
   UsageCategoryItem,
   UsageReportResponse,
 } from "@/lib/types";
+import { useUrlState } from "@/lib/useUrlState";
+import type { UrlStateCodec } from "@/lib/useUrlState";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -87,10 +89,44 @@ type CardView = "chart" | "table";
 /** "all" | "1" | "0" | "-1" | "none" (none = Não categorizado). */
 type ClassificationFilter = "all" | "1" | "0" | "-1" | "none";
 
+const CLASSIFICATION_FILTERS: readonly string[] = ["all", "1", "0", "-1", "none"];
+
 interface DateRange {
   from: string;
   to: string;
 }
+
+/** Filtros da tela na URL (deep-link/compartilhável) - from/to ficam à parte. */
+interface AppsFilters {
+  deviceIds: string[];
+  /** Id da categoria ou "all". */
+  category: string;
+  classification: ClassificationFilter;
+  page: number;
+}
+
+const APPS_FILTERS_CODEC: UrlStateCodec<AppsFilters> = {
+  parse: (params) => {
+    const rawDevices = params.get("device_ids");
+    const rawClassification = params.get("classification");
+    const rawPage = Number(params.get("page"));
+    return {
+      deviceIds: rawDevices !== null ? rawDevices.split(",").filter((id) => id.length > 0) : [],
+      category: params.get("category") ?? "all",
+      classification:
+        rawClassification !== null && CLASSIFICATION_FILTERS.includes(rawClassification)
+          ? (rawClassification as ClassificationFilter)
+          : "all",
+      page: Number.isInteger(rawPage) && rawPage > 1 ? rawPage : 1,
+    };
+  },
+  serialize: (value) => ({
+    device_ids: value.deviceIds.length > 0 ? value.deviceIds.join(",") : null,
+    category: value.category !== "all" ? value.category : null,
+    classification: value.classification !== "all" ? value.classification : null,
+    page: value.page > 1 ? String(value.page) : null,
+  }),
+};
 
 interface DonutSlice {
   label: string;
@@ -113,10 +149,10 @@ function formatPercent(seconds: number, totalSeconds: number): string {
 
 export function AppsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [deviceIds, setDeviceIds] = useState<string[]>([]);
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [classificationFilter, setClassificationFilter] = useState<ClassificationFilter>("all");
-  const [page, setPage] = useState(1);
+  // Devices, categoria, classificação e página vivem na URL (replace, sem
+  // histórico) - o link da tela reproduz exatamente o que está no filtro.
+  const [filters, setFilters] = useUrlState(APPS_FILTERS_CODEC);
+  const { deviceIds, category: categoryFilter, classification: classificationFilter, page } = filters;
   const [titlesApp, setTitlesApp] = useState<{ id: string; name: string } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const tableSectionRef = useRef<HTMLDivElement | null>(null);
@@ -161,9 +197,19 @@ export function AppsPage() {
     );
   }
 
-  // Trocar período/devices volta a tabela para a primeira página.
+  // Trocar o período volta a tabela para a primeira página. O guard com o
+  // range anterior evita clobber do ?page= de um deep-link no mount e, com o
+  // setter checando igualdade antes de escrever, não há loop de history.
+  const prevRangeKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    setPage(1);
+    if (range === null) return;
+    const key = `${range.from}|${range.to}`;
+    if (prevRangeKeyRef.current !== null && prevRangeKeyRef.current !== key) {
+      setFilters({ ...filters, page: 1 });
+    }
+    prevRangeKeyRef.current = key;
+    // Deps restritas ao range de propósito: o reset acontece SÓ na troca de período.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range?.from, range?.to]);
 
   // Devices do filtro (componente compartilhado das telas de relatório):
@@ -282,21 +328,16 @@ export function AppsPage() {
   const anyFilterActive = deviceIds.length > 0 || tableFilterActive;
 
   function clearFilters(): void {
-    setDeviceIds([]);
-    setCategoryFilter("all");
-    setClassificationFilter("all");
-    setPage(1);
+    setFilters({ deviceIds: [], category: "all", classification: "all", page: 1 });
   }
 
   function toggleDevice(id: string): void {
-    setDeviceIds((prev) => (prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id]));
-    setPage(1);
+    const next = deviceIds.includes(id) ? deviceIds.filter((d) => d !== id) : [...deviceIds, id];
+    setFilters({ ...filters, deviceIds: next, page: 1 });
   }
 
   function goToUncategorized(): void {
-    setCategoryFilter("all");
-    setClassificationFilter("none");
-    setPage(1);
+    setFilters({ ...filters, category: "all", classification: "none", page: 1 });
     tableSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -380,16 +421,13 @@ export function AppsPage() {
             devices={devices}
             selected={deviceIds}
             onToggle={toggleDevice}
-            onClear={() => {
-              setDeviceIds([]);
-              setPage(1);
-            }}
+            onClear={() => setFilters({ ...filters, deviceIds: [], page: 1 })}
           />
 
           <select
             aria-label="Categoria"
             value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
+            onChange={(e) => setFilters({ ...filters, category: e.target.value, page: 1 })}
             className={selectClass}
           >
             <option value="all">Todas as categorias</option>
@@ -406,7 +444,9 @@ export function AppsPage() {
           <select
             aria-label="Classificação"
             value={classificationFilter}
-            onChange={(e) => setClassificationFilter(e.target.value as ClassificationFilter)}
+            onChange={(e) =>
+              setFilters({ ...filters, classification: e.target.value as ClassificationFilter, page: 1 })
+            }
             className={selectClass}
           >
             <option value="all">Todas as classificações</option>
@@ -633,7 +673,7 @@ export function AppsPage() {
                     variant="outline"
                     size="sm"
                     disabled={page <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    onClick={() => setFilters({ ...filters, page: Math.max(1, page - 1) })}
                   >
                     Anterior
                   </Button>
@@ -641,7 +681,7 @@ export function AppsPage() {
                     variant="outline"
                     size="sm"
                     disabled={page >= Math.ceil(appsData.total / PAGE_SIZE)}
-                    onClick={() => setPage((p) => p + 1)}
+                    onClick={() => setFilters({ ...filters, page: page + 1 })}
                   >
                     Próxima
                   </Button>

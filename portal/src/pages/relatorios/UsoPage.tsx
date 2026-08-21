@@ -3,10 +3,11 @@
 // com seletor segmentado de agrupamento (Aplicativo | Categoria | Dispositivo
 // | Pessoa) e os mesmos filtros de período/devices das demais telas.
 // - Ordenação CLIENT-SIDE por qualquer coluna numérica (asc/desc, indicador no
-//   cabeçalho, aria-sort). Estado inicial de agrupamento/ordenação vem da URL
-//   (?group_by=device&sort=seconds_idle&dir=desc): o atalho do hub de
-//   Relatórios responde "quem ficou mais tempo ocioso esta semana?" em 2
-//   cliques (Relatórios -> atalho), dentro do gate "< 3 cliques" do DoD F3.
+//   cabeçalho, aria-sort). Agrupamento/ordenação/página vivem na URL
+//   (?group_by=device&sort=seconds_idle&dir=desc&page=2), lidos E escritos de
+//   volta (replace, sem histórico): o atalho do hub de Relatórios responde
+//   "quem ficou mais tempo ocioso esta semana?" em 2 cliques (Relatórios ->
+//   atalho), dentro do gate "< 3 cliques" do DoD F3.
 //   A página busca page_size=100 (máximo do contrato); com mais itens que isso
 //   a ordenação vale para a página corrente (nota exibida).
 // - device/device_user trazem Ativo/Ocioso/Bloqueado/Ligada + os baldes de
@@ -17,8 +18,7 @@
 //   group_by corrente; acompanhamento em /relatorios/exportacoes.
 // =============================================================================
 
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { api } from "@/lib/api";
@@ -33,6 +33,8 @@ import type {
   UsageDeviceUserItem,
   UsageReportResponse,
 } from "@/lib/types";
+import { useUrlState } from "@/lib/useUrlState";
+import type { UrlStateCodec } from "@/lib/useUrlState";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -102,9 +104,9 @@ function groupByFromUrl(params: URLSearchParams): GroupBy {
 }
 
 /**
- * Ordenação inicial da URL (?sort=seconds_idle&dir=desc) validada contra as
- * colunas numéricas do agrupamento - permite deep-links como o atalho "quem
- * ficou mais tempo ocioso esta semana?" do hub de Relatórios.
+ * Ordenação da URL (?sort=seconds_idle&dir=desc) validada contra as colunas
+ * numéricas do agrupamento - permite deep-links como o atalho "quem ficou mais
+ * tempo ocioso esta semana?" do hub de Relatórios.
  */
 function sortFromUrl(params: URLSearchParams): SortState | null {
   const key = params.get("sort");
@@ -113,6 +115,33 @@ function sortFromUrl(params: URLSearchParams): SortState | null {
   }
   return { key, dir: params.get("dir") === "asc" ? "asc" : "desc" };
 }
+
+/** Estado da tela na URL - ciclo completo: a URL é lida E escrita (replace). */
+interface UsoUrlState {
+  groupBy: GroupBy;
+  sort: SortState | null;
+  page: number;
+}
+
+// group_by + sort + dir + page num único codec: são interdependentes (trocar o
+// agrupamento zera ordenação e página numa escrita atômica).
+const USO_CODEC: UrlStateCodec<UsoUrlState> = {
+  parse: (params) => {
+    const rawPage = Number(params.get("page"));
+    return {
+      groupBy: groupByFromUrl(params),
+      sort: sortFromUrl(params),
+      page: Number.isInteger(rawPage) && rawPage > 1 ? rawPage : 1,
+    };
+  },
+  serialize: (value) => ({
+    group_by: value.groupBy !== "app" ? value.groupBy : null,
+    sort: value.sort !== null ? value.sort.key : null,
+    // desc é o default do sortFromUrl: só "asc" precisa ir para a URL.
+    dir: value.sort !== null && value.sort.dir === "asc" ? "asc" : null,
+    page: value.page > 1 ? String(value.page) : null,
+  }),
+};
 
 /** Cabeçalho ordenável: clique alterna desc -> asc -> ordem do servidor. */
 function SortableTh({
@@ -173,12 +202,11 @@ function CategoryDot({
 }
 
 export function UsoPage() {
-  // Estado inicial vem da URL (deep-link); a partir daí a navegação é local.
-  const [searchParams] = useSearchParams();
-  const [groupBy, setGroupBy] = useState<GroupBy>(() => groupByFromUrl(searchParams));
+  // Agrupamento, ordenação e página vivem na URL (deep-link do hub de
+  // Relatórios) - lidos no mount E escritos de volta a cada interação.
+  const [urlState, setUrlState] = useUrlState(USO_CODEC);
+  const { groupBy, sort, page } = urlState;
   const [deviceIds, setDeviceIds] = useState<string[]>([]);
-  const [sort, setSort] = useState<SortState | null>(() => sortFromUrl(searchParams));
-  const [page, setPage] = useState(1);
 
   const meQuery = useQuery({
     queryKey: ["me"],
@@ -192,10 +220,21 @@ export function UsoPage() {
   const deviceIdsKey = useMemo(() => [...deviceIds].sort().join(","), [deviceIds]);
   const deviceParam = deviceIdsKey.length > 0 ? `&device_ids=${deviceIdsKey}` : "";
 
-  // Trocar período/devices/agrupamento volta para a primeira página.
+  // Trocar período/devices volta para a primeira página (agrupamento zera a
+  // página na própria escrita atômica do toggle). O guard com a chave anterior
+  // preserva o ?page= de deep-links no mount; o setter checa igualdade antes
+  // de escrever, então não há loop de history.
+  const prevFilterKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    setPage(1);
-  }, [range?.from, range?.to, deviceIdsKey, groupBy]);
+    if (range === null) return;
+    const key = `${range.from}|${range.to}|${deviceIdsKey}`;
+    if (prevFilterKeyRef.current !== null && prevFilterKeyRef.current !== key) {
+      setUrlState({ ...urlState, page: 1 });
+    }
+    prevFilterKeyRef.current = key;
+    // Deps restritas aos filtros de propósito: reset SÓ quando eles mudam.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range?.from, range?.to, deviceIdsKey]);
 
   const usageQuery = useQuery({
     queryKey: [
@@ -237,11 +276,13 @@ export function UsoPage() {
   }, [baseItems, sort]);
 
   function toggleSort(key: string): void {
-    setSort((prev) => {
-      if (prev === null || prev.key !== key) return { key, dir: "desc" };
-      if (prev.dir === "desc") return { key, dir: "asc" };
-      return null;
-    });
+    const next: SortState | null =
+      sort === null || sort.key !== key
+        ? { key, dir: "desc" }
+        : sort.dir === "desc"
+          ? { key, dir: "asc" }
+          : null;
+    setUrlState({ ...urlState, sort: next });
   }
 
   const numericCols = NUMERIC_COLUMNS[groupBy];
@@ -315,10 +356,7 @@ export function UsoPage() {
                 key={opt.value}
                 type="button"
                 aria-pressed={groupBy === opt.value}
-                onClick={() => {
-                  setGroupBy(opt.value);
-                  setSort(null);
-                }}
+                onClick={() => setUrlState({ groupBy: opt.value, sort: null, page: 1 })}
                 className={cn(segmentedButton, groupBy === opt.value ? segmentedOn : segmentedOff)}
               >
                 {opt.label}
@@ -513,7 +551,7 @@ export function UsoPage() {
                       variant="outline"
                       size="sm"
                       disabled={page <= 1}
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      onClick={() => setUrlState({ ...urlState, page: Math.max(1, page - 1) })}
                     >
                       Anterior
                     </Button>
@@ -521,7 +559,7 @@ export function UsoPage() {
                       variant="outline"
                       size="sm"
                       disabled={page >= Math.ceil(data.total / PAGE_SIZE)}
-                      onClick={() => setPage((p) => p + 1)}
+                      onClick={() => setUrlState({ ...urlState, page: page + 1 })}
                     >
                       Próxima
                     </Button>

@@ -26,10 +26,14 @@ import {
   formatDuration,
   formatHm,
   gmtLabel,
+  isIsoDate,
   localDateOf,
   parseHmToMinutes,
   stateLabels,
 } from "@/lib/format";
+import { PREF_TIMELINE_VIEW, readPref, writePref } from "@/lib/prefs";
+import { useUrlState } from "@/lib/useUrlState";
+import type { UrlStateCodec } from "@/lib/useUrlState";
 import { genericErrorMessage } from "@/lib/messages";
 import type {
   DeviceItem,
@@ -96,6 +100,23 @@ const segmentedOff = "text-muted-foreground hover:bg-accent hover:text-accent-fo
 // desconhecido): chuta 6 lanes - NÃO usa TIMELINE_CANVAS_HEIGHT (modo device).
 const TEAM_SKELETON_LANES = 6;
 
+type TimelineView = "canvas" | "table";
+
+// ?date= validado no modelo do from/to da AppsPage; ausente/inválido = hoje.
+const DATE_CODEC: UrlStateCodec<string | null> = {
+  parse: (params) => {
+    const raw = params.get("date");
+    return raw !== null && isIsoDate(raw) ? raw : null;
+  },
+  serialize: (value) => ({ date: value }),
+};
+
+// ?window= work|full; "work" é o default e some da URL.
+const WINDOW_CODEC: UrlStateCodec<"work" | "full"> = {
+  parse: (params) => (params.get("window") === "full" ? "full" : "work"),
+  serialize: (value) => ({ window: value === "full" ? "full" : null }),
+};
+
 export function LinhaDoTempoPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const deviceId = searchParams.get("device");
@@ -103,11 +124,37 @@ export function LinhaDoTempoPage() {
   // com ?device= é o modo device (F2) intacto.
   const mode: "team" | "device" = deviceId !== null ? "device" : "team";
 
-  const [dateOverride, setDateOverride] = useState<string | null>(null);
+  // Data, janela e visão vivem na URL (?date=, ?window=, ?view= - replace,
+  // sem histórico): o link da tela reproduz exatamente o que está visível.
+  const [dateParam, setDateOverride] = useUrlState(DATE_CODEC);
   // Janela "Horário de trabalho" = business_hours da org com 1h de folga de
   // cada lado (Seção 8.5); fallback 05:00-21:00 quando a org não definiu.
-  const [windowMode, setWindowMode] = useState<"work" | "full">("work");
-  const [view, setView] = useState<"canvas" | "table">("canvas");
+  const [windowMode, setWindowMode] = useUrlState(WINDOW_CODEC);
+
+  // Visão default sem ?view= na URL: preferência salva do navegador; sem
+  // preferência, canvas. Congelada no mount (o codec precisa ser estável).
+  const [defaultView] = useState<TimelineView>(() => {
+    const stored = readPref(PREF_TIMELINE_VIEW);
+    return stored === "table" || stored === "canvas" ? stored : "canvas";
+  });
+  const viewCodec = useMemo<UrlStateCodec<TimelineView>>(
+    () => ({
+      parse: (params) => {
+        const raw = params.get("view");
+        return raw === "table" || raw === "canvas" ? raw : defaultView;
+      },
+      serialize: (value) => ({ view: value === defaultView ? null : value }),
+    }),
+    [defaultView],
+  );
+  const [view, setView] = useUrlState(viewCodec);
+
+  /** Alterna canvas↔tabela, gravando a escolha como default do navegador. */
+  function toggleView(): void {
+    const next: TimelineView = view === "canvas" ? "table" : "canvas";
+    writePref(PREF_TIMELINE_VIEW, next);
+    setView(next);
+  }
 
   // Último device visitado: o segmento "Dispositivo" volta para ele.
   const lastDeviceRef = useRef<string | null>(null);
@@ -130,7 +177,10 @@ export function LinhaDoTempoPage() {
   });
 
   // Data default = dia corrente no FUSO DA ORGANIZAÇÃO (não no fuso do navegador).
+  // ?date= no futuro (URL digitada) cai para hoje - a API não tem nada a dizer.
   const todayStr = timezone !== null ? localDateOf(new Date(), timezone) : null;
+  const dateOverride =
+    dateParam !== null && todayStr !== null && dateParam > todayStr ? null : dateParam;
   const dateStr = dateOverride ?? todayStr;
   const isToday = dateStr !== null && dateStr === todayStr;
 
@@ -191,7 +241,9 @@ export function LinhaDoTempoPage() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [dateStr, todayStr]);
+    // setDateOverride nas deps: o listener persiste e o setter mescla sobre a
+    // URL corrente - um setter obsoleto descartaria outros parâmetros.
+  }, [dateStr, todayStr, setDateOverride]);
 
   function selectDevice(id: string): void {
     setSearchParams(
@@ -431,12 +483,7 @@ export function LinhaDoTempoPage() {
           </div>
 
           {/* Fallback tabular obrigatório: alterna canvas↔tabela, mesmos intervalos. */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto h-9"
-            onClick={() => setView((v) => (v === "canvas" ? "table" : "canvas"))}
-          >
+          <Button variant="outline" size="sm" className="ml-auto h-9" onClick={toggleView}>
             {view === "canvas" ? (
               <>
                 <Table className="h-4 w-4" aria-hidden />
