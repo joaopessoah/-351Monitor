@@ -25,6 +25,50 @@ refletir o estado pós-purga do dia):
 
 Saída: `/var/backups/m351/m351_<db>_<stamp>.dump`. Retenção local: **14 dias** (`RETENTION_DAYS`).
 
+## Cópia off-site
+
+O dump local cai no **mesmo disco da VPS**: perder a VPS significaria perder banco e
+backups de uma vez. Por isso o `backup.sh`, após o dump com sucesso, copia o arquivo
+para um object storage remoto via **rclone** e valida a cópia (`rclone check`, que
+compara tamanho/hash). Só depois disso, se `HEALTHCHECKS_BACKUP_URL` estiver definida,
+pinga o check do healthchecks.io — falta de ping dispara o alerta de backup parado.
+
+- **Configuração** (`infra/.env` na VPS, ver `infra/.env.example`):
+  `OFFSITE_RCLONE_REMOTE` (ex.: `m351offsite:m351-backups`), `RCLONE_CONFIG`
+  (caminho do `rclone.conf` com as credenciais, fora do repo) e, opcionalmente,
+  `OFFSITE_RETENTION_DAYS` (default 30) e `HEALTHCHECKS_BACKUP_URL`.
+- **Residência BR:** o bucket DEVE ficar em região brasileira (S3 `sa-east-1`,
+  Azure Brazil South ou Magalu Cloud), **nunca fora do Brasil**, compromisso
+  público do produto.
+- **Retenção remota:** 30 dias, dentro do teto de **35 dias** declarado no DPA
+  (a limpeza é feita pelo próprio script via `rclone delete --min-age`; se o
+  provedor tiver *lifecycle rules*, configurar 30 dias lá também é válido).
+- **Falha no upload/validação:** o script sai com exit não-zero **sem** pingar o
+  healthchecks — o cron registra e o alerta dispara.
+- **Sem as variáveis:** o script loga o aviso "backup off-site NÃO configurado",
+  mantém o dump local e pinga a URL (se definida), pois o backup local funcionou.
+- **DPA / subprocessadores:** o provedor de object storage do off-site entra na
+  lista de subprocessadores do DPA (atualizar o documento ao contratar o bucket).
+
+## Teste de restore automatizado
+
+O workflow `.github/workflows/restore-test.yml` roda **mensalmente** (dia 1, 06:00 UTC,
+03:00 BRT — logo após o backup das 02:15 BRT) e também por `workflow_dispatch`. Via SSH
+(mesmos secrets `STAGING_SSH_*` do deploy; skip com aviso se ausentes), ele:
+
+1. Escolhe o dump mais recente de `/var/backups/m351`.
+2. Cria o banco temporário `m351_restore_test` no container `postgres` do compose e
+   restaura o dump nele (`pg_restore --no-owner`).
+3. Roda as queries de sanidade:
+   - `SELECT count(*) FROM organizations;` (tenants, exige >= 1)
+   - `SELECT count(*) FROM devices;`
+   - partições do mês corrente: `raw_events_<yyyyMM>*` (diárias, exige >= 1) e
+     `activity_intervals_<yyyyMM>` (mensal, aviso se ausente)
+   - `SELECT count(*) FROM maintenance_runs;`
+4. Dropa o banco temporário.
+5. Grava toda a saída como **artifact de evidência** (`restore-test-<run_id>`,
+   retenção de 30 dias) — é o registro exigido pelo item 5 do procedimento manual abaixo.
+
 ## Restore — teste em staging (item "pronto quando" da F4)
 
 Procedimento validável (executar na VPS de staging — exige acesso SSH, ver memória `staging-acesso`):
