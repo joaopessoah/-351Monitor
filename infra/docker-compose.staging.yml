@@ -80,10 +80,15 @@ services:
       Sentry__Dsn: ${SENTRY_DSN:-}
       # F3.5 — CSVs exportados: o worker gera, a API serve o download (MESMO volume)
       Exports__Directory: /var/lib/m351/exports
+      # F4.2 — MSIs do canal de auto-update do agente: o CLI publish-agent-release
+      # copia para cá e o GET /api/v1/agent/releases/{file} serve por streaming
+      # (seção "Releases", chave "Directory" do appsettings — ReleaseOptions.cs)
+      Releases__Directory: /var/lib/m351/releases
     expose:
       - "8080"
     volumes:
       - exports_data:/var/lib/m351/exports
+      - releases_data:/var/lib/m351/releases
     depends_on:
       postgres:
         condition: service_healthy
@@ -169,3 +174,6 @@ volumes:
   # CSVs de export (F3.5): compartilhado entre api (download) e worker (geração);
   # arquivos expiram em 7 dias — o sweep do ExportService remove do disco
   exports_data:
+  # MSIs do auto-update do agente (F4.2): persistem entre deploys, só a api monta
+  # (publicação via CLI publish-agent-release — ver docs/runbooks/publicar-release-agente.md)
+  releases_data:
