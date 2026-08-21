@@ -32,6 +32,16 @@ public enum InviteAcceptOutcome
 
 public record InviteAcceptResult(InviteAcceptOutcome Outcome, TokenPair? Tokens = null, string? MfaToken = null);
 
+public enum PasswordResetOutcome
+{
+    Success,
+    InvalidToken,
+    WeakPassword,
+}
+
+/// <summary>Pedido de recuperação aceito: dados para o controller compor o e-mail do link.</summary>
+public record PasswordResetRequestEntry(User User, string OrganizationName, string RawToken);
+
 /// <summary>
 /// Regras de autenticação da Seção 7.5: Argon2id, lockout 10→15 min (N22), MFA TOTP
 /// obrigatória para Owner/Admin, refresh opaco 30 dias com rotação single-use,
@@ -48,6 +58,15 @@ public class AuthFlowService(
     public const int MaxFailedAttempts = 10;
     public static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
     public const int MinPasswordLength = 12;
+
+    /// <summary>Seção 7.4: token de recuperação de senha vale 1 hora.</summary>
+    public static readonly TimeSpan PasswordResetLifetime = TimeSpan.FromHours(1);
+
+    /// <summary>Seção 7.5: "10 recovery codes hasheados".</summary>
+    public const int RecoveryCodeCount = 10;
+
+    /// <summary>Alfabeto sem caracteres ambíguos (sem I, L, O, U, 0, 1) para os recovery codes.</summary>
+    private const string RecoveryCodeAlphabet = "ABCDEFGHJKMNPQRSTVWXYZ23456789";
 
     private DateTimeOffset Now => timeProvider.GetUtcNow();
 
@@ -108,7 +127,11 @@ public class AuthFlowService(
         return new LoginFlowResult(LoginOutcome.Success, Tokens: tokens);
     }
 
-    /// <summary>Valida TOTP (login em duas etapas ou conclusão de setup) e emite tokens plenos.</summary>
+    /// <summary>
+    /// Valida TOTP (login em duas etapas ou conclusão de setup) e emite tokens plenos.
+    /// Com MFA JÁ habilitada, aceita também um recovery code não usado no lugar do TOTP
+    /// (Seção 7.5) — o código é consumido no ato; recovery code nunca conclui o setup.
+    /// </summary>
     public async Task<TokenPair?> VerifyMfaAsync(
         Guid userId, string code, IPAddress? ip, string? userAgent, CancellationToken ct)
     {
@@ -120,7 +143,27 @@ public class AuthFlowService(
 
         if (!mfaService.VerifyCode(user.MfaSecretEnc, code))
         {
-            return null;
+            if (!user.MfaEnabled)
+            {
+                return null;
+            }
+
+            var normalized = NormalizeRecoveryCode(code);
+            if (normalized.Length < 8)
+            {
+                return null;
+            }
+
+            var hash = TokenGenerator.Sha256(normalized);
+            var recovery = await db.MfaRecoveryCodes.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(c => c.UserId == user.Id && c.UsedAt == null && c.CodeHash == hash, ct);
+            if (recovery is null)
+            {
+                return null;
+            }
+
+            recovery.UsedAt = Now;
+            return await IssueTokensAsync(user, ip, userAgent, "password+recovery_code", ct);
         }
 
         if (!user.MfaEnabled)
@@ -130,6 +173,154 @@ public class AuthFlowService(
 
         return await IssueTokensAsync(user, ip, userAgent, "password+totp", ct);
     }
+
+    /// <summary>
+    /// (Re)gera os recovery codes do usuário (Seção 7.5): invalida todos os anteriores e
+    /// retorna os 10 novos EM CLARO — exibidos uma única vez, só o hash é persistido.
+    /// Lista vazia = usuário sem MFA habilitada (o controller converte em 409).
+    /// </summary>
+    public async Task<IReadOnlyList<string>> GenerateRecoveryCodesAsync(
+        Guid userId, IPAddress? ip, CancellationToken ct)
+    {
+        var user = await db.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == userId && u.Status == UserStatus.Active, ct);
+        if (user is null || !user.MfaEnabled)
+        {
+            return [];
+        }
+
+        var previous = await db.MfaRecoveryCodes.IgnoreQueryFilters()
+            .Where(c => c.UserId == userId).ToListAsync(ct);
+        db.MfaRecoveryCodes.RemoveRange(previous);
+
+        var codes = new List<string>(RecoveryCodeCount);
+        for (var i = 0; i < RecoveryCodeCount; i++)
+        {
+            var code = NewRecoveryCode();
+            codes.Add(code);
+            db.MfaRecoveryCodes.Add(new MfaRecoveryCode
+            {
+                Id = Uuid7.NewUuid7(),
+                TenantId = user.TenantId,
+                UserId = userId,
+                CodeHash = TokenGenerator.Sha256(NormalizeRecoveryCode(code)),
+                CreatedAt = Now,
+            });
+        }
+
+        audit.Add(user.TenantId, AuditActions.MfaRecoveryCodes, userId, ip,
+            targetType: "user", targetId: userId,
+            detailJson: $$"""{"count":{{RecoveryCodeCount}}}""");
+
+        await db.SaveChangesAsync(ct);
+        return codes;
+    }
+
+    /// <summary>
+    /// Cria tokens de recuperação de senha para TODAS as contas ativas com esse e-mail
+    /// (e-mail é único por tenant, pode existir em mais de uma organização — um e-mail por
+    /// conta, com o nome da org no corpo). Tokens anteriores não usados são invalidados.
+    /// Convites pendentes (sem senha) ficam de fora: o caminho deles é o link de convite.
+    /// </summary>
+    public async Task<IReadOnlyList<PasswordResetRequestEntry>> CreatePasswordResetTokensAsync(
+        string email, CancellationToken ct)
+    {
+        var users = await db.Users.IgnoreQueryFilters()
+            .Where(u => u.Email == email && u.Status == UserStatus.Active && u.PasswordHash != null)
+            .ToListAsync(ct);
+        if (users.Count == 0)
+        {
+            return [];
+        }
+
+        var tenantIds = users.Select(u => u.TenantId).ToList();
+        var orgNames = await db.Organizations.IgnoreQueryFilters()
+            .Where(o => tenantIds.Contains(o.Id))
+            .ToDictionaryAsync(o => o.Id, o => o.Name, ct);
+
+        var entries = new List<PasswordResetRequestEntry>(users.Count);
+        foreach (var user in users)
+        {
+            var stale = await db.PasswordResetTokens.IgnoreQueryFilters()
+                .Where(t => t.UserId == user.Id && t.UsedAt == null).ToListAsync(ct);
+            db.PasswordResetTokens.RemoveRange(stale);
+
+            var raw = TokenGenerator.NewOpaqueToken();
+            db.PasswordResetTokens.Add(new PasswordResetToken
+            {
+                Id = Uuid7.NewUuid7(),
+                TenantId = user.TenantId,
+                UserId = user.Id,
+                TokenHash = TokenGenerator.Sha256(raw),
+                ExpiresAt = Now.Add(PasswordResetLifetime),
+            });
+
+            entries.Add(new PasswordResetRequestEntry(user, orgNames[user.TenantId], raw));
+        }
+
+        await db.SaveChangesAsync(ct);
+        return entries;
+    }
+
+    /// <summary>
+    /// Redefine a senha via token do e-mail: single-use, 1 h, revoga TODAS as sessões do
+    /// usuário e zera o lockout. Auditado como password_reset sob o tenant do usuário.
+    /// </summary>
+    public async Task<PasswordResetOutcome> ResetPasswordAsync(
+        string token, string newPassword, IPAddress? ip, CancellationToken ct)
+    {
+        var hash = TokenGenerator.Sha256(token);
+        var stored = await db.PasswordResetTokens.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
+
+        if (stored is null || stored.UsedAt is not null || stored.ExpiresAt <= Now)
+        {
+            return PasswordResetOutcome.InvalidToken;
+        }
+
+        var user = await db.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == stored.UserId && u.Status == UserStatus.Active, ct);
+        if (user is null)
+        {
+            return PasswordResetOutcome.InvalidToken;
+        }
+
+        if (newPassword.Length < MinPasswordLength)
+        {
+            return PasswordResetOutcome.WeakPassword;
+        }
+
+        user.PasswordHash = passwordHasher.Hash(newPassword);
+        user.FailedLoginCount = 0;
+        user.LockedUntil = null;
+        stored.UsedAt = Now;
+
+        var sessions = await db.RefreshTokens.IgnoreQueryFilters()
+            .Where(t => t.UserId == user.Id && t.RevokedAt == null).ToListAsync(ct);
+        foreach (var session in sessions)
+        {
+            session.RevokedAt = Now;
+        }
+
+        audit.Add(user.TenantId, AuditActions.PasswordReset, user.Id, ip,
+            targetType: "user", targetId: user.Id);
+
+        await db.SaveChangesAsync(ct);
+        return PasswordResetOutcome.Success;
+    }
+
+    private static string NewRecoveryCode()
+    {
+        var chars = System.Security.Cryptography.RandomNumberGenerator
+            .GetItems<char>(RecoveryCodeAlphabet, 10);
+        return $"{new string(chars[..5])}-{new string(chars[5..])}";
+    }
+
+    private static string NormalizeRecoveryCode(string code) =>
+        code.Replace("-", "", StringComparison.Ordinal)
+            .Replace(" ", "", StringComparison.Ordinal)
+            .Trim()
+            .ToUpperInvariant();
 
     /// <summary>Rotação single-use: o refresh usado é revogado e um novo é emitido. Reuso → null (negado).</summary>
     public async Task<TokenPair?> RefreshAsync(

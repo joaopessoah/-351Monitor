@@ -162,6 +162,52 @@ public class UsersController(
         return Ok(new UserResponse(user.Id, user.Email, user.DisplayName, user.Role.ToDbValue(), user.Status, user.MfaEnabled, user.LastLoginAt));
     }
 
+    /// <summary>
+    /// Recuperação assistida de MFA (Seção 7.5): usuário perdeu o TOTP e os recovery codes.
+    /// Zera segredo, códigos e sessões; o próximo login exige novo setup (mfa_setup_required
+    /// para Owner/Admin). Mexer em Owner exige Owner, como nas demais rotas.
+    /// </summary>
+    [HttpPost("{id:guid}/mfa/reset")]
+    public async Task<IActionResult> ResetMfa(Guid id, CancellationToken ct)
+    {
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
+        if (user is null)
+        {
+            return NotFoundProblem();
+        }
+
+        if (user.Role == UserRole.Owner && CurrentUser.Role(User) != UserRole.Owner)
+        {
+            return ProblemResponse(StatusCodes.Status403Forbidden,
+                "Apenas um Owner pode redefinir a MFA de outro Owner.");
+        }
+
+        if (!user.MfaEnabled && user.MfaSecretEnc is null)
+        {
+            return ProblemResponse(StatusCodes.Status409Conflict,
+                "Este usuário não tem MFA configurada.");
+        }
+
+        user.MfaEnabled = false;
+        user.MfaSecretEnc = null;
+
+        var codes = await db.MfaRecoveryCodes.Where(c => c.UserId == user.Id).ToListAsync(ct);
+        db.MfaRecoveryCodes.RemoveRange(codes);
+
+        var now = DateTimeOffset.UtcNow;
+        var sessions = await db.RefreshTokens.Where(t => t.UserId == user.Id && t.RevokedAt == null).ToListAsync(ct);
+        foreach (var session in sessions)
+        {
+            session.RevokedAt = now;
+        }
+
+        audit.Add(CurrentUser.TenantId(User), AuditActions.MfaReset, CurrentUser.UserId(User),
+            HttpContext.Connection.RemoteIpAddress, targetType: "user", targetId: user.Id);
+
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
     /// <summary>Desativa o usuário (status=disabled) e revoga seus refresh tokens.</summary>
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Deactivate(Guid id, CancellationToken ct)

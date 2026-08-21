@@ -71,14 +71,14 @@ export function LoginPage() {
     return (
       <AuthCard
         title="Verificação em duas etapas"
-        description="Informe o código de 6 dígitos gerado pelo seu aplicativo autenticador."
+        description="Informe o código de 6 dígitos do aplicativo autenticador ou um código de recuperação."
         footer={
           <button type="button" className="underline underline-offset-4" onClick={() => setStep({ kind: "credentials" })}>
             Voltar ao login
           </button>
         }
       >
-        <MfaVerifyForm mfaToken={step.mfaToken} onSuccess={finishSignIn} submitLabel="Entrar" />
+        <MfaVerifyForm mfaToken={step.mfaToken} onSuccess={finishSignIn} submitLabel="Entrar" allowRecoveryCode />
       </AuthCard>
     );
   }

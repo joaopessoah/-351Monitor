@@ -23,6 +23,8 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
     public DbSet<DeviceCommand> DeviceCommands => Set<DeviceCommand>();
     public DbSet<TenantAgentConfig> TenantAgentConfigs => Set<TenantAgentConfig>();
     public DbSet<AuditLogEntry> AuditLog => Set<AuditLogEntry>();
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
+    public DbSet<MfaRecoveryCode> MfaRecoveryCodes => Set<MfaRecoveryCode>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -105,6 +107,38 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
             e.Property(x => x.Ip).HasColumnName("ip").HasColumnType("inet");
             e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId);
             e.HasIndex(x => x.TokenHash);
+
+            e.HasQueryFilter(x => _tenant.TenantId != null && x.TenantId == _tenant.TenantId.Value);
+        });
+
+        modelBuilder.Entity<PasswordResetToken>(e =>
+        {
+            e.ToTable("password_reset_tokens");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
+            e.Property(x => x.TenantId).HasColumnName("tenant_id");
+            e.Property(x => x.UserId).HasColumnName("user_id");
+            e.Property(x => x.TokenHash).HasColumnName("token_hash");
+            e.Property(x => x.ExpiresAt).HasColumnName("expires_at");
+            e.Property(x => x.UsedAt).HasColumnName("used_at");
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId);
+            e.HasIndex(x => x.TokenHash);
+
+            e.HasQueryFilter(x => _tenant.TenantId != null && x.TenantId == _tenant.TenantId.Value);
+        });
+
+        modelBuilder.Entity<MfaRecoveryCode>(e =>
+        {
+            e.ToTable("mfa_recovery_codes");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
+            e.Property(x => x.TenantId).HasColumnName("tenant_id");
+            e.Property(x => x.UserId).HasColumnName("user_id");
+            e.Property(x => x.CodeHash).HasColumnName("code_hash");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UsedAt).HasColumnName("used_at");
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId);
+            e.HasIndex(x => x.UserId);
 
             e.HasQueryFilter(x => _tenant.TenantId != null && x.TenantId == _tenant.TenantId.Value);
         });

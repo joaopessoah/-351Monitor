@@ -44,6 +44,11 @@ export interface MfaVerifyResponse {
   expires_in: number;
 }
 
+/** Resposta de `POST /auth/mfa/recovery-codes` — 10 códigos exibidos UMA única vez. */
+export interface RecoveryCodesResponse {
+  codes: string[];
+}
+
 /** Resposta de `POST /auth/refresh` (autenticado pelo cookie httpOnly). */
 export interface RefreshResponse {
   access_token: string;
