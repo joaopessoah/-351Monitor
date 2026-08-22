@@ -2,11 +2,24 @@ import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Info, KeyRound, MonitorSmartphone } from "lucide-react";
+import type { UseQueryResult } from "@tanstack/react-query";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronRight,
+  Info,
+  KeyRound,
+  MonitorSmartphone,
+} from "lucide-react";
 import { api } from "@/lib/api";
 import { formatDuration, formatRelative, stateLabels } from "@/lib/format";
 import { genericErrorMessage } from "@/lib/messages";
-import type { PresenceItem, PresenceResponse, PresenceState } from "@/lib/types";
+import type {
+  DeviceHealthSummaryResponse,
+  PresenceItem,
+  PresenceResponse,
+  PresenceState,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +56,17 @@ export function VisaoGeralPage() {
   const presenceQuery = useQuery({
     queryKey: ["dashboard", "presence"],
     queryFn: () => api<PresenceResponse>("/dashboard/presence"),
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
+  });
+
+  // Saúde da FROTA INTEIRA (não da página de /dispositivos): mesmo polling de
+  // 60 s da presença, pausado em aba oculta. A key sob ["devices"] faz o PATCH
+  // de dispositivo (arquivar/reativar) invalidar estes contadores também.
+  const healthQuery = useQuery({
+    queryKey: ["devices", "health-summary"],
+    queryFn: () => api<DeviceHealthSummaryResponse>("/devices/health-summary"),
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
     placeholderData: (prev) => prev,
@@ -254,6 +278,9 @@ export function VisaoGeralPage() {
         </button>
       </div>
 
+      {/* Linha 1b - saúde da frota INTEIRA (F4.4 + health-summary). */}
+      <FleetHealthWidget query={healthQuery} />
+
       {/* Linha 2 - tabela "Equipe agora" (Seção 8.4). */}
       <Card>
         <CardHeader className="pb-3">
@@ -313,6 +340,108 @@ export function VisaoGeralPage() {
       {/* Linha 3 - gráficos da semana (F3.2, Seção 8.4). */}
       <WeeklyChartsRow />
     </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Saúde da frota inteira (GET /devices/health-summary)
+// -----------------------------------------------------------------------------
+
+/**
+ * Dimensões de saúde com contagem > 0, no vocabulário neutro dos badges de
+ * /dispositivos. Ex.: ["3 sem comunicação", "1 com ciência pendente"]. Nunca
+ * soma as dimensões: um mesmo device pode acionar várias, e with_alert é a
+ * contagem DISTINTA de dispositivos.
+ */
+function healthAlertParts(summary: DeviceHealthSummaryResponse): string[] {
+  const parts: string[] = [];
+  if (summary.offline > 0) parts.push(`${summary.offline} sem comunicação`);
+  if (summary.clock_skewed > 0) parts.push(`${summary.clock_skewed} com relógio dessincronizado`);
+  if (summary.outdated > 0) parts.push(`${summary.outdated} com versão desatualizada`);
+  if (summary.tampered > 0) parts.push(`${summary.tampered} com adulteração`);
+  if (summary.notice_pending > 0) parts.push(`${summary.notice_pending} com ciência pendente`);
+  return parts;
+}
+
+/**
+ * Card "Dispositivos precisam de atenção" com o with_alert da FROTA INTEIRA,
+ * clicável para /dispositivos?filtro=alerta (que já abre a listagem filtrada
+ * pelo mesmo predicado no servidor). Frota inteira respondendo: uma linha
+ * discreta, jamais um card de erro. Skeleton com a geometria final e erro
+ * inline com retry, no padrão dos vizinhos desta tela.
+ */
+function FleetHealthWidget({ query }: { query: UseQueryResult<DeviceHealthSummaryResponse> }) {
+  const summary = query.data;
+
+  if (summary === undefined) {
+    if (query.isError) {
+      return (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          <span>Não foi possível carregar a saúde da frota.</span>
+          <Button variant="outline" size="sm" onClick={() => void query.refetch()}>
+            Tentar novamente
+          </Button>
+        </div>
+      );
+    }
+    return <Skeleton className="h-[76px] w-full rounded-lg" />;
+  }
+
+  if (summary.with_alert === 0) {
+    return (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-viz-produtivo" aria-hidden />
+        Toda a frota respondendo.
+        <span className="tabular-nums">
+          {summary.active_devices === 1
+            ? "1 dispositivo ativo"
+            : `${summary.active_devices} dispositivos ativos`}
+          .
+        </span>
+      </p>
+    );
+  }
+
+  const parts = healthAlertParts(summary);
+  const severeHint =
+    summary.offline_severe > 0
+      ? `${summary.offline_severe} sem comunicação há mais de 30 minutos em horário de trabalho`
+      : undefined;
+
+  return (
+    <Link
+      to="/dispositivos?filtro=alerta"
+      title={severeHint}
+      className={cn(
+        "flex items-center gap-4 rounded-lg border px-4 py-3 text-card-foreground shadow-sm transition-colors",
+        "border-brand-red/30 bg-brand-red/10 hover:bg-brand-red/15",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+      )}
+    >
+      <AlertTriangle className="h-5 w-5 shrink-0 text-brand-red" aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-baseline gap-2">
+          <span className="text-2xl font-semibold leading-none tabular-nums">
+            {summary.with_alert}
+          </span>
+          <span className="text-sm font-medium">
+            {summary.with_alert === 1
+              ? "dispositivo precisa de atenção"
+              : "dispositivos precisam de atenção"}
+          </span>
+        </span>
+        <span className="mt-1 block truncate text-xs tabular-nums text-muted-foreground">
+          {parts.join(", ")}
+          {severeHint !== undefined && (
+            <span className="text-brand-red"> · {summary.offline_severe} há mais de 30 minutos</span>
+          )}
+        </span>
+      </span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+    </Link>
   );
 }
 

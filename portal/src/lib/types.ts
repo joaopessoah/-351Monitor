@@ -258,6 +258,37 @@ export interface PagedResponse<T> {
   page_size: number;
 }
 
+/**
+ * Resposta de `GET /devices/health-summary` (Viewer+): contadores de saúde da
+ * FROTA INTEIRA do tenant, computados no backend sobre todos os devices não
+ * arquivados. Nada a ver com a página corrente de `GET /devices` — é justamente
+ * o que os contadores derivados no cliente (lib/deviceHealth.ts) não conseguem
+ * responder, porque só veem os 50 devices da página.
+ *
+ * As dimensões são as MESMAS de lib/deviceHealth.ts, que continua derivando a
+ * saúde por linha para os badges da tabela. within_business_hours diz se
+ * server_time cai dentro do horário de trabalho da organização — o mesmo
+ * critério que promove "sem comunicação" a offline_severe.
+ *
+ * O filtro correspondente da listagem é `GET /devices?health=alert`, que aplica
+ * o mesmo predicado de with_alert à frota inteira (com paginação normal).
+ */
+export interface DeviceHealthSummaryResponse {
+  /** Devices não arquivados da organização (base de todos os contadores). */
+  active_devices: number;
+  offline: number;
+  /** Sem comunicação há mais de 30 min E em horário de trabalho. */
+  offline_severe: number;
+  clock_skewed: number;
+  outdated: number;
+  tampered: number;
+  notice_pending: number;
+  /** Devices com pelo menos uma dimensão acionada (nunca soma das dimensões). */
+  with_alert: number;
+  within_business_hours: boolean;
+  server_time: string;
+}
+
 // =============================================================================
 // Contratos da F3.2: dashboard histórico (GET /dashboard/summary,
 // GET /dashboard/top-apps) e business_hours da organização em GET /me.

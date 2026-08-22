@@ -100,6 +100,19 @@ export function addDays(dateStr: string, days: number): string {
   return `${dt.getUTCFullYear()}-${mm}-${dd}`;
 }
 
+/**
+ * Segunda-feira (yyyy-MM-dd) da semana que contém `dateStr` — semana segunda a
+ * domingo, a MESMA convenção dos gráficos da Visão Geral. Combine com addDays
+ * para o fim da semana (addDays(mondayOf(hoje), 6)) ou para semanas anteriores
+ * (addDays(mondayOf(hoje), -7)). A data de entrada precisa ser calculada no
+ * fuso da ORGANIZAÇÃO (localDateOf), nunca no fuso do navegador.
+ */
+export function mondayOf(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = domingo
+  return addDays(dateStr, -((dow + 6) % 7));
+}
+
 /** "09/06" a partir de yyyy-MM-dd. */
 export function ddmm(dateStr: string): string {
   const [, m, d] = dateStr.split("-");
