@@ -1,4 +1,4 @@
-// ROTA PENDENTE: incluir em Configurações > Organização
+// Renderizado em Configurações > Organização.
 // =============================================================================
 // Edição das metas SEMANAIS da organização (PATCH /organization): horas ativas
 // da equipe e percentual do tempo em aplicativos relacionados ao trabalho. O

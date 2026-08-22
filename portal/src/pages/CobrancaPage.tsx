@@ -1,4 +1,5 @@
-// ROTA PENDENTE: /cobranca
+// Rota /cobranca (App.tsx), com o link "Cobrança" na navegação do AppShell
+// visível apenas para o Proprietário.
 // =============================================================================
 // Extrato mensal de cobrança (GET /billing/billable-devices?month=, papel
 // OWNER). Responde "quantos dispositivos contam neste mês e por quê", com

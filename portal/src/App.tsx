@@ -10,6 +10,7 @@ import { VisaoGeralPage } from "@/pages/VisaoGeralPage";
 import { LinhaDoTempoPage } from "@/pages/LinhaDoTempoPage";
 import { AppsPage } from "@/pages/AppsPage";
 import { DispositivosPage } from "@/pages/DispositivosPage";
+import { CobrancaPage } from "@/pages/CobrancaPage";
 import { RelatoriosHubPage } from "@/pages/relatorios/RelatoriosHubPage";
 import { JornadaPage } from "@/pages/relatorios/JornadaPage";
 import { UsoPage } from "@/pages/relatorios/UsoPage";
@@ -48,6 +49,9 @@ export function App() {
             <Route path="exportacoes" element={<ExportacoesPage />} />
           </Route>
           <Route path="/dispositivos" element={<DispositivosPage />} />
+          {/* Extrato de cobrança: o gate de Proprietário vive dentro da página
+              (os demais papéis veem o aviso de permissão, sem chamar a API). */}
+          <Route path="/cobranca" element={<CobrancaPage />} />
           <Route path="/configuracoes" element={<ConfiguracoesLayout />}>
             <Route index element={<Navigate to="/configuracoes/usuarios" replace />} />
             <Route path="usuarios" element={<UsuariosPage />} />

@@ -11,6 +11,11 @@
 // 18:00 quando ainda não definido - a janela alimenta a linha de referência
 // dos gráficos e do relatório de jornada. E, quando o checklist de primeiros
 // passos foi dispensado, o link discreto para reabri-lo (DELETE dismiss).
+//
+// A mesma tela hospeda as METAS SEMANAIS da equipe (MetasCard, PATCH
+// /organization) e as PREFERÊNCIAS DE E-MAIL da pessoa logada
+// (PreferenciasEmailCard, GET/PATCH /me/email-prefs), que se protegem sozinhas
+// pelo papel e cuidam do próprio carregamento.
 // =============================================================================
 
 import { useEffect, useMemo, useState } from "react";
@@ -31,6 +36,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { MetasCard } from "@/components/dashboard/MetasCard";
+import { PreferenciasEmailCard } from "@/components/PreferenciasEmailCard";
 import { cn } from "@/lib/utils";
 
 // Espelha o limite real do backend (OrganizationController.MaxTextLength = 1000),
@@ -89,6 +96,14 @@ export function OrganizacaoPage() {
           <ReopenChecklistLink me={meQuery.data} />
         </>
       ) : null}
+
+      {/* Metas SEMANAIS da equipe (agregadas, nunca por pessoa): alimentam a
+          barra de progresso da Visão Geral. Cuida do próprio carregamento. */}
+      <MetasCard />
+
+      {/* Preferências de e-mail da PESSOA logada: ficam aqui porque é a tela de
+          configurações que todo papel enxerga, inclusive o Viewer. */}
+      <PreferenciasEmailCard />
     </div>
   );
 }

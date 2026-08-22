@@ -1,4 +1,4 @@
-// ROTA PENDENTE: Configurações > Organização ou perfil
+// Renderizado em Configurações > Organização (a aba que todo papel enxerga).
 // =============================================================================
 // Preferências de e-mail da PESSOA logada (GET/PATCH /me/email-prefs). Cada
 // toggle grava sozinho, com PATCH parcial (campos ausentes não mudam), então

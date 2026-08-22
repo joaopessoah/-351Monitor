@@ -13,6 +13,7 @@ import {
   MonitorSmartphone,
   PanelLeftClose,
   PanelLeftOpen,
+  Receipt,
   Settings,
   ShieldCheck,
   X,
@@ -22,6 +23,7 @@ import { useAuth } from "@/lib/auth";
 import { PREF_SIDEBAR_COLLAPSED, readPref, writePref } from "@/lib/prefs";
 import { BrandLogo } from "@/components/BrandLogo";
 import { roleLabels, timezoneBadge } from "@/lib/format";
+import { isOwner } from "@/lib/roles";
 import type { MeResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -47,13 +49,19 @@ const navItems = [
   { to: "/configuracoes", label: "Configurações", icon: Settings },
 ] as const;
 
+// Extrato de cobrança: GET /billing/billable-devices é OwnerOnly, então o link
+// só aparece para o Proprietário (a página se protege de novo, por garantia).
+const ownerNavItem = { to: "/cobranca", label: "Cobrança", icon: Receipt } as const;
+
 /** Links de navegação do shell - reusados pela sidebar e pelo drawer mobile. */
 function ShellNav({
   slug,
+  owner,
   collapsed = false,
   onNavigate,
 }: {
   slug: string;
+  owner: boolean;
   collapsed?: boolean;
   onNavigate?: () => void;
 }) {
@@ -67,7 +75,7 @@ function ShellNav({
     );
   return (
     <nav className="flex-1 space-y-1 overflow-y-auto p-2" aria-label="Navegação principal">
-      {navItems.map(({ to, label, icon: Icon }) => (
+      {[...navItems, ...(owner ? [ownerNavItem] : [])].map(({ to, label, icon: Icon }) => (
         <NavLink key={to} to={to} title={label} onClick={onNavigate} className={linkClass}>
           <Icon className="h-4 w-4 shrink-0" />
           {!collapsed && <span>{label}</span>}
@@ -138,6 +146,7 @@ export function AppShell() {
   }
 
   const me = meQuery.data;
+  const owner = isOwner(me);
 
   async function handleSignOut() {
     await signOut();
@@ -158,7 +167,7 @@ export function AppShell() {
         <div className={cn("flex h-14 items-center border-b px-4", collapsed && "justify-center px-2")}>
           <BrandLogo word={!collapsed} size={24} />
         </div>
-        <ShellNav slug={me.organization.slug} collapsed={collapsed} />
+        <ShellNav slug={me.organization.slug} owner={owner} collapsed={collapsed} />
         <div className="border-t p-2">
           <Button
             variant="ghost"
@@ -193,7 +202,11 @@ export function AppShell() {
                 <X className="h-5 w-5" aria-hidden />
               </DialogPrimitive.Close>
             </div>
-            <ShellNav slug={me.organization.slug} onNavigate={() => setMobileNavOpen(false)} />
+            <ShellNav
+              slug={me.organization.slug}
+              owner={owner}
+              onNavigate={() => setMobileNavOpen(false)}
+            />
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
