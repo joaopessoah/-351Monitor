@@ -153,6 +153,7 @@ Layout persistente: sidebar esquerda colapsável (Visão Geral, Linha do Tempo, 
   - **Drill-down:** expandir linha do app → top títulos de janela com tempo (ex.: Chrome → "Jira — PROJ-123", "YouTube — …"). Se mascaramento de títulos ativo: linha única "Títulos mascarados pela política de privacidade da organização" com link para `/configuracoes/privacidade` (visível só para admin).
   - Ações por app: Recategorizar · Ignorar app (vai para a lista de ignorados — deixa de aparecer em relatórios; coleta futura descartada).
 - Apps "Não categorizados" com badge contador no topo ("12 apps sem categoria — revisar") para puxar o admin à curadoria.
+- **Sugestão do dicionário (F1.1):** `default_category` de `GET /app-catalog` aparece como texto discreto abaixo do select de categoria, SÓ nos apps sem categoria da organização e SÓ quando existe aqui uma categoria com o nome exato sugerido. Um clique aplica àquele app (reversível pelo próprio select). Faixa no topo abre a prévia em lote: quantos apps, quais categorias e a lista completa antes de qualquer escrita; ao confirmar, chama `PUT /app-catalog/categories/batch` em páginas de até 500 com progresso. O endpoint é declarativo, então é a tela que garante nunca enviar app já categorizado a mão. Vocabulário fixo: é "sugestão do dicionário", nunca "categorização automática".
 
 ---
 
