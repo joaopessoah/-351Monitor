@@ -2,15 +2,18 @@
 // Configurações -> Política de coleta (F5, spec §8.7). A config de coleta do
 // agente vira OPERÁVEL pela controladora: política de títulos (MASKED_PATTERNS
 // ou APP_ONLY; FULL só via operadora com registro em DPA), lista de mascaramento
-// (regex validada no servidor), processos ignorados, limiar de ociosidade e
-// janela de coleta. GET /organization/agent-config (Owner/Admin) e PATCH
+// (regex validada no servidor), processos ignorados, limiar de ociosidade,
+// janela de coleta e o texto do aviso de ciência do primeiro logon (o corpo é
+// da empresa; o fecho que enquadra o aviso como CIÊNCIA, e não consentimento,
+// é concatenado pelo agente e nem esta tela nem a API conseguem removê-lo).
+// GET /organization/agent-config (Owner/Admin) e PATCH
 // (somente Owner: mudar a coleta é decisão da CONTROLADORA). Toda mudança dá
 // bump de config_version e chega à frota no próximo contato de cada agente,
 // sem reinstalar nada; a página pública de transparência reflete na hora.
 // =============================================================================
 
 import { useEffect, useMemo, useState } from "react";
-import { Info, ShieldCheck } from "lucide-react";
+import { Info, Lock, ShieldCheck } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/api";
 import { genericErrorMessage } from "@/lib/messages";
@@ -95,6 +98,7 @@ function ColetaForm({ config, canEdit }: { config: AgentConfigResponse; canEdit:
   const [end, setEnd] = useState(config.collection_window.end ?? "18:00");
   const [saved, setSaved] = useState(false);
   const [sample, setSample] = useState("Consulta senha do banco - Maria Silva.pdf");
+  const [noticeText, setNoticeText] = useState(config.notice_text ?? "");
 
   // Re-sincroniza quando o cache muda (ex.: após salvar).
   useEffect(() => {
@@ -106,6 +110,7 @@ function ColetaForm({ config, canEdit }: { config: AgentConfigResponse; canEdit:
     setDays(config.collection_window.days ?? [1, 2, 3, 4, 5]);
     setStart(config.collection_window.start ?? "08:00");
     setEnd(config.collection_window.end ?? "18:00");
+    setNoticeText(config.notice_text ?? "");
   }, [config]);
 
   const patterns = useMemo(
@@ -119,6 +124,13 @@ function ColetaForm({ config, canEdit }: { config: AgentConfigResponse; canEdit:
 
   const idleSec = Math.round(Number(idleMin) * 60);
   const idleValid = Number.isFinite(idleSec) && idleSec >= 60 && idleSec <= 1800;
+
+  // Aviso de ciência: o Owner escreve só o CORPO. O enquadramento fixo vem do agente e o
+  // servidor devolve o texto exato, para o preview mostrar o que o funcionário vê de verdade.
+  const noticeBody = noticeText.trim();
+  const noticeTooLong = noticeBody.length > config.notice_max_length;
+  const noticeHasMarkup = /[<>]|(\*\*|__|~~|`)|\[[^\]]*\]\([^)]*\)/.test(noticeBody);
+  const noticeValid = !noticeTooLong && !noticeHasMarkup;
 
   const mutation = useMutation({
     mutationFn: (body: AgentConfigPatchRequest) =>
@@ -140,8 +152,13 @@ function ColetaForm({ config, canEdit }: { config: AgentConfigResponse; canEdit:
         windowMode === "BUSINESS_HOURS"
           ? { mode: "BUSINESS_HOURS", days: [...days].sort((a, b) => a - b), start, end }
           : { mode: "ALWAYS" },
+      // texto vazio = null = volta ao corpo padrão do agente
+      notice_text: noticeBody.length > 0 ? noticeBody : null,
     }),
-    [policy, patterns, ignored, idleValid, idleSec, config.idle_threshold_sec, windowMode, days, start, end],
+    [
+      policy, patterns, ignored, idleValid, idleSec, config.idle_threshold_sec,
+      windowMode, days, start, end, noticeBody,
+    ],
   );
 
   const dirty =
@@ -153,10 +170,11 @@ function ColetaForm({ config, canEdit }: { config: AgentConfigResponse; canEdit:
     (windowMode === "BUSINESS_HOURS" &&
       ([...days].sort((a, b) => a - b).join(",") !== (config.collection_window.days ?? []).join(",") ||
         start !== (config.collection_window.start ?? "") ||
-        end !== (config.collection_window.end ?? "")));
+        end !== (config.collection_window.end ?? ""))) ||
+    noticeBody !== (config.notice_text ?? "");
 
   const windowValid = windowMode === "ALWAYS" || (days.length > 0 && start.length === 5 && end.length === 5);
-  const canSubmit = canEdit && dirty && idleValid && windowValid && !mutation.isPending;
+  const canSubmit = canEdit && dirty && idleValid && windowValid && noticeValid && !mutation.isPending;
 
   // Preview aproximado do mascaramento (o agente usa regex .NET; aqui é uma
   // demonstração com a engine do navegador, suficiente para os padrões comuns).
@@ -447,6 +465,91 @@ function ColetaForm({ config, canEdit }: { config: AgentConfigResponse; canEdit:
               )}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Aviso de ciência no primeiro logon</CardTitle>
+          <CardDescription>
+            É a janela que cada funcionário vê ao entrar na máquina pela primeira vez, e de novo
+            sempre que este texto muda. Você escreve o começo, com a linguagem da sua empresa. O
+            fecho é fixo, vem do próprio agente e não pode ser removido nem encurtado por aqui.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="space-y-1.5">
+            <Label htmlFor="notice-text">Texto da empresa (opcional)</Label>
+            <textarea
+              id="notice-text"
+              value={noticeText}
+              onChange={(e) => {
+                setNoticeText(e.target.value);
+                setSaved(false);
+              }}
+              disabled={!canEdit}
+              rows={6}
+              placeholder={config.notice_default_body}
+              className={cn(inputCls, "font-sans")}
+            />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                Em branco, o aviso usa o texto padrão mostrado no campo. Texto simples apenas, sem
+                HTML e sem marcação: a janela do agente não interpreta marcação nenhuma.
+              </p>
+              <span
+                className={cn(
+                  "shrink-0 text-xs tabular-nums",
+                  noticeTooLong ? "text-destructive" : "text-muted-foreground",
+                )}
+              >
+                {noticeBody.length} / {config.notice_max_length}
+              </span>
+            </div>
+            {noticeTooLong && (
+              <p role="alert" className="text-xs text-destructive">
+                O texto não cabe na janela do aviso junto com o fecho fixo. Reduza para até{" "}
+                {config.notice_max_length} caracteres.
+              </p>
+            )}
+            {noticeHasMarkup && (
+              <p role="alert" className="text-xs text-destructive">
+                Remova a marcação (tags, links em colchetes, asteriscos ou crases). O aviso é
+                exibido como texto simples e a marcação apareceria crua para o funcionário.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Como o funcionário vai ver</p>
+            <div className="overflow-hidden rounded-md border bg-muted/30">
+              <p className="whitespace-pre-wrap px-4 py-3 text-sm">
+                {noticeBody.length > 0 ? noticeBody : config.notice_default_body}
+              </p>
+              <div className="border-t border-dashed bg-background/60 px-4 py-3">
+                <p className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+                  Parte fixa, sempre presente
+                </p>
+                <p className="whitespace-pre-wrap text-sm">{config.notice_fixed_framing}</p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              O fecho é acrescentado pelo próprio agente, na máquina, e nenhuma configuração o
+              desliga. Ele existe porque este aviso registra a CIÊNCIA do funcionário e não é um
+              pedido de consentimento: é isso que sustenta a base legal do tratamento. Por isso o
+              servidor também recusa textos que peçam consentimento, autorização ou aceite.
+            </p>
+          </div>
+
+          <div className="flex gap-3 rounded-md border border-viz-neutro/30 bg-viz-neutro/10 px-4 py-3 text-sm text-viz-neutro">
+            <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <p>
+              Ao salvar um texto novo, o aviso é exibido de novo em todas as máquinas no próximo
+              contato do agente, e cada funcionário registra a ciência da versão nova. Versão atual
+              do aviso: {config.notice_version}.
+            </p>
+          </div>
         </CardContent>
       </Card>
 
