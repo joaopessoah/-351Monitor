@@ -7,6 +7,7 @@ using M351.Infrastructure.Email;
 using M351.Infrastructure.Exports;
 using M351.Infrastructure.Intervalization;
 using M351.Infrastructure.Maintenance;
+using M351.Infrastructure.Reports;
 using M351.Worker;
 using Npgsql;
 using Quartz;
@@ -95,6 +96,14 @@ builder.Services.AddSingleton<BillingSnapshotService>(sp => new BillingSnapshotS
     sp.GetRequiredService<NpgsqlDataSource>(),
     sp.GetRequiredService<ILogger<BillingSnapshotService>>()));
 
+// Relatório de jornada semanal por e-mail (F5, exclusivo do plano Pro): enfileira o export no
+// pipeline assíncrono que já existe e manda o LINK do download autenticado, nunca anexo.
+builder.Services.AddSingleton<JornadaWeeklyReportService>(sp => new JornadaWeeklyReportService(
+    sp.GetRequiredService<NpgsqlDataSource>(),
+    sp.GetRequiredService<IEmailSender>(),
+    builder.Configuration["Portal:BaseUrl"] ?? "http://localhost:5173",
+    sp.GetRequiredService<ILogger<JornadaWeeklyReportService>>()));
+
 // Quartz (Seção 7.6): Intervalization a cada 60 s; DailyAggregation a cada 15 min;
 // ExportWorker a cada 15 s ("contínuo" da spec via polling curto — padrão dos demais jobs);
 // jobs noturnos de retenção/purga (F4.6) em cron no fuso America/Sao_Paulo (tzdata no container):
@@ -170,6 +179,17 @@ builder.Services.AddQuartz(quartz =>
         .WithIdentity("fleet-alert-15min")
         .StartNow()
         .WithSimpleSchedule(schedule => schedule.WithIntervalInMinutes(15).RepeatForever()));
+
+    // Jornada semanal por e-mail (F5): a cada 5 min. O serviço só enfileira o export nas orgs
+    // Pro cuja hora local é segunda 07h (idempotente no banco), e o intervalo curto é o que faz
+    // o link sair logo depois do ExportService fechar o arquivo.
+    var jornadaWeeklyKey = new JobKey("jornada-weekly-report");
+    quartz.AddJob<JornadaWeeklyReportJob>(options => options.WithIdentity(jornadaWeeklyKey));
+    quartz.AddTrigger(trigger => trigger
+        .ForJob(jornadaWeeklyKey)
+        .WithIdentity("jornada-weekly-report-5min")
+        .StartNow()
+        .WithSimpleSchedule(schedule => schedule.WithIntervalInMinutes(5).RepeatForever()));
 
     // Congelamento do sinal de cobrança (F5): diário 04:00 BRT, idempotente (congela os
     // meses fechados ainda sem snapshot, no fuso de cada tenant).
