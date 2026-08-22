@@ -11,13 +11,48 @@ Sem assinatura Authenticode, o Windows SmartScreen/Defender mostra "Editor desco
 pode bloquear o MSI; instaladores não assinados queimam a confiança do cliente logo no primeiro
 contato com o TI. A spec (Seção 6.6) exige MSI assinado.
 
-## Quando comprar — NÃO agora
+### Smart App Control: o bloqueio duro (confirmado em campo, 22/08/2026)
 
-O certificado é **gate da F5/piloto** (instalar em cliente real), **não do desenvolvimento**.
-Durante o dev e testes internos (VMs, PC-CASA, demos), o MSI **não-assinado funciona**: o
-`msiexec /qn` instala sem prompt; o aviso do SmartScreen só aparece em duplo-clique manual e
-você mesmo aprova. **Não gaste enquanto está só desenvolvendo** — compre quando tiver data de
-piloto marcada.
+> **Incidente real.** Instalação numa máquina com Windows 11 devolveu "O Controlo Inteligente de
+> Aplicações bloqueou parte desta aplicação". O MSI passou, os dois executáveis
+> (`MonitorAgentService.exe` e `MonitorAgentSession.exe`) foram barrados. Confirmado com
+> `Get-MpComputerStatus | Select-Object SmartAppControlState` devolvendo `On`.
+
+O Smart App Control (SAC, "Controlo Inteligente de Aplicações" em pt-PT) NÃO é o SmartScreen.
+
+| | SmartScreen | Smart App Control |
+|---|---|---|
+| O que é | Aviso na tela, no duplo clique | Integridade de código, aplicada abaixo |
+| Instalação silenciosa escapa? | Sim | **Não.** Não importa se foi `/qn` |
+| Usuário pode liberar o app? | Sim, "Executar assim mesmo" | **Não existe exceção por aplicativo** |
+| Como desligar | Configurável | **Porta de mão única**, só volta reinstalando o Windows |
+
+Quando o SAC está ligado, binário não assinado simplesmente não executa. Não há contorno do lado
+do fabricante: nem certificado auto-assinado, nem raiz confiável adicionada na máquina, nem
+política local. É assinar e ganhar reputação, ou o cliente desligar o SAC, o que NUNCA se deve
+pedir a um cliente (é pedir para baixar a guarda do sistema para instalar um software de
+monitoramento, exatamente o oposto do que a marca vende).
+
+**Alcance real do problema:** o SAC só liga sozinho em INSTALAÇÃO LIMPA do Windows 11 22H2 ou
+superior. Máquina que veio de upgrade do Windows 10, ou reimageada com imagem corporativa, fica
+com ele desligado. Antes de tratar isso como emergência, meça: peça ao TI do prospecto para rodar
+`Get-MpComputerStatus | Select-Object SmartAppControlState` em algumas máquinas da frota.
+
+## Quando comprar — assim que houver data de piloto
+
+> **CORREÇÃO de 22/08/2026.** Este runbook dizia "NÃO agora" com a justificativa de que
+> "o `msiexec /qn` instala sem prompt". Isso vale para o SmartScreen e **é falso para o Smart App
+> Control**, como o incidente acima provou. Em máquina com SAC ligado, a instalação silenciosa
+> também é bloqueada, e o agente não roda.
+
+O certificado continua sendo gate do piloto, não do desenvolvimento, mas o prazo mudou de figura:
+como a validação leva de 1 a 3 semanas E a reputação só se acumula depois, com instalações reais,
+**comprar no dia em que a data do piloto for marcada já é tarde**. Compre assim que a data existir
+no horizonte.
+
+Para desenvolvimento e teste interno, use máquina com SAC desligado. Em VM descartável, desligar
+o SAC não custa nada, porque a VM se recria. Nunca queime o interruptor de uma máquina real: ele
+não tem volta.
 
 ## Opções por custo (preços de 2026 — confirmar no momento da compra)
 
@@ -44,15 +79,23 @@ piloto marcada.
 | | **OV (Organization Validation)** | **EV (Extended Validation)** |
 |---|---|---|
 | Custo aproximado | ~US$ 200–400/ano | ~US$ 400–700/ano |
-| Reputação SmartScreen | Ganha com o tempo/volume de instalações | **Imediata** (sem aviso desde a 1ª instalação) |
+| Reputação SmartScreen | Ganha com o tempo/volume de instalações | Ganha com o tempo também. **A vantagem de reputação imediata do EV ACABOU**, a própria DigiCert publica que EV não garante mais ausência de aviso |
 | Armazenamento da chave | HSM/token FIPS (obrigatório desde jun/2023) | HSM/token FIPS (sempre foi) |
 | Validação | Identidade da empresa (CNPJ etc.) | Identidade + verificação reforçada |
 
-**Recomendação para o MVP:** **OV é suficiente.** Nossa distribuição é MSI **silencioso via
-GPO/Intune/RMM** (`msiexec /qn`), que **não** dispara o prompt interativo do SmartScreen — o
-aviso de reputação afeta sobretudo download manual + duplo-clique. Se no futuro você distribuir
-o MSI por download direto no site, aí o EV elimina o atrito imediatamente. Começar com OV e
-migrar para EV depois é um caminho normal.
+**Recomendação para o MVP: OV, e por um motivo diferente do que estava escrito aqui antes.**
+
+O raciocínio antigo era "OV basta porque instalamos em silêncio e o silêncio escapa do
+SmartScreen". Esse raciocínio caiu com o incidente do SAC de 22/08/2026. O motivo válido hoje é
+outro: **o EV custa o dobro e não resolve o SAC**, porque a reputação imediata do EV deixou de
+existir. Nem OV nem EV fazem o SAC liberar no dia 1, os dois precisam acumular reputação. Logo,
+pague o mais barato.
+
+O que de fato acelera a reputação, e vale mais do que a diferença entre OV e EV:
+
+1. assinar TODOS os binários, os dois exes e o MSI, não apenas o instalador;
+2. submeter cada versão relevante ao Microsoft Security Intelligence (seção adiante);
+3. volume de instalações limpas ao longo do tempo, que é justamente o que não se compra.
 
 ## Onde comprar (CAs e revendedores)
 
