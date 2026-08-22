@@ -329,18 +329,20 @@ public sealed class AgentWindowsService : ServiceBase
             {
                 if (_runtime is not null && !_runtime.State.Unenrolled && !HasActiveInteractiveSession())
                 {
-                    _runtime.Queue.Enqueue(_runtime.Factory.Create(EventTypes.Heartbeat, new HeartbeatData
+                    var heartbeat = new HeartbeatData
                     {
                         State = "no_session",
                         ForegroundProcess = null,
-                        IdleMs = null,
-                        QueueDepth = _runtime.Queue.UnsentCount
-                    }));
+                        IdleMs = null
+                    };
+                    _runtime.EnrichHeartbeat(heartbeat); // fila + dead_letter + rejeição + memória + queue.db
+                    _runtime.Queue.Enqueue(_runtime.Factory.Create(EventTypes.Heartbeat, heartbeat));
                 }
             }
             catch (Exception ex)
             {
                 _log.Error("Falha no heartbeat de máquina.", ex);
+                _runtime?.Errors.Report(ex);
             }
 
             try { await Task.Delay(TimeSpan.FromSeconds(_runtime?.State.Config.HeartbeatSec ?? 60), ct); }
@@ -369,6 +371,7 @@ public sealed class AgentWindowsService : ServiceBase
         catch (Exception ex)
         {
             _log.Error("Loop de auto-update encerrado por excecao.", ex);
+            _runtime.Errors.Report(ex);
         }
     }
 

@@ -3,6 +3,7 @@ using System.Security.Principal;
 using M351.Agent.Core;
 using M351.Agent.Core.Collectors;
 using M351.Agent.Core.Contracts;
+using M351.Agent.Core.Diagnostics;
 using M351.Agent.Core.Events;
 using M351.Agent.Core.Logging;
 using M351.Agent.Core.Win32;
@@ -56,6 +57,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         _pipe = new PipeClient(sessionId, _log);
         _sink = new PipeEventSink(_pipe);
         _pipe.ConfigReceived += OnConfigReceived;
+        _pipe.DiagnosticsResult += OnDiagnosticsResult;
 
         SystemEvents.SessionSwitch += OnSessionSwitch;
 
@@ -77,6 +79,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add("O que está sendo coletado agora", null, (_, _) => ShowStatusWindow());
         menu.Items.Add("Política de monitoramento", null, (_, _) => OpenTransparencyUrl());
         menu.Items.Add("Status da conexão", null, (_, _) => ShowConnectionStatus());
+        menu.Items.Add("Enviar diagnóstico ao suporte", null, (_, _) => SendDiagnosticsToSupport());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Sobre", null, (_, _) => ShowAbout());
         // SEM item "Sair" — por arquitetura (Seção 6.5)
@@ -94,6 +97,8 @@ public sealed class TrayApplicationContext : ApplicationContext
         {
             _collectorsStarted = true;
             _factory = new EventFactory(message.BootId);
+            // AGENT_ERROR do helper sai pelo pipe (o helper não toca a fila) — máx. 1/hora por tipo
+            var errors = new AgentErrorReporter(_factory, ev => _sink.Emit(ev));
             _engine = new SessionCollectorEngine(
                 new Win32ForegroundWindowQuery(),
                 new Win32IdleTimeQuery(),
@@ -102,8 +107,9 @@ public sealed class TrayApplicationContext : ApplicationContext
                 _identity,
                 () => _config,
                 () => _locked,
-                queueDepth: null, // o serviço injeta o queue_depth real no HEARTBEAT
-                _log);
+                queueDepth: null, // o serviço injeta a saúde operacional no HEARTBEAT
+                _log,
+                errors);
             _ = _engine.RunAsync(_cts.Token);
             _log.Info("Coletores de sessão iniciados (janela ativa, ociosidade, heartbeat).");
 
@@ -222,6 +228,59 @@ public sealed class TrayApplicationContext : ApplicationContext
         MessageBox.Show(
             $"Canal local: {pipeState}\nServidor: {serverState}\nÚltimo envio ao servidor: {lastSent}",
             "Status da conexão", MessageBoxButtons.OK, icon);
+    }
+
+    /// <summary>
+    /// Envio do pacote de diagnóstico ao suporte (F5). O usuário precisa saber EXATAMENTE o que
+    /// sai da máquina dele antes de confirmar: só logs técnicos do agente, já redigidos (sem
+    /// título de janela, sem nome de usuário, sem conteúdo do que ele digita ou vê). Quem empacota
+    /// e envia é o SERVIÇO — o helper apenas pede pelo pipe e mostra o resultado.
+    /// </summary>
+    private void SendDiagnosticsToSupport()
+    {
+        var confirm = MessageBox.Show(
+            "Enviar um pacote de diagnóstico ao suporte da sua empresa?\n\n" +
+            "O que É enviado: logs técnicos do agente já redigidos (horários, erros de conexão, " +
+            "versão do agente, nome da máquina).\n" +
+            "O que NÃO é enviado: títulos de janela, nomes de usuário, endereços de arquivos, " +
+            "senhas ou qualquer conteúdo do que você digita, vê ou envia.\n\n" +
+            "O envio é manual e só acontece se você confirmar agora.",
+            "Enviar diagnóstico ao suporte", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+        if (confirm != DialogResult.Yes) return;
+
+        _pipe.Send(new PipeMessage { Kind = PipeMessage.KindDiagnosticsRequest });
+        ShowBalloon("Diagnóstico", "Gerando e enviando o pacote de diagnóstico ao suporte…");
+        _log.Info("Envio de diagnóstico solicitado pelo usuário no tray (confirmado).");
+    }
+
+    private void OnDiagnosticsResult(bool ok)
+    {
+        if (ok)
+        {
+            ShowBalloon("Diagnóstico enviado", "O pacote chegou ao suporte da sua empresa.");
+            _log.Info("Diagnóstico enviado ao suporte com sucesso.");
+        }
+        else
+        {
+            ShowBalloon("Diagnóstico não enviado",
+                "Não foi possível enviar agora. Tente novamente mais tarde ou fale com o suporte.");
+            _log.Warn("Envio de diagnóstico ao suporte falhou (reportado no tray).");
+        }
+    }
+
+    private void ShowBalloon(string title, string text)
+    {
+        try
+        {
+            _trayIcon.BalloonTipTitle = title;
+            _trayIcon.BalloonTipText = text;
+            _trayIcon.BalloonTipIcon = ToolTipIcon.Info;
+            _trayIcon.ShowBalloonTip(5_000);
+        }
+        catch (Exception ex)
+        {
+            _log.Warn($"Falha ao exibir o balão do tray: {ex.Message}");
+        }
     }
 
     private void ShowAbout()

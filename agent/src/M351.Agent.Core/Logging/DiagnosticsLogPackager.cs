@@ -17,6 +17,26 @@ namespace M351.Agent.Core.Logging;
 public static class DiagnosticsLogPackager
 {
     /// <summary>
+    /// Monta o ZIP de suporte completo (logs redigidos + info.txt) em <paramref name="targetZipPath"/>.
+    /// Ponto ÚNICO usado pelo `--diag` do helper e pelo envio ao suporte disparado no tray, para
+    /// que o pacote enviado ao servidor seja exatamente o mesmo que o usuário consegue inspecionar.
+    /// </summary>
+    public static void CreateSupportZip(string logsDirectory, string targetZipPath, string agentVersion)
+    {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(targetZipPath));
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+
+        using var zip = ZipFile.Open(targetZipPath, ZipArchiveMode.Create);
+        AddScrubbedLogs(zip, logsDirectory);
+
+        var info = zip.CreateEntry("info.txt");
+        using var writer = new StreamWriter(info.Open(), new UTF8Encoding(false));
+        writer.WriteLine($"versao_agente: {agentVersion}");
+        writer.WriteLine($"gerado_em: {DateTime.Now:O}");
+        writer.WriteLine($"maquina: {Environment.MachineName}");
+    }
+
+    /// <summary>
     /// Copia para o ZIP todos os *.log de <paramref name="logsDirectory"/> sob "logs/", redigindo
     /// cada linha pelo LogScrubber. Best-effort: arquivos em uso/inacessiveis sao pulados.
     /// </summary>

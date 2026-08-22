@@ -3,6 +3,7 @@ using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
 using M351.Agent.Core.Contracts;
+using M351.Agent.Core.Diagnostics;
 using M351.Agent.Core.Logging;
 
 namespace MonitorAgentSession;
@@ -11,6 +12,10 @@ namespace MonitorAgentSession;
 /// Lado helper do IPC \\.\pipe\monitoragent.{sessionId}: envia eventos como JSON por linha e
 /// recebe config do serviço. Reconecta com retry; mensagens pendentes ficam num buffer pequeno
 /// em memória (a durabilidade é da fila SQLite DO SERVIÇO — o helper não persiste nada).
+///
+/// Transbordo do buffer (serviço fora do ar por muito tempo) descarta a mensagem mais antiga, mas
+/// NUNCA em silêncio (Princípio 7): o descarte é contado e reportado ao serviço na reconexão ou no
+/// próximo envio bem-sucedido, virando EVENTS_DROPPED{reason:pipe_overflow}.
 /// </summary>
 public sealed class PipeClient : IDisposable
 {
@@ -21,10 +26,18 @@ public sealed class PipeClient : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly ConcurrentQueue<string> _outbox = new();
     private readonly SemaphoreSlim _signal = new(0);
+    private readonly OutboxDropTracker _drops = new();
 
     public event Action<PipeMessage>? ConfigReceived;
+
+    /// <summary>Resultado do envio de diagnóstico ao suporte (true = recebido pelo servidor).</summary>
+    public event Action<bool>? DiagnosticsResult;
+
     public bool IsConnected { get; private set; }
     public DateTimeOffset? LastSentAt { get; private set; }
+
+    /// <summary>Descartes por transbordo ainda não reportados ao serviço (diagnóstico/tray).</summary>
+    public long PendingDroppedCount => _drops.PendingCount;
 
     /// <summary>Estado da conexao com o servidor reportado pelo servico (wire: ok/sem_rede/...).</summary>
     public string? ConnectionState { get; private set; }
@@ -38,9 +51,10 @@ public sealed class PipeClient : IDisposable
 
     public void Send(PipeMessage message)
     {
-        if (_outbox.Count >= MaxBuffered)
+        if (_outbox.Count >= MaxBuffered && _outbox.TryDequeue(out _))
         {
-            _outbox.TryDequeue(out _); // descarta o mais antigo do buffer volátil
+            // descarta o mais antigo do buffer volátil — e CONTA (relatado como pipe_overflow)
+            _drops.RecordDrop();
         }
         _outbox.Enqueue(JsonSerializer.Serialize(message, AgentJsonContext.Default.PipeMessage));
         _signal.Release();
@@ -109,6 +123,10 @@ public sealed class PipeClient : IDisposable
                     if (message.ConnectionState is not null) ConnectionState = message.ConnectionState;
                     ConfigReceived?.Invoke(message);
                 }
+                else if (message?.Kind == PipeMessage.KindDiagnosticsResult)
+                {
+                    DiagnosticsResult?.Invoke(message.Ok ?? false);
+                }
             }
             catch (JsonException)
             {
@@ -119,6 +137,9 @@ public sealed class PipeClient : IDisposable
 
     private async Task WriteLoopAsync(StreamWriter writer, CancellationToken ct)
     {
+        // reconexão: o primeiro ato é confessar o que o buffer perdeu enquanto estava fora
+        await ReportDropsAsync(writer, ct);
+
         while (!ct.IsCancellationRequested)
         {
             await _signal.WaitAsync(ct);
@@ -134,6 +155,31 @@ public sealed class PipeClient : IDisposable
                 _signal.Release();
                 throw;
             }
+
+            // envio bem-sucedido: se houve transbordo desde o último relatório, reporta agora
+            await ReportDropsAsync(writer, ct);
+        }
+    }
+
+    /// <summary>
+    /// Entrega o relatório de descartes direto no writer (NÃO passa pelo outbox: o relatório de
+    /// transbordo não pode ser a próxima vítima do transbordo).
+    /// </summary>
+    private async Task ReportDropsAsync(StreamWriter writer, CancellationToken ct)
+    {
+        var report = _drops.TakeReport();
+        if (report is null) return;
+        try
+        {
+            await writer.WriteLineAsync(
+                JsonSerializer.Serialize(report, AgentJsonContext.Default.PipeMessage).AsMemory(), ct);
+            _log.Warn($"Buffer do pipe transbordou: {report.Count} mensagem(ns) descartada(s) " +
+                      $"(pipe_overflow) — reportado ao serviço.");
+        }
+        catch (Exception)
+        {
+            _drops.Restore(report); // conexão caiu de novo: a contagem volta para o próximo relatório
+            throw;
         }
     }
 

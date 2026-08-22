@@ -253,6 +253,7 @@ app.UseRateLimiter();
 app.MapControllers();
 app.MapAgentEndpoints();
 app.MapAgentUpdateEndpoints(); // F4.2 — manifesto de auto-update + hospedagem do MSI (device token)
+app.MapAgentDiagnosticsEndpoints(); // F5 — upload do ZIP de diagnóstico do agente (device token)
 
 app.MapGet("/healthz", async (M351DbContext db, CancellationToken ct) =>
     await db.Database.CanConnectAsync(ct)

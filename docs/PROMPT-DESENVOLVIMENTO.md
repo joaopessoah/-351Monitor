@@ -147,6 +147,7 @@ Multi-tenancy (reforço de stack): pool model — schema único, `tenant_id` em 
 |---|---|---|
 | `POST /api/v1/agent/enroll` | enrollment key (no body) | Registro do device; devolve `device_id`, `device_token`, `config` |
 | `POST /api/v1/ingest/batch` | `Authorization: Bearer dt_...` (device token) | Ingestão de lote; o **ack** é o único canal de config e comandos |
+| `POST /api/v1/agent/diagnostics` | `Authorization: Bearer dt_...` (device token) | F5 — upload MANUAL do ZIP de diagnóstico (`application/zip`, máx. 10 MB), disparado pelo item "Enviar diagnóstico ao suporte" do tray com confirmação do usuário. Só logs já redigidos; gravado em `{Exports:Directory}/diagnostics/` |
 
 NÃO existem no MVP: endpoint separado de policy/config (`GET .../policy`), endpoint de rotação de token iniciado pelo agente, endpoint de ack de comandos. Config e comandos trafegam exclusivamente no ack do batch.
 
@@ -156,7 +157,7 @@ NÃO existem no MVP: endpoint separado de policy/config (`GET .../policy`), endp
 |---|---|---|---|
 | `event_id` | string UUID **v7** | sim | Gerado no agente; ordenável por tempo; chave de idempotência |
 | `seq` | int64 | sim | Sequência monotônica **por device**, persistida no SQLite (`AUTOINCREMENT`); o backend persiste e detecta lacunas |
-| `type` | string | sim | Um dos 17 tipos da tabela 5.3 |
+| `type` | string | sim | Um dos 18 tipos da tabela 5.3 |
 | `occurred_at` | string ISO-8601 **UTC** | sim | Relógio de parede no momento do evento; **imutável** após gravado na fila local (dedupe determinístico entre retries) |
 | `tz_offset_min` | int | sim | Offset local em minutos (ex.: `-180`) |
 | `mono_ms` | int64 | sim | `GetTickCount64` no momento do evento (imune a ajuste de relógio) |
@@ -166,9 +167,11 @@ NÃO existem no MVP: endpoint separado de policy/config (`GET .../policy`), endp
 | `windows_user` | string ou null | quando aplicável | `DOMINIO\usuario` |
 | `data` | objeto | sim (pode ser `{}`) | Campos específicos do tipo |
 
-### 5.3 Tabela canônica de tipos de evento do MVP (única — 17 tipos)
+### 5.3 Tabela canônica de tipos de evento do MVP (única — 18 tipos)
 
 Esta tabela é usada por: agente (emissão), ingestão (validação), pipeline (máquina de estados) e portal (exibição). **`APPS_SNAPSHOT` foi CORTADO do MVP** (sem consumidor + minimização LGPD) — não implementar a coleta nem o tipo.
+
+O 18º tipo (`AGENT_ERROR`) entrou na F5 e é o único acréscimo à tabela original de 17: rollout **agente-primeiro**, porque um ingest anterior a ele apenas ignora o tipo desconhecido (regra no fim desta seção) sem rejeitar o lote.
 
 | Tipo | Emissor | `data` (payload) | Papel no pipeline |
 |---|---|---|---|
@@ -181,14 +184,15 @@ Esta tabela é usada por: agente (emissão), ingestão (validação), pipeline (
 | `ACTIVE_WINDOW_CHANGED` | Helper | `process_name` ("chrome.exe", lowercase), `exe_path`, `app_id` (AUMID UWP, opcional), `window_title` (string ou null se política APP_ONLY/processo ignorado), `title_masked: bool` | Fecha intervalo corrente → abre `active(app)` |
 | `IDLE_START` | Helper | **`last_input_at`** (ISO-8601 UTC) — obrigatório | Fecha o intervalo ativo **RETROATIVAMENTE em `last_input_at`** → abre `idle` a partir de `last_input_at` |
 | `IDLE_END` | Helper | `idle_duration_ms` | Fecha `idle` → abre `active` com o último app conhecido |
-| `HEARTBEAT` | Helper (sessão) e Serviço (máquina sem usuário logado) | `state: active\|idle\|locked\|no_session, foreground_process, idle_ms, queue_depth` (`no_session`: máquina ligada sem sessão interativa; campos de sessão null no heartbeat de máquina) | Prova de vida; mantém intervalo aberto; alimenta `last_seen_at` |
+| `HEARTBEAT` | Helper (sessão) e Serviço (máquina sem usuário logado) | `state: active\|idle\|locked\|no_session, foreground_process, idle_ms, queue_depth` + saúde operacional injetada pelo SERVIÇO: `dead_letter_count, last_reject_code, working_set_mb, queue_db_bytes` (`no_session`: máquina ligada sem sessão interativa; campos de sessão null no heartbeat de máquina) | Prova de vida; mantém intervalo aberto; alimenta `last_seen_at` |
 | `SYSTEM_SUSPEND` | Serviço (Power) | `{}` | Fecha intervalo → `off_clean` |
 | `SYSTEM_RESUME` | Serviço (Power) | `sleep_duration_ms` (estimado por wall-clock) | Reabre cobertura |
 | `TIME_CHANGED` | Serviço | `old_utc, new_utc, delta_ms, new_tz_offset_min` | Marca eventos vizinhos como suspeitos de relógio; atualiza tz do device |
-| `EVENTS_DROPPED` | Serviço | `count, oldest_dropped_at, reason: retention_cap\|rate_limit` | Gap explicado na timeline ("dados descartados") |
+| `EVENTS_DROPPED` | Serviço | `count, oldest_dropped_at, reason: retention_cap\|rate_limit\|pipe_overflow` (`pipe_overflow`: buffer volátil do helper cheio — contado pelo helper e reportado ao serviço na reconexão) | Gap explicado na timeline ("dados descartados") |
 | `AGENT_TAMPER` | Serviço | `reason: helper_killed\|helper_killed_repeatedly\|pipe_denied` | Sinalização no painel de saúde |
 | `NOTICE_ACK` | Helper | `notice_version, shown_at` | Evidência de ciência LGPD (Seção 9.4); persistido e consultável por device/usuário |
 | `POLICY_APPLIED` | Serviço | `config_version` | Confirma aplicação de config; auditável |
+| `AGENT_ERROR` | Serviço e Helper | `error_type` (nome do tipo da exceção), `stack_hash` (SHA-256 truncado da pilha), `count` (ocorrências desde o último evento do mesmo `error_type`) — **JAMAIS a `message` crua da exceção**, que pode conter caminho, título de janela ou usuário. Limite de taxa: **máx. 1 evento por `error_type` por hora**, e as ocorrências suprimidas viram o `count` | Neutro no pipeline; falha do agente visível no painel de saúde em vez de morrer no log da máquina |
 
 **Regra de ingestão para tipo desconhecido:** ignorar o evento e incrementar métrica (`ingest_unknown_type_total`). **JAMAIS rejeitar o lote inteiro** por causa de um tipo desconhecido — garante compatibilidade quando agente novo falar com backend velho e vice-versa.
 
@@ -450,6 +454,7 @@ Aplicado **antes de persistir na fila SQLite** — dado mascarado nunca toca o d
 - Menu: **"O que está sendo coletado agora"** (janela em tempo real: app ativo, título capturado — ou mascarado/null —, estado ativo/idle, último envio, `config_version` aplicada, device_id) · **"Política de monitoramento"** (abre `transparency_url` da config) · **"Status da conexão"** · **"Sobre"** (versão, device_id).
 - **NOTICE_ACK (gate LGPD):** no primeiro logon de cada usuário Windows após a instalação, o helper exibe aviso (toast + janela): *"Esta máquina é monitorada por {Empresa} — clique para ver o que é coletado"*, com link para a janela de transparência e botão **"Entendi"**. O clique emite `NOTICE_ACK{notice_version, shown_at}` — evidência de ciência para a controladora (NÃO é consentimento; é ciência). Persistir localmente que o usuário já confirmou (não reexibir a cada logon); reexibir se `notice_version` mudar.
 - `MonitorAgentSession.exe --diag` gera ZIP de suporte (logs + config sanitizada + contadores), sem UI.
+- Item **"Enviar diagnóstico ao suporte"** no menu do tray (F5): pede confirmação declarando o que vai e o que NÃO vai no pacote (só logs redigidos; sem título de janela, usuário ou conteúdo), e o **serviço** — não o helper — empacota o MESMO ZIP do `--diag` e faz o `POST /api/v1/agent/diagnostics` com o device token. Resultado (sucesso/falha) volta ao tray como balão.
 
 ### 6.6 Instalador MSI e operação em frota
 

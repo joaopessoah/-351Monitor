@@ -8,7 +8,7 @@ using M351.IntegrationTests.Support;
 namespace M351.IntegrationTests;
 
 /// <summary>
-/// TESTES DE CONTRATO da ingestão (gate 11.1.2): envelope 5.2, os 17 tipos 5.3 e o ack 5.5.
+/// TESTES DE CONTRATO da ingestão (gate 11.1.2): envelope 5.2, os 18 tipos 5.3 e o ack 5.5.
 /// Tipo desconhecido não rejeita o lote; lote vazio atualiza last_seen_at; duplicata reenviada
 /// conta em duplicates sem linha nova; rejeições individuais com reason canônico; lote > 500
 /// eventos → 422 batch_too_large.
@@ -27,8 +27,8 @@ public class IngestContractTests(ApiTestFixture fixture)
         return (client, device, org.Id);
     }
 
-    /// <summary>Os 17 tipos canônicos com payloads representativos da tabela 5.3.</summary>
-    private static List<Dictionary<string, object?>> AllSeventeenTypes(EventFactory factory, DateTimeOffset baseAt)
+    /// <summary>Os 18 tipos canônicos com payloads representativos da tabela 5.3.</summary>
+    private static List<Dictionary<string, object?>> AllEighteenTypes(EventFactory factory, DateTimeOffset baseAt)
     {
         var at = baseAt;
         DateTimeOffset Next()
@@ -61,6 +61,9 @@ public class IngestContractTests(ApiTestFixture fixture)
             factory.Event("HEARTBEAT", Next(), new Dictionary<string, object?>
             {
                 ["state"] = "active", ["foreground_process"] = "excel.exe", ["idle_ms"] = 0, ["queue_depth"] = 3,
+                // saúde operacional injetada pelo serviço (F5)
+                ["dead_letter_count"] = 0, ["last_reject_code"] = null,
+                ["working_set_mb"] = 48, ["queue_db_bytes"] = 2_097_152,
             }),
             factory.Event("LOCK", Next()),
             factory.Event("UNLOCK", Next()),
@@ -81,6 +84,10 @@ public class IngestContractTests(ApiTestFixture fixture)
             }),
             factory.Event("POLICY_APPLIED", Next(), new Dictionary<string, object?> { ["config_version"] = 1 },
                 windowsSid: null, windowsUser: null, sessionId: null),
+            factory.Event("AGENT_ERROR", Next(), new Dictionary<string, object?>
+            {
+                ["error_type"] = "System.IO.IOException", ["stack_hash"] = "0123456789abcdef", ["count"] = 2,
+            }, windowsSid: null, windowsUser: null, sessionId: null),
             factory.Event("SYSTEM_SUSPEND", Next(), windowsSid: null, windowsUser: null, sessionId: null),
             factory.Event("SYSTEM_RESUME", Next(), new Dictionary<string, object?> { ["sleep_duration_ms"] = 600000 },
                 windowsSid: null, windowsUser: null, sessionId: null),
@@ -91,12 +98,12 @@ public class IngestContractTests(ApiTestFixture fixture)
     }
 
     [Fact]
-    public async Task Batch_ComTodosOs17Tipos_TodosAceitosEPersistidos()
+    public async Task Batch_ComTodosOs18Tipos_TodosAceitosEPersistidos()
     {
-        var (client, device, tenantId) = await SetupAsync("Org 17 Tipos");
+        var (client, device, tenantId) = await SetupAsync("Org 18 Tipos");
         var factory = new EventFactory();
-        var events = AllSeventeenTypes(factory, DateTimeOffset.UtcNow.AddMinutes(-10));
-        Assert.Equal(18, events.Count); // 17 tipos (UNLOCK aparece 2×) — sanidade do cenário
+        var events = AllEighteenTypes(factory, DateTimeOffset.UtcNow.AddMinutes(-10));
+        Assert.Equal(19, events.Count); // 18 tipos (UNLOCK aparece 2×) — sanidade do cenário
 
         var response = await AgentClient.SendBatchAsync(client, device.DeviceToken, events);
         using var ack = await AgentClient.ReadAckAsync(response);
@@ -112,7 +119,7 @@ public class IngestContractTests(ApiTestFixture fixture)
 
         var distinctTypes = await TestDb.ScalarAsync<long>(Cs,
             "SELECT count(DISTINCT event_type) FROM raw_events WHERE device_id = @d", ("d", device.DeviceId));
-        Assert.Equal(17, distinctTypes);
+        Assert.Equal(18, distinctTypes);
 
         // envelope persistido: seq, tz_offset_min, boot_id (exigência da F1 — Seção 10)
         var row = await TestDb.RowAsync(Cs,

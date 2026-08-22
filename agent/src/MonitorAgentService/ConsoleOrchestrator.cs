@@ -79,7 +79,8 @@ public static class ConsoleOrchestrator
             () => runtime.State.Config,
             () => systemEvents.IsLocked,
             () => runtime.Queue.UnsentCount,
-            log);
+            log,
+            runtime.Errors); // AGENT_ERROR direto na fila (modo console roda tudo num processo)
 
         runtime.AckProcessor.ConfigApplied += cfg =>
         {

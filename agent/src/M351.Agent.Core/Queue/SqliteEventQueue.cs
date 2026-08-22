@@ -157,6 +157,25 @@ public sealed class SqliteEventQueue : IDisposable
     public long UnsentCount => Scalar("SELECT COUNT(*) FROM events WHERE sent = 0;");
     public long TotalCount => Scalar("SELECT COUNT(*) FROM events;");
 
+    /// <summary>
+    /// Lotes na dead_letter (422 do servidor — Seção 6.4). Vai no HEARTBEAT: &gt; 0 significa dado
+    /// preso na máquina sem chance de reenvio, e isso tem de ser visível no portal.
+    /// </summary>
+    public long DeadLetterCount => Scalar("SELECT COUNT(*) FROM dead_letter;");
+
+    /// <summary>
+    /// Tamanho do arquivo queue.db em bytes (0 se ilegível). Não inclui o -wal; é a medida
+    /// operacional publicada no HEARTBEAT contra o cap de 100 MB da N8.
+    /// </summary>
+    public long DbFileBytes
+    {
+        get
+        {
+            try { return new FileInfo(DbPath).Length; }
+            catch (Exception) { return 0; } // arquivo em uso/inacessível: métrica é best-effort
+        }
+    }
+
     /// <summary>Maior seq já atribuído (persiste mesmo com a fila vazia).</summary>
     public long CurrentSeq => Scalar("SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'events'), 0);");
 
