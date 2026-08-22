@@ -171,6 +171,26 @@ public sealed class DsrService
                 cmd.Parameters.AddWithValue("name", AnonymizedDisplayName);
             });
 
+        // 4. resquício visível: device_current_state pode ainda exibir username e título do
+        // titular no painel "Equipe agora" até o PRÓXIMO evento do device sobrescrever. Zera os
+        // campos pessoais quando o SID atual do device é o do titular excluído (mesma transação),
+        // preservando state/last_contact_at (metadado operacional do device, não do titular).
+        foreach (var (_, deviceId, windowsSid) in subjects)
+        {
+            await using var clear = new NpgsqlCommand(
+                """
+                UPDATE device_current_state
+                SET windows_sid = NULL, windows_username = NULL,
+                    foreground_process = NULL, foreground_title = NULL
+                WHERE tenant_id = @t AND device_id = @d AND windows_sid = @sid
+                """,
+                connection, tx);
+            clear.Parameters.AddWithValue("t", tenantId);
+            clear.Parameters.AddWithValue("d", deviceId);
+            clear.Parameters.AddWithValue("sid", windowsSid);
+            await clear.ExecuteNonQueryAsync(ct);
+        }
+
         return new DeleteReceipt(rawEventsDeleted, intervalsDeleted, deviceUsersAnonymized, dailyRowsKept);
     }
 

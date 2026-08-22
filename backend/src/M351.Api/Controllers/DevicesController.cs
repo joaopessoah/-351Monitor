@@ -231,10 +231,12 @@ public class DevicesController(M351DbContext db, AuditWriter audit, NpgsqlDataSo
             device.Tags = newTags;
         }
 
+        var pausedNow = false;
         if (hasStatus && device.Status != newStatus)
         {
             changes["status"] = new { from = device.Status, to = newStatus };
             device.Status = newStatus!;
+            pausedNow = newStatus == "paused";
         }
 
         if (changes.Count > 0)
@@ -244,6 +246,21 @@ public class DevicesController(M351DbContext db, AuditWriter audit, NpgsqlDataSo
                 detailJson: JsonSerializer.Serialize(changes));
 
             await db.SaveChangesAsync(ct);
+
+            if (pausedNow)
+            {
+                // pausa vale na hora, não só no próximo batch: a projeção de presença não pode
+                // continuar exibindo usuário/título de um device que o gestor acabou de pausar
+                // (a ingestão também zera e descarta enquanto status = paused)
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"""
+                    UPDATE device_current_state
+                    SET state = 'no_data', windows_sid = NULL, windows_username = NULL,
+                        foreground_process = NULL, foreground_title = NULL,
+                        state_since = NULL, app_since = NULL, updated_at = now()
+                    WHERE tenant_id = {Auth.CurrentUser.TenantId(User)} AND device_id = {device.Id}
+                    """, ct);
+            }
         }
 
         // mesmo shape do GET {id} (inclui as dimensões de saúde da F4.4)
