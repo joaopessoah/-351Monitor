@@ -43,23 +43,27 @@ const FORA_HINT =
 export function ForaDoHorarioPanel({
   range,
   deviceIdsKey,
-  onClearDevices,
+  tag,
+  onClearFilters,
 }: {
   range: DateRange | null;
   deviceIdsKey: string;
-  onClearDevices: () => void;
+  /** Etiqueta de equipe do recorte (F5); null = organização inteira. */
+  tag: string | null;
+  onClearFilters: () => void;
 }) {
   const [page, setPage] = useState(1);
 
-  // Trocar período ou dispositivos volta para a primeira página.
+  // Trocar período, dispositivos ou equipe volta para a primeira página.
   useEffect(() => {
     setPage(1);
-  }, [range?.from, range?.to, deviceIdsKey]);
+  }, [range?.from, range?.to, deviceIdsKey, tag]);
 
   const params = {
     from: range?.from ?? "",
     to: range?.to ?? "",
     deviceIdsKey,
+    tag,
     page,
     includeDevices: true,
     pageSize: FORA_PAGE_SIZE,
@@ -196,10 +200,10 @@ export function ForaDoHorarioPanel({
               {data.items.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-10 text-center text-sm text-muted-foreground">
-                    {deviceIdsKey.length > 0 ? (
+                    {deviceIdsKey.length > 0 || tag !== null ? (
                       <span className="inline-flex flex-col items-center gap-2">
                         <span>Nenhuma atividade fora do horário de trabalho neste recorte.</span>
-                        <Button variant="outline" size="sm" onClick={onClearDevices}>
+                        <Button variant="outline" size="sm" onClick={onClearFilters}>
                           Limpar filtros
                         </Button>
                       </span>

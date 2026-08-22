@@ -59,6 +59,7 @@ import {
 } from "@/components/reports/filters";
 import { ExportCsvBanner, ExportCsvButton, useCsvExport } from "@/components/reports/ExportCsv";
 import { foraDoHorarioKey, foraDoHorarioUrl } from "@/components/reports/ForaDoHorario";
+import { TeamTagSelect, tagParam, useTeamTags } from "@/components/filters/TeamTagSelect";
 import { FORA_PAGE_SIZE, ForaDoHorarioPanel } from "@/components/reports/ForaDoHorarioPanel";
 import { DeltaBadge, useComparisonRange } from "@/components/dashboard/comparison";
 
@@ -144,18 +145,22 @@ interface UsoUrlState {
   tab: UsoTab;
   groupBy: GroupBy;
   sort: SortState | null;
+  /** Etiqueta de equipe do recorte (F5); null = organização inteira. */
+  tag: string | null;
   page: number;
 }
 
-// group_by + sort + dir + page num único codec: são interdependentes (trocar o
-// agrupamento zera ordenação e página numa escrita atômica).
+// group_by + sort + dir + tag + page num único codec: são interdependentes
+// (trocar o agrupamento ou a equipe zera ordenação e página numa escrita atômica).
 const USO_CODEC: UrlStateCodec<UsoUrlState> = {
   parse: (params) => {
     const rawPage = Number(params.get("page"));
+    const rawTag = params.get("tag");
     return {
       tab: params.get("aba") === "fora-do-horario" ? "fora-do-horario" : "uso",
       groupBy: groupByFromUrl(params),
       sort: sortFromUrl(params),
+      tag: rawTag !== null && rawTag.trim().length > 0 ? rawTag : null,
       page: Number.isInteger(rawPage) && rawPage > 1 ? rawPage : 1,
     };
   },
@@ -165,6 +170,7 @@ const USO_CODEC: UrlStateCodec<UsoUrlState> = {
     sort: value.sort !== null ? value.sort.key : null,
     // desc é o default do sortFromUrl: só "asc" precisa ir para a URL.
     dir: value.sort !== null && value.sort.dir === "asc" ? "asc" : null,
+    tag: value.tag,
     page: value.page > 1 ? String(value.page) : null,
   }),
 };
@@ -269,7 +275,7 @@ export function UsoPage() {
   // Agrupamento, ordenação e página vivem na URL (deep-link do hub de
   // Relatórios) - lidos no mount E escritos de volta a cada interação.
   const [urlState, setUrlState] = useUrlState(USO_CODEC);
-  const { tab, groupBy, sort, page } = urlState;
+  const { tab, groupBy, sort, tag, page } = urlState;
   const foraTab = tab === "fora-do-horario";
   const [deviceIds, setDeviceIds] = useState<string[]>([]);
   // Coluna "vs anterior": toggle DESLIGADO por padrão e indisponível no
@@ -286,6 +292,7 @@ export function UsoPage() {
   const { todayStr, range, activePreset, applyPreset } = useReportRange(timezone);
 
   const { devices } = useFilterDevices();
+  const { tags } = useTeamTags();
   const deviceIdsKey = useMemo(() => [...deviceIds].sort().join(","), [deviceIds]);
   const deviceParam = deviceIdsKey.length > 0 ? `&device_ids=${deviceIdsKey}` : "";
 
@@ -301,7 +308,8 @@ export function UsoPage() {
       setUrlState({ ...urlState, page: 1 });
     }
     prevFilterKeyRef.current = key;
-    // Deps restritas aos filtros de propósito: reset SÓ quando eles mudam.
+    // Deps restritas aos filtros de propósito: reset SÓ quando eles mudam. A
+    // equipe fica de fora porque já zera a página na própria escrita atômica.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range?.from, range?.to, deviceIdsKey]);
 
@@ -309,11 +317,20 @@ export function UsoPage() {
     queryKey: [
       "reports",
       "usage",
-      { group_by: groupBy, from: range?.from, to: range?.to, devices: deviceIdsKey, page, page_size: PAGE_SIZE },
+      {
+        group_by: groupBy,
+        from: range?.from,
+        to: range?.to,
+        devices: deviceIdsKey,
+        tag,
+        page,
+        page_size: PAGE_SIZE,
+      },
     ],
     queryFn: () =>
       api<UsageReportResponse<UsageRow>>(
-        `/reports/usage?from=${range?.from ?? ""}&to=${range?.to ?? ""}${deviceParam}&group_by=${groupBy}&page=${page}&page_size=${PAGE_SIZE}`,
+        `/reports/usage?from=${range?.from ?? ""}&to=${range?.to ?? ""}${deviceParam}${tagParam(tag)}` +
+          `&group_by=${groupBy}&page=${page}&page_size=${PAGE_SIZE}`,
       ),
     enabled: range !== null && !foraTab,
     // Mantém a leitura anterior ao trocar página/período/devices, mas NÃO ao
@@ -338,13 +355,15 @@ export function UsoPage() {
         from: prevRange?.from,
         to: prevRange?.to,
         devices: deviceIdsKey,
+        tag,
         page: 1,
         page_size: PAGE_SIZE,
       },
     ],
     queryFn: () =>
       api<UsageReportResponse<UsageRow>>(
-        `/reports/usage?from=${prevRange?.from ?? ""}&to=${prevRange?.to ?? ""}${deviceParam}&group_by=${groupBy}&page=1&page_size=${PAGE_SIZE}`,
+        `/reports/usage?from=${prevRange?.from ?? ""}&to=${prevRange?.to ?? ""}${deviceParam}${tagParam(tag)}` +
+          `&group_by=${groupBy}&page=1&page_size=${PAGE_SIZE}`,
       ),
     enabled: compareActive && prevRange !== null,
     placeholderData: (prev, prevQuery) => {
@@ -412,6 +431,7 @@ export function UsoPage() {
     from: range?.from ?? "",
     to: range?.to ?? "",
     deviceIdsKey,
+    tag,
     page: 1,
     includeDevices: true,
     pageSize: FORA_PAGE_SIZE,
@@ -435,6 +455,7 @@ export function UsoPage() {
               from: range.from,
               to: range.to,
               ...(deviceIds.length > 0 ? { device_ids: deviceIds } : {}),
+              ...(tag !== null ? { tag } : {}),
             },
           }
         : {
@@ -444,6 +465,7 @@ export function UsoPage() {
               to: range.to,
               group_by: groupBy,
               ...(deviceIds.length > 0 ? { device_ids: deviceIds } : {}),
+              ...(tag !== null ? { tag } : {}),
             },
           };
 
@@ -488,7 +510,7 @@ export function UsoPage() {
             type="button"
             role="tab"
             aria-selected={tab === opt.value}
-            onClick={() => setUrlState({ tab: opt.value, groupBy, sort: null, page: 1 })}
+            onClick={() => setUrlState({ ...urlState, tab: opt.value, sort: null, page: 1 })}
             className={cn(
               "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -518,7 +540,7 @@ export function UsoPage() {
                   key={opt.value}
                   type="button"
                   aria-pressed={groupBy === opt.value}
-                  onClick={() => setUrlState({ tab, groupBy: opt.value, sort: null, page: 1 })}
+                  onClick={() => setUrlState({ ...urlState, groupBy: opt.value, sort: null, page: 1 })}
                   className={cn(segmentedButton, groupBy === opt.value ? segmentedOn : segmentedOff)}
                 >
                   {opt.label}
@@ -533,6 +555,11 @@ export function UsoPage() {
               {ddmm(range.from)} a {ddmm(range.to)}
             </span>
           )}
+          <TeamTagSelect
+            tags={tags}
+            value={tag}
+            onChange={(next) => setUrlState({ ...urlState, tag: next, page: 1 })}
+          />
           <DeviceMultiSelect
             devices={devices}
             selected={deviceIds}
@@ -574,7 +601,11 @@ export function UsoPage() {
         <ForaDoHorarioPanel
           range={range}
           deviceIdsKey={deviceIdsKey}
-          onClearDevices={() => setDeviceIds([])}
+          tag={tag}
+          onClearFilters={() => {
+            setDeviceIds([]);
+            setUrlState({ ...urlState, tag: null, page: 1 });
+          }}
         />
       )}
 

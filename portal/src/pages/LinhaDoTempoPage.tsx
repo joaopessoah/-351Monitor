@@ -1,7 +1,9 @@
 // =============================================================================
 // Linha do Tempo (Seção 8.5): reconstruir o dia em 5 segundos de olhar.
 // - Modo EQUIPE (F3.4, default sem ?device= na URL): uma lane de 28px por
-//   device via GET /timeline/team; clique na lane leva ao modo device.
+//   device via GET /timeline/team; clique na lane leva ao modo device. O
+//   seletor de equipe (?tag=) recorta as lanes exibidas - uma equipe de cada
+//   vez, jamais duas lado a lado para comparação.
 // - Modo DEVICE (F2, com ?device=): canvas de estados + sub-faixa de apps e
 //   rodapé de resumo vindo PRONTO do summary da API - nunca recalculado no
 //   front e nunca rotulado como registro de ponto.
@@ -32,6 +34,7 @@ import {
   stateLabels,
 } from "@/lib/format";
 import { PREF_TIMELINE_VIEW, readPref, writePref } from "@/lib/prefs";
+import { TAG_CODEC, TeamTagSelect, tagParam, useTeamTags } from "@/components/filters/TeamTagSelect";
 import { useUrlState } from "@/lib/useUrlState";
 import type { UrlStateCodec } from "@/lib/useUrlState";
 import { genericErrorMessage } from "@/lib/messages";
@@ -130,6 +133,10 @@ export function LinhaDoTempoPage() {
   // Janela "Horário de trabalho" = business_hours da org com 1h de folga de
   // cada lado (Seção 8.5); fallback 05:00-21:00 quando a org não definiu.
   const [windowMode, setWindowMode] = useUrlState(WINDOW_CODEC);
+  // Recorte de equipe do modo EQUIPE (?tag=): o modo device já é um recorte de
+  // uma máquina só, então o seletor não aparece lá.
+  const [teamTag, setTeamTag] = useUrlState(TAG_CODEC);
+  const { tags } = useTeamTags();
 
   // Visão default sem ?view= na URL: preferência salva do navegador; sem
   // preferência, telas estreitas (até 768px) abrem direto na tabela - o canvas
@@ -210,8 +217,9 @@ export function LinhaDoTempoPage() {
   const data = mode === "device" ? timelineQuery.data : undefined;
 
   const teamQuery = useQuery({
-    queryKey: ["timeline", "team", dateStr],
-    queryFn: () => api<TeamTimelineResponse>(`/timeline/team?date=${dateStr ?? ""}`),
+    queryKey: ["timeline", "team", dateStr, teamTag],
+    queryFn: () =>
+      api<TeamTimelineResponse>(`/timeline/team?date=${dateStr ?? ""}${tagParam(teamTag)}`),
     enabled: mode === "team" && dateStr !== null,
     // Polling de 60s SÓ quando hoje (dias passados são imutáveis, N18).
     refetchInterval: isToday ? 60_000 : false,
@@ -400,6 +408,9 @@ export function LinhaDoTempoPage() {
               ))}
             </select>
           )}
+          {mode === "team" && (
+            <TeamTagSelect tags={tags} value={teamTag} onChange={setTeamTag} />
+          )}
           {devicesQuery.isError && (
             <Button variant="outline" size="sm" onClick={() => void devicesQuery.refetch()}>
               Recarregar dispositivos
@@ -586,16 +597,29 @@ export function LinhaDoTempoPage() {
                 </Button>
               </div>
             ) : teamData !== undefined && teamData.lanes.length === 0 ? (
-              // Estado vazio 8.9: tenant sem devices não-arquivados.
+              // Estado vazio 8.9: tenant sem devices não-arquivados - ou, com o
+              // seletor de equipe ativo, etiqueta sem nenhum dispositivo (a API
+              // devolve recorte vazio, nunca erro).
               <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
                 <span className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
                   <Users className="h-7 w-7 text-muted-foreground" aria-hidden />
                 </span>
                 <p className="text-base font-medium">Nenhum dispositivo para mostrar</p>
-                <p className="text-sm text-muted-foreground">
-                  Quando houver dispositivos ativos na organização, cada um aparece aqui como uma
-                  linha do dia.
-                </p>
+                {teamTag !== null ? (
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      Nenhum dispositivo com a etiqueta “{teamTag}” neste dia.
+                    </p>
+                    <Button variant="outline" size="sm" onClick={() => setTeamTag(null)}>
+                      Ver todas as equipes
+                    </Button>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Quando houver dispositivos ativos na organização, cada um aparece aqui como uma
+                    linha do dia.
+                  </p>
+                )}
               </div>
             ) : view === "canvas" ? (
               <>

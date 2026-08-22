@@ -12,6 +12,7 @@
 import { Scale } from "lucide-react";
 import type { BusinessHours, ForaDoHorarioResponse } from "@/lib/types";
 import { JORNADA_DISCLAIMER } from "@/lib/messages";
+import { tagParam } from "@/components/filters/TeamTagSelect";
 
 /** Nomes dos dias ISO (1 = segunda … 7 = domingo) para descrever a escala. */
 const ISO_DAY_LABELS = ["", "seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
@@ -91,6 +92,8 @@ export interface ForaDoHorarioQuery {
   to: string;
   /** device_ids já normalizado (ordenado e unido por vírgula); "" sem filtro. */
   deviceIdsKey: string;
+  /** Etiqueta de equipe do recorte (?tag=); null sem filtro. */
+  tag: string | null;
   page: number;
   includeDevices: boolean;
   pageSize: number;
@@ -103,7 +106,7 @@ export function foraDoHorarioKey(q: ForaDoHorarioQuery) {
 export function foraDoHorarioUrl(q: ForaDoHorarioQuery): string {
   const devices = q.deviceIdsKey.length > 0 ? `&device_ids=${q.deviceIdsKey}` : "";
   return (
-    `/reports/fora-do-horario?from=${q.from}&to=${q.to}${devices}` +
+    `/reports/fora-do-horario?from=${q.from}&to=${q.to}${devices}${tagParam(q.tag)}` +
     `&include_devices=${q.includeDevices}&page=${q.page}&page_size=${q.pageSize}`
   );
 }

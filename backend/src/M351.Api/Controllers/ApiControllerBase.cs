@@ -31,6 +31,15 @@ public abstract class ApiControllerBase : ControllerBase
     public const int MaxReportRangeDays = 92;
 
     /// <summary>
+    /// Etiqueta de equipe do filtro de VISUALIZAÇÃO (F5, ?tag): vazio/espaços equivalem a
+    /// "sem filtro" (null), para o portal poder mandar o parâmetro sempre. As tags são
+    /// gravadas já normalizadas pelo PATCH /devices, então aqui basta o trim. Régua única
+    /// dos dashboards, da timeline de equipe, dos relatórios e dos exports.
+    /// </summary>
+    protected internal static string? NormalizeTeamTag(string? tag) =>
+        string.IsNullOrWhiteSpace(tag) ? null : tag.Trim();
+
+    /// <summary>
     /// Validação canônica de período (mesma régua do dashboard F3.2): from/to no fuso do
     /// tenant, inclusivos, yyyy-MM-dd; from &lt;= to e janela de no máximo 92 dias.
     /// Retorna o 400 ProblemDetails ou null quando válido.

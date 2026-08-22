@@ -727,6 +727,8 @@ export interface ExportParams {
   from?: string;
   to?: string;
   device_ids?: string[];
+  /** Etiqueta de equipe do recorte (F5) - ausente quando o CSV é da org inteira. */
+  tag?: string;
   /** Apenas usage_csv. */
   group_by?: "app" | "category" | "device" | "device_user";
   /** dsr_subject: titular alvo do pacote. */

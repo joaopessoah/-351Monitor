@@ -35,28 +35,36 @@ import {
   useFilterDevices,
   useReportRange,
 } from "@/components/reports/filters";
+import { TeamTagSelect, tagParam, useTeamTags } from "@/components/filters/TeamTagSelect";
 import { ExportCsvBanner, ExportCsvButton, useCsvExport } from "@/components/reports/ExportCsv";
 import { AssinaturaJornadaToggle } from "@/components/reports/AssinaturaJornada";
 
 const PAGE_SIZE = 50;
 
-/** Filtros da tela na URL (?device_ids=, ?page= - deep-link/compartilhável). */
+/** Filtros da tela na URL (?device_ids=, ?tag=, ?page= - deep-link/compartilhável). */
 interface JornadaFilters {
   deviceIds: string[];
+  /** Etiqueta de equipe do recorte (F5); null = organização inteira. */
+  tag: string | null;
   page: number;
 }
 
+// device_ids + tag + page num único codec: trocar o recorte zera a página numa
+// escrita atômica (dois setSearchParams no mesmo tick se atropelariam).
 const JORNADA_FILTERS_CODEC: UrlStateCodec<JornadaFilters> = {
   parse: (params) => {
     const rawDevices = params.get("device_ids");
+    const rawTag = params.get("tag");
     const rawPage = Number(params.get("page"));
     return {
       deviceIds: rawDevices !== null ? rawDevices.split(",").filter((id) => id.length > 0) : [],
+      tag: rawTag !== null && rawTag.trim().length > 0 ? rawTag : null,
       page: Number.isInteger(rawPage) && rawPage > 1 ? rawPage : 1,
     };
   },
   serialize: (value) => ({
     device_ids: value.deviceIds.length > 0 ? value.deviceIds.join(",") : null,
+    tag: value.tag,
     page: value.page > 1 ? String(value.page) : null,
   }),
 };
@@ -80,7 +88,7 @@ function NoteCell({ note }: { note: JornadaRow["note"] }) {
 export function JornadaPage() {
   // Devices e página vivem na URL (replace, sem histórico).
   const [filters, setFilters] = useUrlState(JORNADA_FILTERS_CODEC);
-  const { deviceIds, page } = filters;
+  const { deviceIds, tag, page } = filters;
 
   const meQuery = useQuery({
     queryKey: ["me"],
@@ -91,6 +99,7 @@ export function JornadaPage() {
   const { todayStr, range, activePreset, applyPreset } = useReportRange(timezone);
 
   const { devices } = useFilterDevices();
+  const { tags } = useTeamTags();
   const deviceIdsKey = useMemo(() => [...deviceIds].sort().join(","), [deviceIds]);
   const deviceParam = deviceIdsKey.length > 0 ? `&device_ids=${deviceIdsKey}` : "";
 
@@ -111,10 +120,15 @@ export function JornadaPage() {
   }, [range?.from, range?.to]);
 
   const jornadaQuery = useQuery({
-    queryKey: ["reports", "jornada", { from: range?.from, to: range?.to, devices: deviceIdsKey, page }],
+    queryKey: [
+      "reports",
+      "jornada",
+      { from: range?.from, to: range?.to, devices: deviceIdsKey, tag, page },
+    ],
     queryFn: () =>
       api<JornadaReportResponse>(
-        `/reports/jornada?from=${range?.from ?? ""}&to=${range?.to ?? ""}${deviceParam}&page=${page}&page_size=${PAGE_SIZE}`,
+        `/reports/jornada?from=${range?.from ?? ""}&to=${range?.to ?? ""}${deviceParam}` +
+          `${tagParam(tag)}&page=${page}&page_size=${PAGE_SIZE}`,
       ),
     enabled: range !== null,
     placeholderData: (prev) => prev,
@@ -146,6 +160,7 @@ export function JornadaPage() {
             from: range.from,
             to: range.to,
             ...(deviceIds.length > 0 ? { device_ids: deviceIds } : {}),
+            ...(tag !== null ? { tag } : {}),
           },
         }
       : null;
@@ -207,18 +222,24 @@ export function JornadaPage() {
               {ddmm(range.from)} a {ddmm(range.to)}
             </span>
           )}
+          <TeamTagSelect
+            tags={tags}
+            value={tag}
+            onChange={(next) => setFilters({ ...filters, tag: next, page: 1 })}
+          />
           <DeviceMultiSelect
             devices={devices}
             selected={deviceIds}
             onToggle={(id) =>
               setFilters({
+                ...filters,
                 deviceIds: deviceIds.includes(id)
                   ? deviceIds.filter((d) => d !== id)
                   : [...deviceIds, id],
                 page: 1,
               })
             }
-            onClear={() => setFilters({ deviceIds: [], page: 1 })}
+            onClear={() => setFilters({ ...filters, deviceIds: [], page: 1 })}
           />
           <div className="ml-auto">
             <ExportCsvButton mutation={exportMutation} request={exportRequest} />
@@ -284,13 +305,13 @@ export function JornadaPage() {
                 <tbody>
                   <tr>
                     <td colSpan={10} className="px-6 py-10 text-center text-sm text-muted-foreground">
-                      {deviceIds.length > 0 ? (
+                      {deviceIds.length > 0 || tag !== null ? (
                         <span className="inline-flex flex-col items-center gap-2">
                           <span>Nenhum resultado</span>
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setFilters({ deviceIds: [], page: 1 })}
+                            onClick={() => setFilters({ deviceIds: [], tag: null, page: 1 })}
                           >
                             Limpar filtros
                           </Button>

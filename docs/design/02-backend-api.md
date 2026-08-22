@@ -451,8 +451,10 @@ Papéis: `Owner ⊃ Admin ⊃ Manager ⊃ Viewer`. **No MVP, Manager = Viewer** 
 | `GET /device-users?device_id&q` | Viewer | usuários Windows observados |
 | `PATCH /device-users/{id}` | Admin | `display_name` |
 | `GET /device-users/{id}/timeline?date` | Viewer | timeline consolidada do usuário (multi-device) |
-| `GET /reports/usage?from&to&group_by=app\|category\|device\|device_user` | Viewer | relatório tabular paginado |
-| `POST /exports` | Viewer | `{kind:'usage_csv', params:{...}}` ⇒ `202 {export_id}` (assíncrono no worker; máx. 500 k linhas) |
+| `GET /reports/usage?from&to&group_by=app\|category\|device\|device_user[&tag]` | Viewer | relatório tabular paginado; `tag` recorta a equipe (F5) |
+| `GET /reports/jornada?from&to[&device_ids][&tag]` | Viewer | uma linha por dispositivo × dia do período |
+| `GET /reports/fora-do-horario?from&to[&device_ids][&tag]` | Viewer | atividade fora do horário declarado (indicador de equilíbrio) |
+| `POST /exports` | Viewer | `{kind:'usage_csv', params:{...}}` ⇒ `202 {export_id}` (assíncrono no worker; máx. 500 k linhas); `params.tag` aplica o mesmo recorte no CSV |
 | `GET /exports/{id}` | Viewer (dono) | status + URL de download assinada (expira 7 dias) |
 | `GET/POST /categories`, `PATCH/DELETE /categories/{id}` | Admin | CRUD; produtividade por tenant |
 | `GET /app-catalog?uncategorized=true&q` | Viewer | apps vistos pelo tenant; inclui `default_category` (sugestão do dicionário brasileiro, F1.1) |
@@ -465,6 +467,8 @@ Papéis: `Owner ⊃ Admin ⊃ Manager ⊃ Viewer`. **No MVP, Manager = Viewer** 
 | `POST /webhooks` *(pós-MVP)* | Admin | eventos: `device.offline>24h`, `export.ready`, `device.enrolled` |
 
 Convenções: erros RFC 9457 (`application/problem+json`); paginação por página no MVP (cursor-based pós-MVP para timeline); datas sempre ISO-8601 com offset; recurso de outro tenant ⇒ `404`.
+
+Filtro de equipe (`tag`, F5): mesmo parâmetro em `/dashboard/presence`, `/dashboard/summary`, `/dashboard/top-apps`, `/timeline/team`, os três relatórios e `POST /exports`. É filtro de VISUALIZAÇÃO, não escopo de permissão: qualquer papel continua vendo tudo e só escolhe o recorte exibido. Vazio equivale a sem filtro; etiqueta inexistente devolve recorte vazio, nunca `404` (etiqueta não é recurso com dono); o denominador dos percentuais é recortado junto. O recorte é sempre agregado, o produto não compara equipes lado a lado nem monta ranking entre elas.
 
 ---
 

@@ -15,6 +15,9 @@ namespace M351.Infrastructure.Reports;
 ///  - devices: por default só não-archived (mesma regra de dashboards/relatórios — spec linha
 ///    954); device_ids EXPLÍCITO inclui archived (o gestor pediu aquele histórico pelo toggle
 ///    "incluir arquivados" do portal; o gate de tenant continua: id de outro tenant → 404);
+///  - @Tag (F5): recorte de VISUALIZAÇÃO por etiqueta de equipe, mesma semântica dos
+///    dashboards — null é "sem filtro" e etiqueta inexistente devolve recorte vazio, nunca 404
+///    (etiqueta não é recurso com dono). Combina com device_ids por interseção (E, não OU);
 ///  - users: nomes das lanes de USUÁRIO com tempo no dia (seconds_on > 0), separados por
 ///    ", "; lane-máquina (UUID zero) fora; titular removido por DSR → "Usuário desconhecido";
 ///  - note: data_incomplete do dia → 'dados_incompletos'; senão seconds_on = 0 com intervalo
@@ -26,7 +29,8 @@ public static class JornadaReportSql
 {
     /// <summary>
     /// Recorte de devices do relatório. Parâmetros: @TenantId, @FilterDevices (bool),
-    /// @DeviceIds (uuid[]; vazio quando sem filtro — o Npgsql não infere uuid[] nulo).
+    /// @DeviceIds (uuid[]; vazio quando sem filtro — o Npgsql não infere uuid[] nulo) e
+    /// @Tag (text; null = sem recorte de equipe).
     /// </summary>
     public const string DevicesCte = """
         devs AS (
@@ -35,6 +39,7 @@ public static class JornadaReportSql
             WHERE d.tenant_id = @TenantId
               AND ((@FilterDevices AND d.id = ANY(@DeviceIds))
                    OR (NOT @FilterDevices AND d.status <> 'archived'))
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
         )
         """;
 

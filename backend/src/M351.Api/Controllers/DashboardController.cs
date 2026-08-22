@@ -60,7 +60,7 @@ public class DashboardController(
               AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
             ORDER BY COALESCE(d.display_name, d.hostname)
             """,
-            new { TenantId = tenantId, Tag = NormalizeTag(tag) }, cancellationToken: ct));
+            new { TenantId = tenantId, Tag = NormalizeTeamTag(tag) }, cancellationToken: ct));
 
         var items = rows.Select(r => new PresenceItemResponse(
                 r.DeviceId, r.DeviceName, r.Hostname, r.State,
@@ -152,7 +152,7 @@ public class DashboardController(
             new
             {
                 TenantId = tenantId, From = from, To = to,
-                DeviceId = deviceId, DeviceUserId = deviceUserId, Tag = NormalizeTag(tag),
+                DeviceId = deviceId, DeviceUserId = deviceUserId, Tag = NormalizeTeamTag(tag),
             },
             cancellationToken: ct))).ToList();
 
@@ -230,7 +230,7 @@ public class DashboardController(
             ORDER BY seconds_active DESC, a.process_name
             LIMIT @Limit
             """,
-            new { TenantId = tenantId, From = from, To = to, Limit = effectiveLimit, Tag = NormalizeTag(tag) },
+            new { TenantId = tenantId, From = from, To = to, Limit = effectiveLimit, Tag = NormalizeTeamTag(tag) },
             cancellationToken: ct))).ToList();
 
         var totalSecondsActive = await connection.ExecuteScalarAsync<long>(new CommandDefinition(
@@ -243,7 +243,7 @@ public class DashboardController(
               AND u.summary_date BETWEEN @From::date AND @To::date
               AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
             """,
-            new { TenantId = tenantId, From = from, To = to, Tag = NormalizeTag(tag) }, cancellationToken: ct));
+            new { TenantId = tenantId, From = from, To = to, Tag = NormalizeTeamTag(tag) }, cancellationToken: ct));
 
         var items = rows.Select(r => new DashboardTopAppResponse(
                 r.AppId, r.ProcessName, r.DisplayName, r.CustomDisplayName,
@@ -257,14 +257,6 @@ public class DashboardController(
     }
 
     // ------------------------------------------------------------ helpers
-
-    /// <summary>
-    /// Etiqueta de equipe do filtro de visualização (F5): vazio/espaços equivalem a "sem
-    /// filtro" (null), para o portal poder mandar o parâmetro sempre. As tags são gravadas
-    /// já normalizadas pelo PATCH /devices, então aqui basta o trim.
-    /// </summary>
-    private static string? NormalizeTag(string? tag) =>
-        string.IsNullOrWhiteSpace(tag) ? null : tag.Trim();
 
     /// <summary>
     /// from/to no fuso do tenant, inclusivos, formato yyyy-MM-dd; from ≤ to e janela

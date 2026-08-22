@@ -33,6 +33,9 @@ namespace M351.Api.Controllers;
 ///  - params validados com os MESMOS validadores dos endpoints de leitura (régua de datas
 ///    do dashboard, group_by do usage, gate 404 de device_ids cross-tenant); group_by em
 ///    jornada_csv/fora_horario_csv → 400 (não se aplica, decisão p/ silêncio da spec);
+///  - tag (F5): recorte de equipe por etiqueta, MESMA semântica dos endpoints de leitura
+///    (vazio = sem filtro; etiqueta inexistente gera CSV vazio, nunca erro). Vale para os três
+///    kinds de CSV, entra nos params normalizados e, por isso, na trilha export_csv;
 ///  - fora_horario_csv exige a organização com horário de trabalho configurado e coleta
 ///    contínua: sem janela declarada, ou com collection_window = BUSINESS_HOURS, o pedido vira
 ///    409 explicativo (mesma régua dos estados vazios do GET /reports/fora-do-horario, um CSV
@@ -145,12 +148,14 @@ public class ExportsController(
 
         // params NORMALIZADOS (snake_case, sem nulos) — é o que o worker lê e o que a
         // listagem devolve; o mesmo objeto vai para o detail da auditoria
+        var tag = NormalizeTeamTag(body.Params.Tag);
         var normalizedParams = new Dictionary<string, object?>
         {
             ["from"] = body.Params.From,
             ["to"] = body.Params.To,
         };
         if (deviceIds is { Length: > 0 }) normalizedParams["device_ids"] = deviceIds;
+        if (tag is not null) normalizedParams["tag"] = tag;
         if (body.Kind == "usage_csv") normalizedParams["group_by"] = body.Params.GroupBy;
         var paramsJson = JsonSerializer.Serialize(normalizedParams);
 

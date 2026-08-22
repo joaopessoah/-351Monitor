@@ -5,6 +5,7 @@ using System.Text.Json;
 using M351.Infrastructure.Reports;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace M351.Infrastructure.Exports;
 
@@ -290,7 +291,8 @@ public sealed partial class ExportService(
     /// <summary>
     /// CSV de uso: colunas do group_by escolhido + horas decimais. As queries espelham as
     /// do GET /reports/usage (ReportsController, F3.3) sem paginação: devices archived
-    /// SEMPRE fora, ordenação por tempo ativo desc. SEM disclaimer (não é jornada).
+    /// SEMPRE fora, mesmo recorte por etiqueta de equipe (@Tag, F5), ordenação por tempo
+    /// ativo desc. SEM disclaimer (não é jornada).
     /// </summary>
     private async Task<(int Rows, bool Truncated)> WriteUsageAsync(
         StreamWriter writer, Guid tenantId, ExportParams p, CancellationToken ct)
@@ -405,6 +407,7 @@ public sealed partial class ExportService(
               AND d.status <> 'archived'
               AND u.summary_date BETWEEN @From::date AND @To::date
               AND (@FilterDevices = false OR u.device_id = ANY(@DeviceIds))
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
             GROUP BY a.process_name, COALESCE(tac.custom_display_name, a.display_name), c.name, c.classification
             ORDER BY seconds_active DESC, a.process_name
             """,
@@ -435,6 +438,7 @@ public sealed partial class ExportService(
               AND d.status <> 'archived'
               AND u.summary_date BETWEEN @From::date AND @To::date
               AND (@FilterDevices = false OR u.device_id = ANY(@DeviceIds))
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
             GROUP BY c.name, c.classification
             ORDER BY seconds_active DESC, c.name NULLS LAST
             """,
@@ -467,6 +471,7 @@ public sealed partial class ExportService(
               AND d.status <> 'archived'
               AND s.summary_date BETWEEN @From::date AND @To::date
               AND (@FilterDevices = false OR s.device_id = ANY(@DeviceIds))
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
             GROUP BY s.device_id, COALESCE(d.display_name, d.hostname)
             ORDER BY seconds_active DESC, device_name
             """,
@@ -507,6 +512,7 @@ public sealed partial class ExportService(
               AND d.status <> 'archived'
               AND s.summary_date BETWEEN @From::date AND @To::date
               AND (@FilterDevices = false OR s.device_id = ANY(@DeviceIds))
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
             GROUP BY s.device_user_id, s.device_id, du.display_name, du.windows_username,
                      COALESCE(d.display_name, d.hostname)
             ORDER BY seconds_active DESC, device_name, s.device_user_id
@@ -595,6 +601,12 @@ public sealed partial class ExportService(
         command.Parameters.AddWithValue("To", p.To);
         command.Parameters.AddWithValue("FilterDevices", p.DeviceIds.Length > 0);
         command.Parameters.AddWithValue("DeviceIds", p.DeviceIds);
+        // @Tag (F5): tipo EXPLÍCITO — sem filtro o valor é NULL e o Npgsql não infere o tipo
+        // de um DBNull cru; o ::text do predicado só resolve o lado do Postgres.
+        command.Parameters.Add(new NpgsqlParameter("Tag", NpgsqlDbType.Text)
+        {
+            Value = (object?)p.Tag ?? DBNull.Value,
+        });
     }
 
     /// <summary>Params do job (já validados no POST /exports com os validadores dos endpoints).</summary>
@@ -608,7 +620,10 @@ public sealed partial class ExportService(
             ? ids.EnumerateArray().Select(e => e.GetGuid()).ToArray()
             : [];
         var groupBy = root.TryGetProperty("group_by", out var g) ? g.GetString() : null;
-        return new ExportParams(from, to, deviceIds, groupBy);
+        // tag (F5): ausente nos params = sem recorte de equipe (jobs criados antes do filtro
+        // continuam válidos e seguem exportando a organização inteira)
+        var tag = root.TryGetProperty("tag", out var t) ? t.GetString() : null;
+        return new ExportParams(from, to, deviceIds, groupBy, tag);
     }
 
     /// <summary>Campo CSV: aspas duplas quando contém ';', aspas ou quebra de linha (RFC 4180 com ';').</summary>
@@ -683,5 +698,5 @@ public sealed partial class ExportService(
 
     private sealed record ExportJobRow(Guid Id, Guid TenantId, string Kind, string ParamsJson);
 
-    private sealed record ExportParams(string From, string To, Guid[] DeviceIds, string? GroupBy);
+    private sealed record ExportParams(string From, string To, Guid[] DeviceIds, string? GroupBy, string? Tag);
 }
