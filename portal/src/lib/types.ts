@@ -70,7 +70,12 @@ export interface MeResponse {
     timezone: string;
     /** Horário de trabalho configurado (jsonb cru) - null quando a org não definiu. */
     business_hours: BusinessHours | null;
-    /** Plano comercial da organização (ex.: "trial"). */
+    /**
+     * Plano comercial da organização (ex.: "trial", "pro"). Governa recursos
+     * exclusivos do Pro no portal, como o e-mail de alertas de dispositivos. O
+     * PREÇO é decisão comercial fora do sistema: o portal nunca exibe valor em
+     * reais.
+     */
     plan: string;
     /** Limite de dispositivos do plano - null sem limite definido. */
     device_limit: number | null;
@@ -80,8 +85,38 @@ export interface MeResponse {
      * Visão Geral está visível; o DELETE na mesma rota reabre (volta a null).
      */
     onboarding_checklist_dismissed_at: string | null;
+    /**
+     * Meta semanal de horas ativas da EQUIPE (nunca individual) - null sem meta.
+     * Editável em PATCH /organization (1 a 10000).
+     */
+    goal_weekly_active_hours: number | null;
+    /**
+     * Meta de percentual do tempo ativo em aplicativos relacionados ao trabalho
+     * - null sem meta. Editável em PATCH /organization (1 a 100).
+     */
+    goal_work_related_pct: number | null;
   };
 }
+
+/**
+ * Resposta de `GET /me/email-prefs` e body de `PATCH /me/email-prefs`
+ * (PATCH parcial: campos ausentes não mudam). São e-mails da PESSOA logada,
+ * não da organização.
+ *
+ * weekly_digest: resumo semanal da equipe.
+ * fleet_alerts: avisos de dispositivos com problema (exclusivo do plano Pro).
+ * jornada_weekly: relatório semanal de jornada.
+ *
+ * Cuidado de vocabulário: "alertas" no portal são estes e-mails; as pendências
+ * do sino do topo NUNCA se chamam alertas.
+ */
+export interface EmailPrefs {
+  weekly_digest: boolean;
+  fleet_alerts: boolean;
+  jornada_weekly: boolean;
+}
+
+export type EmailPrefsPatchRequest = Partial<EmailPrefs>;
 
 /** Resposta de `GET /auth/invite/{token}` (público; 404 inexistente, 410 expirado/usado). */
 export interface InvitationInfo {
@@ -256,6 +291,37 @@ export interface PagedResponse<T> {
   total: number;
   page: number;
   page_size: number;
+}
+
+/**
+ * Resposta de `GET /devices/health-summary` (Viewer+): contadores de saúde da
+ * FROTA INTEIRA do tenant, computados no backend sobre todos os devices não
+ * arquivados. Nada a ver com a página corrente de `GET /devices` — é justamente
+ * o que os contadores derivados no cliente (lib/deviceHealth.ts) não conseguem
+ * responder, porque só veem os 50 devices da página.
+ *
+ * As dimensões são as MESMAS de lib/deviceHealth.ts, que continua derivando a
+ * saúde por linha para os badges da tabela. within_business_hours diz se
+ * server_time cai dentro do horário de trabalho da organização — o mesmo
+ * critério que promove "sem comunicação" a offline_severe.
+ *
+ * O filtro correspondente da listagem é `GET /devices?health=alert`, que aplica
+ * o mesmo predicado de with_alert à frota inteira (com paginação normal).
+ */
+export interface DeviceHealthSummaryResponse {
+  /** Devices não arquivados da organização (base de todos os contadores). */
+  active_devices: number;
+  offline: number;
+  /** Sem comunicação há mais de 30 min E em horário de trabalho. */
+  offline_severe: number;
+  clock_skewed: number;
+  outdated: number;
+  tampered: number;
+  notice_pending: number;
+  /** Devices com pelo menos uma dimensão acionada (nunca soma das dimensões). */
+  with_alert: number;
+  within_business_hours: boolean;
+  server_time: string;
 }
 
 // =============================================================================
@@ -758,7 +824,8 @@ export type UserStatus = "invited" | "active" | "disabled";
 /**
  * Item de `GET /users` (PolicyAdminPlus). Shape completo do backend
  * (UserContracts.cs): a tela de Usuários consome tudo; a auditoria usa só
- * id/nome/e-mail para o filtro por ator.
+ * id/nome/e-mail para o filtro por ator e o sino de pendências lê o status
+ * para achar convite parado.
  */
 export interface UserListItem {
   id: string;
@@ -965,6 +1032,10 @@ export interface OrganizationResponse {
   contato_dpo: string | null;
   /** Data de vigência da política (yyyy-MM-dd) - null quando não definida. */
   data_vigencia: string | null;
+  /** Meta semanal de horas ativas da EQUIPE - null sem meta (ver MeResponse). */
+  goal_weekly_active_hours: number | null;
+  /** Meta de % do tempo em apps relacionados ao trabalho - null sem meta. */
+  goal_work_related_pct: number | null;
 }
 
 /**
@@ -983,6 +1054,10 @@ export interface OrganizationPatchRequest {
    * relatório de jornada (Seção 8.5).
    */
   business_hours?: BusinessHours | null;
+  /** Meta semanal de horas ativas da EQUIPE: 1 a 10000; null remove a meta. */
+  goal_weekly_active_hours?: number | null;
+  /** Meta de % do tempo em apps relacionados ao trabalho: 1 a 100; null remove. */
+  goal_work_related_pct?: number | null;
 }
 
 /** Janela de coleta do agente (jsonb canônico da Seção 5.5). */
@@ -1017,4 +1092,49 @@ export interface AgentConfigPatchRequest {
   masked_patterns?: string[];
   ignored_processes?: string[];
   collection_window?: CollectionWindow;
+}
+
+// =============================================================================
+// Contratos da cobrança: GET /billing/billable-devices?month=YYYY-MM (papel
+// OWNER). Extrato mensal dos dispositivos que contam para o mês, insumo do
+// billing manual. O portal exibe CONTAGEM e EVIDÊNCIA e jamais valor em reais:
+// preço é decisão comercial fora do sistema.
+// =============================================================================
+
+/**
+ * Primeira regra de cobrança que casou (events > enrolled > keep_alive):
+ * eventos recebidos no mês, registro (enroll) no mês, ou último contato no mês
+ * (lote vazio de keep-alive, que só atualiza o last_seen_at).
+ */
+export type BillableEvidence = "events" | "enrolled" | "keep_alive";
+
+export interface BillableDeviceItem {
+  device_id: string;
+  display_name: string | null;
+  hostname: string;
+  /** Status ATUAL do device - archived nunca é cobrável; revoked que usou, conta. */
+  status: string;
+  /** Instante do registro (enroll) do device. */
+  enrolled_at: string;
+  last_seen_at: string | null;
+  /** Um BillableEvidence; tipado como texto para tolerar regra nova no backend. */
+  evidence: string;
+}
+
+/**
+ * Resposta de `GET /billing/billable-devices?month=`. frozen=true significa mês
+ * fechado e CONGELADO (o snapshot não muda mais, seguro para anexar à fatura);
+ * frozen=false é o mês corrente ao vivo, cujo número ainda pode mudar até o
+ * fechamento. criteria é a regra aplicada, em texto legível montado pelo
+ * backend.
+ */
+export interface BillableDevicesResponse {
+  /** Mês pedido, no formato YYYY-MM. */
+  month: string;
+  device_count: number;
+  criteria: string;
+  items: BillableDeviceItem[];
+  frozen: boolean;
+  /** Instante do congelamento - null enquanto o mês não fechou. */
+  frozen_at: string | null;
 }

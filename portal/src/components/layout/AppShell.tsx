@@ -13,6 +13,7 @@ import {
   MonitorSmartphone,
   PanelLeftClose,
   PanelLeftOpen,
+  Receipt,
   Settings,
   ShieldCheck,
   X,
@@ -22,6 +23,7 @@ import { useAuth } from "@/lib/auth";
 import { PREF_SIDEBAR_COLLAPSED, readPref, writePref } from "@/lib/prefs";
 import { BrandLogo } from "@/components/BrandLogo";
 import { roleLabels, timezoneBadge } from "@/lib/format";
+import { isOwner } from "@/lib/roles";
 import type { MeResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -33,6 +35,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { PendenciasBell } from "./PendenciasBell";
 import { ShellSkeleton } from "./ShellSkeleton";
 import { FormError } from "@/components/FormError";
 import { genericErrorMessage } from "@/lib/messages";
@@ -46,13 +49,19 @@ const navItems = [
   { to: "/configuracoes", label: "Configurações", icon: Settings },
 ] as const;
 
+// Extrato de cobrança: GET /billing/billable-devices é OwnerOnly, então o link
+// só aparece para o Proprietário (a página se protege de novo, por garantia).
+const ownerNavItem = { to: "/cobranca", label: "Cobrança", icon: Receipt } as const;
+
 /** Links de navegação do shell - reusados pela sidebar e pelo drawer mobile. */
 function ShellNav({
   slug,
+  owner,
   collapsed = false,
   onNavigate,
 }: {
   slug: string;
+  owner: boolean;
   collapsed?: boolean;
   onNavigate?: () => void;
 }) {
@@ -66,7 +75,7 @@ function ShellNav({
     );
   return (
     <nav className="flex-1 space-y-1 overflow-y-auto p-2" aria-label="Navegação principal">
-      {navItems.map(({ to, label, icon: Icon }) => (
+      {[...navItems, ...(owner ? [ownerNavItem] : [])].map(({ to, label, icon: Icon }) => (
         <NavLink key={to} to={to} title={label} onClick={onNavigate} className={linkClass}>
           <Icon className="h-4 w-4 shrink-0" />
           {!collapsed && <span>{label}</span>}
@@ -137,6 +146,7 @@ export function AppShell() {
   }
 
   const me = meQuery.data;
+  const owner = isOwner(me);
 
   async function handleSignOut() {
     await signOut();
@@ -146,16 +156,18 @@ export function AppShell() {
   return (
     <div className="flex min-h-screen">
       {/* Sidebar fixa - só a partir de md; abaixo disso a navegação é o drawer. */}
+      {/* no-print: navegação e topbar ficam fora do papel, para que telas
+          imprimíveis (ex.: extrato de cobrança) rendam folha limpa. */}
       <aside
         className={cn(
-          "hidden shrink-0 flex-col border-r bg-card transition-[width] duration-150 md:flex",
+          "no-print hidden shrink-0 flex-col border-r bg-card transition-[width] duration-150 md:flex",
           collapsed ? "w-16" : "w-60",
         )}
       >
         <div className={cn("flex h-14 items-center border-b px-4", collapsed && "justify-center px-2")}>
           <BrandLogo word={!collapsed} size={24} />
         </div>
-        <ShellNav slug={me.organization.slug} collapsed={collapsed} />
+        <ShellNav slug={me.organization.slug} owner={owner} collapsed={collapsed} />
         <div className="border-t p-2">
           <Button
             variant="ghost"
@@ -190,14 +202,18 @@ export function AppShell() {
                 <X className="h-5 w-5" aria-hidden />
               </DialogPrimitive.Close>
             </div>
-            <ShellNav slug={me.organization.slug} onNavigate={() => setMobileNavOpen(false)} />
+            <ShellNav
+              slug={me.organization.slug}
+              owner={owner}
+              onNavigate={() => setMobileNavOpen(false)}
+            />
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
 
       {/* Conteúdo */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between gap-4 border-b bg-card px-6">
+        <header className="no-print flex h-14 items-center justify-between gap-4 border-b bg-card px-6">
           <div className="flex min-w-0 items-center gap-3">
             <Button
               variant="ghost"
@@ -213,31 +229,42 @@ export function AppShell() {
               {timezoneBadge(me.organization.timezone)}
             </span>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="gap-2">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                  {initials(me.user.display_name)}
-                </span>
-                <span className="hidden max-w-[12rem] truncate text-sm sm:inline">{me.user.display_name}</span>
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64">
-              <DropdownMenuLabel>
-                <div className="space-y-0.5">
-                  <p className="truncate text-sm font-medium">{me.user.display_name}</p>
-                  <p className="truncate text-xs font-normal text-muted-foreground">{me.user.email}</p>
-                  <p className="text-xs font-normal text-muted-foreground">{roleLabels[me.user.role]}</p>
-                </div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => void handleSignOut()}>
-                <LogOut className="h-4 w-4" />
-                Sair
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex items-center gap-1">
+            {/* Sino de pendências: consolida o que espera ação, das mesmas
+                queries que as telas de origem já fazem. */}
+            <PendenciasBell />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                    {initials(me.user.display_name)}
+                  </span>
+                  <span className="hidden max-w-[12rem] truncate text-sm sm:inline">
+                    {me.user.display_name}
+                  </span>
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuLabel>
+                  <div className="space-y-0.5">
+                    <p className="truncate text-sm font-medium">{me.user.display_name}</p>
+                    <p className="truncate text-xs font-normal text-muted-foreground">
+                      {me.user.email}
+                    </p>
+                    <p className="text-xs font-normal text-muted-foreground">
+                      {roleLabels[me.user.role]}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => void handleSignOut()}>
+                  <LogOut className="h-4 w-4" />
+                  Sair
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </header>
         <main className="flex-1 p-6">
           <Outlet />

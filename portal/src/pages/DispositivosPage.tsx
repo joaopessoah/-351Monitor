@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import {
   Archive,
   ArchiveRestore,
@@ -24,6 +25,7 @@ import { genericErrorMessage } from "@/lib/messages";
 import { isAdmin } from "@/lib/roles";
 import type {
   BusinessHours,
+  DeviceHealthSummaryResponse,
   DeviceItem,
   DevicePatchRequest,
   MeResponse,
@@ -263,6 +265,139 @@ function NoticeCell({ device, timezone }: { device: DeviceItem; timezone: string
   );
 }
 
+/**
+ * Chips de saúde com os totais da ORGANIZAÇÃO (GET /devices/health-summary), e
+ * não da página exibida — a legenda acima dos chips diz isso em texto, porque a
+ * diferença muda a leitura do número (antes, "2 com alerta" podia significar
+ * "2 nos primeiros 50 devices"). O primeiro chip liga/desliga o ?health=alert
+ * do servidor. Skeleton com a geometria final e erro inline com retry.
+ */
+function FleetHealthChips({
+  query,
+  onlyAlerts,
+  onToggleAlerts,
+}: {
+  query: UseQueryResult<DeviceHealthSummaryResponse>;
+  onlyAlerts: boolean;
+  onToggleAlerts: () => void;
+}) {
+  const summary = query.data;
+
+  if (summary === undefined) {
+    if (query.isError) {
+      return (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
+          <span>Não foi possível carregar os totais de saúde da organização.</span>
+          <Button variant="outline" size="sm" onClick={() => void query.refetch()}>
+            Tentar novamente
+          </Button>
+        </div>
+      );
+    }
+    return (
+      <div className="space-y-1.5">
+        <Skeleton className="h-3.5 w-64" />
+        <div className="flex flex-wrap items-center gap-2">
+          <Skeleton className="h-7 w-52 rounded-full" />
+          <Skeleton className="h-7 w-40 rounded-full" />
+          <Skeleton className="h-7 w-44 rounded-full" />
+        </div>
+      </div>
+    );
+  }
+
+  const hasAlert = summary.with_alert > 0;
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs text-muted-foreground">
+        Saúde da frota: totais de toda a organização{" "}
+        <span className="tabular-nums">
+          ({summary.active_devices}{" "}
+          {summary.active_devices === 1 ? "dispositivo ativo" : "dispositivos ativos"})
+        </span>
+        , não apenas da página exibida.
+      </p>
+      {query.isError && (
+        <p role="alert" className="text-xs text-destructive">
+          Não foi possível atualizar os totais. Mostrando a última leitura.
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <button
+          type="button"
+          onClick={onToggleAlerts}
+          aria-pressed={onlyAlerts}
+          title={
+            onlyAlerts
+              ? "Clique para mostrar todos os dispositivos"
+              : "Clique para filtrar a organização pelos dispositivos com alerta"
+          }
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-medium transition-colors",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            hasAlert
+              ? "border-viz-improdutivo/40 bg-viz-improdutivo/10 text-viz-improdutivo hover:bg-viz-improdutivo/15"
+              : "border-viz-produtivo/40 bg-viz-produtivo/10 text-viz-produtivo hover:bg-viz-produtivo/15",
+            onlyAlerts && "ring-2 ring-viz-improdutivo/40",
+          )}
+        >
+          {hasAlert ? (
+            <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          ) : (
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          )}
+          <span className="tabular-nums">
+            {hasAlert
+              ? `${summary.with_alert} ${summary.with_alert === 1 ? "dispositivo" : "dispositivos"} com alerta`
+              : "Nenhum alerta na organização"}
+          </span>
+        </button>
+        {summary.offline > 0 && (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 tabular-nums text-secondary-foreground"
+            title={
+              summary.offline_severe > 0
+                ? `${summary.offline_severe} sem comunicação há mais de 30 minutos em horário de trabalho`
+                : undefined
+            }
+          >
+            <WifiOff className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {summary.offline} sem comunicação
+          </span>
+        )}
+        {summary.clock_skewed > 0 && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 tabular-nums text-secondary-foreground">
+            <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {summary.clock_skewed} com relógio dessincronizado
+          </span>
+        )}
+        {summary.outdated > 0 && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 tabular-nums text-secondary-foreground">
+            <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {summary.outdated} com versão desatualizada
+          </span>
+        )}
+        {summary.tampered > 0 && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 tabular-nums text-secondary-foreground">
+            <ShieldAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {summary.tampered} com adulteração
+          </span>
+        )}
+        {summary.notice_pending > 0 && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 tabular-nums text-secondary-foreground">
+            <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {summary.notice_pending} com ciência pendente
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const headerCell = "px-3 py-2 text-left font-medium";
 const bodyCell = "px-3 py-1.5 align-middle";
 
@@ -299,6 +434,7 @@ const skeletonWidths = ["w-32", "w-24", "w-20", "w-20", "w-16", "w-12", "w-12", 
  */
 export function DispositivosPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Valores digitados (imediatos) e valores aplicados (após debounce de 400ms).
   const [qInput, setQInput] = useState("");
@@ -307,11 +443,32 @@ export function DispositivosPage() {
   const [tag, setTag] = useState("");
   const [status, setStatus] = useState<StatusFilter>("");
   const [includeArchived, setIncludeArchived] = useState(false);
-  // Toggle "Somente com alertas": filtro CLIENT-SIDE sobre a página corrente
-  // (a saúde é derivada no portal e não há parâmetro de query no backend para
-  // ela; documentado). Os contadores no topo refletem apenas a página visível.
-  const [onlyAlerts, setOnlyAlerts] = useState(false);
   const [page, setPage] = useState(1);
+
+  /**
+   * Toggle "Somente com alertas": vive na URL (?filtro=alerta) e viaja para o
+   * backend como ?health=alert, filtrando a FROTA INTEIRA com paginação normal.
+   * Antes era derivação client-side da página corrente, que escondia alertas
+   * fora dos 50 primeiros devices. A URL ser a fonte da verdade é o que faz o
+   * card "Dispositivos precisam de atenção" da Visão Geral abrir esta tela já
+   * filtrada, e mantém o filtro compartilhável.
+   */
+  const onlyAlerts = searchParams.get("filtro") === "alerta";
+  function setOnlyAlerts(next: boolean): void {
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (next) {
+          params.set("filtro", "alerta");
+        } else {
+          params.delete("filtro");
+        }
+        return params;
+      },
+      { replace: true },
+    );
+    setPage(1);
+  }
 
   // Ação aberta no momento (dialog) - as PRIMEIRAS mutações desta tela (F3.7).
   const [action, setAction] = useState<DeviceAction | null>(null);
@@ -344,7 +501,17 @@ export function DispositivosPage() {
   const effectiveIncludeArchived = status === "archived" || includeArchived;
 
   const devicesQuery = useQuery({
-    queryKey: ["devices", { page, q, status, tag, include_archived: effectiveIncludeArchived }],
+    queryKey: [
+      "devices",
+      {
+        page,
+        q,
+        status,
+        tag,
+        include_archived: effectiveIncludeArchived,
+        health: onlyAlerts ? "alert" : null,
+      },
+    ],
     queryFn: () => {
       const params = new URLSearchParams();
       params.set("page", String(page));
@@ -353,8 +520,20 @@ export function DispositivosPage() {
       if (status.length > 0) params.set("status", status);
       if (tag.length > 0) params.set("tag", tag);
       if (!effectiveIncludeArchived) params.set("include_archived", "false");
+      if (onlyAlerts) params.set("health", "alert");
       return api<PagedResponse<DeviceItem>>(`/devices?${params.toString()}`);
     },
+    placeholderData: (prev) => prev,
+  });
+
+  // Totais de saúde da FROTA INTEIRA (mesma key/polling da Visão Geral, então
+  // navegar entre as duas telas resolve do cache). Os chips do topo exibem
+  // estes números, não mais a derivação dos 50 devices da página.
+  const healthQuery = useQuery({
+    queryKey: ["devices", "health-summary"],
+    queryFn: () => api<DeviceHealthSummaryResponse>("/devices/health-summary"),
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
     placeholderData: (prev) => prev,
   });
 
@@ -396,9 +575,9 @@ export function DispositivosPage() {
 
   const pageItems = useMemo(() => devicesQuery.data?.items ?? [], [devicesQuery.data]);
 
-  // Saúde derivada por device da PÁGINA corrente (a derivação é client-side;
-  // ver comentário do toggle onlyAlerts). Reusada nos contadores, no filtro e
-  // na ordenação "problemas primeiro".
+  // Saúde derivada por device da página corrente — continua servindo os badges
+  // POR LINHA e a ordenação "problemas primeiro". Os TOTAIS da frota vêm do
+  // health-summary; esta derivação nunca mais é usada como contador.
   const healthByDevice = useMemo(() => {
     const map = new Map<string, DeviceHealth>();
     for (const d of pageItems) {
@@ -407,27 +586,12 @@ export function DispositivosPage() {
     return map;
   }, [pageItems, referenceTime, businessHours, orgTimezone]);
 
-  // Contadores da página visível (a saúde é derivada por página — documentado).
-  const alertCounts = useMemo(() => {
-    const c = { withAlert: 0, offline: 0, clockSkewed: 0, outdated: 0, tampered: 0, noticePending: 0 };
-    for (const h of healthByDevice.values()) {
-      if (h.hasAlert) c.withAlert += 1;
-      if (h.offline) c.offline += 1;
-      if (h.clockSkewed) c.clockSkewed += 1;
-      if (h.outdated) c.outdated += 1;
-      if (h.tampered) c.tampered += 1;
-      if (h.noticePending) c.noticePending += 1;
-    }
-    return c;
-  }, [healthByDevice]);
-
-  // Linhas exibidas: filtro "Somente com alertas" + ordenação "problemas
-  // primeiro" (sem comunicação severa, depois com alerta, depois saudáveis;
-  // desempate por nome). Mantém a ordem do backend dentro de cada bucket.
+  // Ordenação "problemas primeiro" (sem comunicação severa, depois com alerta,
+  // depois saudáveis; desempate por nome). SEM filtro client-side: quando o
+  // toggle está ligado, quem filtrou foi o backend (?health=alert) — refiltrar
+  // aqui poderia esconder linhas em que a derivação local discordasse do
+  // servidor (ex.: relógio de referência diferente).
   const visibleItems = useMemo(() => {
-    const filtered = onlyAlerts
-      ? pageItems.filter((d) => healthByDevice.get(d.id)?.hasAlert === true)
-      : pageItems;
     const rank = (d: DeviceItem): number => {
       const h = healthByDevice.get(d.id);
       if (h === undefined) return 2;
@@ -435,12 +599,12 @@ export function DispositivosPage() {
       if (h.hasAlert) return 1;
       return 2;
     };
-    return [...filtered].sort((a, b) => {
+    return [...pageItems].sort((a, b) => {
       const byRank = rank(a) - rank(b);
       if (byRank !== 0) return byRank;
       return (a.display_name ?? a.hostname).localeCompare(b.display_name ?? b.hostname, "pt-BR");
     });
-  }, [pageItems, healthByDevice, onlyAlerts]);
+  }, [pageItems, healthByDevice]);
 
   const hasActiveFilters =
     q.length > 0 || tag.length > 0 || status.length > 0 || includeArchived || onlyAlerts;
@@ -452,8 +616,8 @@ export function DispositivosPage() {
     setTag("");
     setStatus("");
     setIncludeArchived(false);
+    // Também limpa o ?filtro=alerta da URL (e volta para a página 1).
     setOnlyAlerts(false);
-    setPage(1);
   }
 
   function goToTimeline(deviceId: string) {
@@ -543,7 +707,7 @@ export function DispositivosPage() {
         </label>
         <label
           className="flex h-9 cursor-pointer items-center gap-2 text-sm"
-          title="Mostra apenas os dispositivos com algum alerta de saúde nesta página"
+          title="Filtra a organização inteira pelos dispositivos com algum alerta de saúde"
         >
           <input
             type="checkbox"
@@ -555,63 +719,12 @@ export function DispositivosPage() {
         </label>
       </div>
 
-      {/* Resumo de saúde da página (a derivação é client-side; ver toggle). */}
-      {!devicesQuery.isPending && !devicesQuery.isError && total > 0 && (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <button
-            type="button"
-            onClick={() => setOnlyAlerts((v) => !v)}
-            aria-pressed={onlyAlerts}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-medium transition-colors",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-              alertCounts.withAlert > 0
-                ? "border-viz-improdutivo/40 bg-viz-improdutivo/10 text-viz-improdutivo hover:bg-viz-improdutivo/15"
-                : "border-viz-produtivo/40 bg-viz-produtivo/10 text-viz-produtivo hover:bg-viz-produtivo/15",
-              onlyAlerts && "ring-2 ring-viz-improdutivo/40",
-            )}
-          >
-            {alertCounts.withAlert > 0 ? (
-              <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            ) : (
-              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            )}
-            {alertCounts.withAlert > 0
-              ? `${alertCounts.withAlert} ${alertCounts.withAlert === 1 ? "dispositivo" : "dispositivos"} com alerta`
-              : "Nenhum alerta nesta página"}
-          </button>
-          {alertCounts.offline > 0 && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 tabular-nums text-secondary-foreground">
-              <WifiOff className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              {alertCounts.offline} sem comunicação
-            </span>
-          )}
-          {alertCounts.clockSkewed > 0 && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 tabular-nums text-secondary-foreground">
-              <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              {alertCounts.clockSkewed} com relógio dessincronizado
-            </span>
-          )}
-          {alertCounts.outdated > 0 && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 tabular-nums text-secondary-foreground">
-              <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              {alertCounts.outdated} com versão desatualizada
-            </span>
-          )}
-          {alertCounts.tampered > 0 && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 tabular-nums text-secondary-foreground">
-              <ShieldAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              {alertCounts.tampered} com adulteração
-            </span>
-          )}
-          {alertCounts.noticePending > 0 && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 tabular-nums text-secondary-foreground">
-              <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              {alertCounts.noticePending} com ciência pendente
-            </span>
-          )}
-        </div>
-      )}
+      {/* Resumo de saúde da FROTA INTEIRA (GET /devices/health-summary). */}
+      <FleetHealthChips
+        query={healthQuery}
+        onlyAlerts={onlyAlerts}
+        onToggleAlerts={() => setOnlyAlerts(!onlyAlerts)}
+      />
 
       {presenceQuery.isError && presenceQuery.data === undefined && (
         <div className="flex items-center justify-between gap-3 rounded-md border border-brand-red/30 bg-brand-red/10 px-3 py-2 text-sm text-brand-red">
@@ -683,17 +796,10 @@ export function DispositivosPage() {
               >
                 <TableHead showActions={admin} />
                 <tbody>
-                  {visibleItems.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={admin ? 12 : 11}
-                        className="px-6 py-8 text-center text-sm text-muted-foreground"
-                      >
-                        Nenhum dispositivo com alerta nesta página.
-                      </td>
-                    </tr>
-                  ) : (
-                    visibleItems.map((d) => {
+                  {/* Sem linha de "nenhum resultado" aqui: o filtro de alertas
+                      agora é do servidor, então página vazia significa total 0,
+                      já tratado pelo estado vazio de filtros acima. */}
+                  {visibleItems.map((d) => {
                     const p = presenceByDevice.get(d.id);
                     const health =
                       healthByDevice.get(d.id) ??
@@ -809,8 +915,7 @@ export function DispositivosPage() {
                         )}
                       </tr>
                     );
-                    })
-                  )}
+                  })}
                 </tbody>
               </table>
             </div>

@@ -2,11 +2,34 @@ import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Info, KeyRound, MonitorSmartphone } from "lucide-react";
+import type { UseQueryResult } from "@tanstack/react-query";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronRight,
+  Info,
+  KeyRound,
+  MonitorSmartphone,
+} from "lucide-react";
 import { api } from "@/lib/api";
-import { formatDuration, formatRelative, stateLabels } from "@/lib/format";
+import {
+  addDays,
+  ddmm,
+  formatDuration,
+  formatRelative,
+  localDateOf,
+  mondayOf,
+  stateLabels,
+} from "@/lib/format";
 import { genericErrorMessage } from "@/lib/messages";
-import type { PresenceItem, PresenceResponse, PresenceState } from "@/lib/types";
+import type {
+  DashboardSummaryResponse,
+  DeviceHealthSummaryResponse,
+  MeResponse,
+  PresenceItem,
+  PresenceResponse,
+  PresenceState,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +66,51 @@ export function VisaoGeralPage() {
   const presenceQuery = useQuery({
     queryKey: ["dashboard", "presence"],
     queryFn: () => api<PresenceResponse>("/dashboard/presence"),
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
+  });
+
+  // Saúde da FROTA INTEIRA (não da página de /dispositivos): mesmo polling de
+  // 60 s da presença, pausado em aba oculta. A key sob ["devices"] faz o PATCH
+  // de dispositivo (arquivar/reativar) invalidar estes contadores também.
+  const healthQuery = useQuery({
+    queryKey: ["devices", "health-summary"],
+    queryFn: () => api<DeviceHealthSummaryResponse>("/devices/health-summary"),
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
+  });
+
+  // Mesma queryKey do AppShell: resolve do cache, sem requisição extra.
+  const meQuery = useQuery({
+    queryKey: ["me"],
+    queryFn: () => api<MeResponse>("/me"),
+    staleTime: 5 * 60 * 1000,
+  });
+  const organization = meQuery.data?.organization;
+  const goalHours = organization?.goal_weekly_active_hours ?? null;
+  const goalWorkPct = organization?.goal_work_related_pct ?? null;
+
+  // Semana corrente (segunda a domingo) no FUSO DA ORGANIZAÇÃO — a mesma janela
+  // dos gráficos da semana logo abaixo.
+  const timezone = organization?.timezone ?? null;
+  const weekFrom = timezone !== null ? mondayOf(localDateOf(new Date(), timezone)) : null;
+  const weekTo = weekFrom !== null ? addDays(weekFrom, 6) : null;
+
+  /**
+   * MESMA queryKey e MESMA URL do WeeklyChartsRow para a semana atual: o
+   * TanStack Query compartilha o cache entre os dois observadores, então a
+   * barra de meta não gera requisição extra (e o card de gráficos segue dono
+   * do seu próprio arquivo, sem acoplamento de props).
+   */
+  const weekSummaryQuery = useQuery({
+    queryKey: ["dashboard", "summary", weekFrom, weekTo],
+    queryFn: () =>
+      api<DashboardSummaryResponse>(
+        `/dashboard/summary?from=${weekFrom ?? ""}&to=${weekTo ?? ""}`,
+      ),
+    enabled: weekFrom !== null && goalHours !== null,
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
     placeholderData: (prev) => prev,
@@ -121,6 +189,8 @@ export function VisaoGeralPage() {
             <Skeleton key={i} className="h-[74px] rounded-lg" />
           ))}
         </div>
+        {/* Mesma geometria da faixa de saúde da frota que carrega em seguida. */}
+        <Skeleton className="h-[76px] w-full rounded-lg" />
         <Card>
           <CardHeader className="pb-3">
             <Skeleton className="h-5 w-32" />
@@ -254,6 +324,24 @@ export function VisaoGeralPage() {
         </button>
       </div>
 
+      {/* Linha 1b - saúde da frota INTEIRA (F4.4 + health-summary). */}
+      <FleetHealthWidget query={healthQuery} />
+
+      {/* Linha 1c - meta da semana (só quando a organização definiu meta). */}
+      <MetaSemanaWidget
+        goalHours={goalHours}
+        goalWorkPct={goalWorkPct}
+        weekFrom={weekFrom}
+        weekTo={weekTo}
+        query={weekSummaryQuery}
+      />
+
+      {/* Linha 1d - uso do plano (só quando o plano tem teto de dispositivos). */}
+      <PlanoMedidor
+        deviceLimit={organization?.device_limit ?? null}
+        activeDevices={healthQuery.data?.active_devices ?? data.items.length}
+      />
+
       {/* Linha 2 - tabela "Equipe agora" (Seção 8.4). */}
       <Card>
         <CardHeader className="pb-3">
@@ -312,6 +400,290 @@ export function VisaoGeralPage() {
 
       {/* Linha 3 - gráficos da semana (F3.2, Seção 8.4). */}
       <WeeklyChartsRow />
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Saúde da frota inteira (GET /devices/health-summary)
+// -----------------------------------------------------------------------------
+
+/**
+ * Dimensões de saúde com contagem > 0, no vocabulário neutro dos badges de
+ * /dispositivos. Ex.: ["3 sem comunicação", "1 com ciência pendente"]. Nunca
+ * soma as dimensões: um mesmo device pode acionar várias, e with_alert é a
+ * contagem DISTINTA de dispositivos.
+ */
+function healthAlertParts(summary: DeviceHealthSummaryResponse): string[] {
+  const parts: string[] = [];
+  if (summary.offline > 0) parts.push(`${summary.offline} sem comunicação`);
+  if (summary.clock_skewed > 0) parts.push(`${summary.clock_skewed} com relógio dessincronizado`);
+  if (summary.outdated > 0) parts.push(`${summary.outdated} com versão desatualizada`);
+  if (summary.tampered > 0) parts.push(`${summary.tampered} com adulteração`);
+  if (summary.notice_pending > 0) parts.push(`${summary.notice_pending} com ciência pendente`);
+  return parts;
+}
+
+/**
+ * Card "Dispositivos precisam de atenção" com o with_alert da FROTA INTEIRA,
+ * clicável para /dispositivos?filtro=alerta (que já abre a listagem filtrada
+ * pelo mesmo predicado no servidor). Frota inteira respondendo: uma linha
+ * discreta, jamais um card de erro. Skeleton com a geometria final e erro
+ * inline com retry, no padrão dos vizinhos desta tela.
+ */
+function FleetHealthWidget({ query }: { query: UseQueryResult<DeviceHealthSummaryResponse> }) {
+  const summary = query.data;
+
+  if (summary === undefined) {
+    if (query.isError) {
+      return (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          <span>Não foi possível carregar a saúde da frota.</span>
+          <Button variant="outline" size="sm" onClick={() => void query.refetch()}>
+            Tentar novamente
+          </Button>
+        </div>
+      );
+    }
+    return <Skeleton className="h-[76px] w-full rounded-lg" />;
+  }
+
+  if (summary.with_alert === 0) {
+    return (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-viz-produtivo" aria-hidden />
+        Toda a frota respondendo.
+        <span className="tabular-nums">
+          {summary.active_devices === 1
+            ? "1 dispositivo ativo"
+            : `${summary.active_devices} dispositivos ativos`}
+          .
+        </span>
+      </p>
+    );
+  }
+
+  const parts = healthAlertParts(summary);
+  const severeHint =
+    summary.offline_severe > 0
+      ? `${summary.offline_severe} sem comunicação há mais de 30 minutos em horário de trabalho`
+      : undefined;
+
+  return (
+    <Link
+      to="/dispositivos?filtro=alerta"
+      title={severeHint}
+      className={cn(
+        "flex items-center gap-4 rounded-lg border px-4 py-3 text-card-foreground shadow-sm transition-colors",
+        "border-brand-red/30 bg-brand-red/10 hover:bg-brand-red/15",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+      )}
+    >
+      <AlertTriangle className="h-5 w-5 shrink-0 text-brand-red" aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-baseline gap-2">
+          <span className="text-2xl font-semibold leading-none tabular-nums">
+            {summary.with_alert}
+          </span>
+          <span className="text-sm font-medium">
+            {summary.with_alert === 1
+              ? "dispositivo precisa de atenção"
+              : "dispositivos precisam de atenção"}
+          </span>
+        </span>
+        <span className="mt-1 block truncate text-xs tabular-nums text-muted-foreground">
+          {parts.join(", ")}
+          {severeHint !== undefined && (
+            <span className="text-brand-red"> · {summary.offline_severe} há mais de 30 minutos</span>
+          )}
+        </span>
+      </span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+    </Link>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Meta da semana (goal_weekly_active_hours / goal_work_related_pct de GET /me)
+// -----------------------------------------------------------------------------
+
+/** Barra fina de progresso, com o mesmo desenho do medidor de plano. */
+function ProgressBar({
+  pct,
+  tone,
+  label,
+}: {
+  pct: number;
+  tone: "primary" | "atencao" | "ok";
+  label: string;
+}) {
+  const width = Math.min(100, Math.max(0, pct));
+  const fill =
+    tone === "ok" ? "bg-viz-produtivo" : tone === "atencao" ? "bg-viz-improdutivo" : "bg-primary";
+  return (
+    <div
+      role="progressbar"
+      aria-valuenow={pct}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label={label}
+      className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+    >
+      <div className={cn("h-full rounded-full", fill)} style={{ width: `${width}%` }} />
+    </div>
+  );
+}
+
+/**
+ * Progresso da meta SEMANAL da organização. Vocabulário sempre de equipe:
+ * "horas ativas da equipe" e "tempo em aplicativos relacionados ao trabalho".
+ * Nunca meta individual, nunca ranking de pessoas. Organização sem meta
+ * definida não renderiza nada.
+ */
+function MetaSemanaWidget({
+  goalHours,
+  goalWorkPct,
+  weekFrom,
+  weekTo,
+  query,
+}: {
+  goalHours: number | null;
+  goalWorkPct: number | null;
+  weekFrom: string | null;
+  weekTo: string | null;
+  query: UseQueryResult<DashboardSummaryResponse>;
+}) {
+  if (goalHours === null || goalHours <= 0) return null;
+
+  const periodo =
+    weekFrom !== null && weekTo !== null ? `semana de ${ddmm(weekFrom)} a ${ddmm(weekTo)}` : "semana";
+  const data = query.data;
+
+  if (data === undefined) {
+    if (query.isError) {
+      return (
+        <Card className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+          <p className="text-sm text-muted-foreground">
+            Não foi possível carregar o progresso da meta da semana.
+          </p>
+          <Button variant="outline" size="sm" onClick={() => void query.refetch()}>
+            Tentar novamente
+          </Button>
+        </Card>
+      );
+    }
+    return <Skeleton className="h-[86px] w-full rounded-lg" />;
+  }
+
+  const activeSeconds = data.totals.seconds_active;
+  const goalSeconds = goalHours * 3600;
+  const pct = Math.round((activeSeconds / goalSeconds) * 100);
+  const atingida = pct >= 100;
+
+  // % do tempo ativo em apps relacionados ao trabalho (só com tempo ativo > 0).
+  const workPct =
+    activeSeconds > 0 ? Math.round((data.totals.seconds_work_related / activeSeconds) * 100) : null;
+
+  return (
+    <Card className="space-y-2 px-4 py-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p className="text-sm font-medium tabular-nums">Meta da semana: {pct}% atingida</p>
+        <p className="text-xs tabular-nums text-muted-foreground">
+          {formatDuration(activeSeconds)} de {goalHours}h de horas ativas da equipe
+        </p>
+      </div>
+      <ProgressBar
+        pct={pct}
+        tone={atingida ? "ok" : "primary"}
+        label={`Meta da semana de horas ativas da equipe: ${pct}% atingida`}
+      />
+      <p className="text-xs text-muted-foreground">
+        Horas ativas da equipe na {periodo}, no fuso da organização.
+      </p>
+
+      {goalWorkPct !== null && goalWorkPct > 0 && (
+        <div className="space-y-2 border-t pt-2">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <p className="text-sm font-medium tabular-nums">
+              Tempo em aplicativos relacionados ao trabalho: {workPct ?? 0}%
+            </p>
+            <p className="text-xs tabular-nums text-muted-foreground">meta de {goalWorkPct}%</p>
+          </div>
+          <ProgressBar
+            pct={workPct !== null ? Math.round((workPct / goalWorkPct) * 100) : 0}
+            tone={workPct !== null && workPct >= goalWorkPct ? "ok" : "primary"}
+            label={`Meta de tempo em aplicativos relacionados ao trabalho: ${workPct ?? 0}% de ${goalWorkPct}%`}
+          />
+          <p className="text-xs text-muted-foreground">
+            Percentual do tempo ativo da equipe classificado como relacionado ao trabalho.
+          </p>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Uso do plano (device_limit de GET /me)
+// -----------------------------------------------------------------------------
+
+/** Contato comercial para ampliação de plano (sem preço em tela: Seção 7.4). */
+const SUPORTE_EMAIL = "bruna@mais351monitor.com.br";
+
+/** A partir de 80% do teto o medidor troca de tom e convida a falar com a gente. */
+const PLANO_ATENCAO_PCT = 80;
+
+/**
+ * Medidor discreto "X de Y dispositivos do plano". Sem device_limit (plano sem
+ * teto) NÃO renderiza nada — o produto não inventa limite onde não existe.
+ * Mostra apenas contagem, jamais valor em reais: preço é decisão comercial
+ * fora do sistema.
+ */
+function PlanoMedidor({
+  deviceLimit,
+  activeDevices,
+}: {
+  deviceLimit: number | null;
+  activeDevices: number;
+}) {
+  if (deviceLimit === null || deviceLimit <= 0) return null;
+
+  const pct = Math.min(100, Math.round((activeDevices / deviceLimit) * 100));
+  const atencao = pct >= PLANO_ATENCAO_PCT;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
+        <span className={cn("tabular-nums", atencao ? "font-medium text-viz-improdutivo" : "text-muted-foreground")}>
+          {activeDevices} de {deviceLimit} dispositivos do plano
+        </span>
+        {atencao && (
+          <span className="text-xs text-muted-foreground">
+            <a
+              href={`mailto:${SUPORTE_EMAIL}?subject=${encodeURIComponent("Ampliação de plano, +351 Monitor")}`}
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Fale com a gente para ampliar o plano
+            </a>
+          </span>
+        )}
+      </div>
+      <div
+        role="progressbar"
+        aria-valuenow={activeDevices}
+        aria-valuemin={0}
+        aria-valuemax={deviceLimit}
+        aria-label={`Uso do plano: ${activeDevices} de ${deviceLimit} dispositivos`}
+        className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+      >
+        <div
+          className={cn("h-full rounded-full", atencao ? "bg-viz-improdutivo" : "bg-primary")}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
     </div>
   );
 }
