@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using M351.Domain;
+using M351.Domain.Privacy;
 using M351.IntegrationTests.Support;
 
 namespace M351.IntegrationTests;
@@ -152,5 +153,160 @@ public class AgentConfigEndpointTests(ApiTestFixture fixture)
         var config = ack.RootElement.GetProperty("config");
         Assert.Equal(JsonValueKind.Object, config.ValueKind);
         Assert.Equal(900, config.GetProperty("idle_threshold_sec").GetInt32());
+    }
+
+    // =====================================================================================
+    // Aviso de ciência gerenciado pela controladora (notice_text, Seções 6.5/9.4). O tenant
+    // escreve o CORPO; o enquadramento fixo é concatenado pelo agente e nenhum texto salvo
+    // aqui consegue removê-lo. O servidor recusa antes de a config chegar à frota: marcação,
+    // texto que não cabe na janela do aviso e texto que imita pedido de consentimento.
+    // =====================================================================================
+
+    private const string AvisoDaAcme =
+        "A ACME monitora os notebooks corporativos durante o horário de trabalho.";
+
+    [Fact]
+    public async Task Get_ExpoeOEnquadramentoFixoEOLimiteParaOPortalMontarOPreview()
+    {
+        var (client, _, _, adminToken) = await SetupAsync("Org Aviso Preview");
+
+        using var request = AuthClient.AuthorizedRequest(
+            HttpMethod.Get, "/api/v1/organization/agent-config", adminToken);
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(JsonValueKind.Null, body.RootElement.GetProperty("notice_text").ValueKind);
+        Assert.Equal(1, body.RootElement.GetProperty("notice_version").GetInt32());
+        Assert.Equal(NoticeTextPolicy.FixedFraming, body.RootElement.GetProperty("notice_fixed_framing").GetString());
+        Assert.Equal(NoticeTextPolicy.DefaultBody, body.RootElement.GetProperty("notice_default_body").GetString());
+        Assert.Equal(NoticeTextPolicy.MaxBodyLength, body.RootElement.GetProperty("notice_max_length").GetInt32());
+    }
+
+    [Fact]
+    public async Task Patch_NoticeText_BumpaAsDuasVersoesEGravaTrilhaDePara()
+    {
+        var (client, tenantId, ownerToken, _) = await SetupAsync("Org Aviso Patch");
+
+        var response = await PatchAsync(client, ownerToken, new { notice_text = AvisoDaAcme });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(AvisoDaAcme, body.RootElement.GetProperty("notice_text").GetString());
+        // config_version propaga a config; notice_version reexibe o aviso na frota
+        Assert.Equal(2, body.RootElement.GetProperty("config_version").GetInt32());
+        Assert.Equal(2, body.RootElement.GetProperty("notice_version").GetInt32());
+
+        var detail = await TestDb.ScalarAsync<string>(Cs,
+            "SELECT detail::text FROM audit_log WHERE tenant_id = @t AND action = 'update_privacy_config' AND target_type = 'agent_config'",
+            ("t", tenantId));
+        Assert.NotNull(detail);
+        Assert.Contains("notice_text", detail);
+        Assert.Contains("notice_version", detail);
+        Assert.Contains(AvisoDaAcme, detail);
+    }
+
+    [Fact]
+    public async Task Patch_NoticeTextAdmin_Retorna403_OwnerOnly()
+    {
+        var (client, tenantId, _, adminToken) = await SetupAsync("Org Aviso 403");
+
+        var response = await PatchAsync(client, adminToken, new { notice_text = AvisoDaAcme });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var salvos = await TestDb.ScalarAsync<long>(Cs,
+            "SELECT count(*) FROM tenant_agent_configs WHERE tenant_id = @t AND notice_text IS NOT NULL",
+            ("t", tenantId));
+        Assert.Equal(0, salvos);
+    }
+
+    [Fact]
+    public async Task Patch_NoticeTextComHtml_Retorna400SemSalvar()
+    {
+        var (client, tenantId, ownerToken, _) = await SetupAsync("Org Aviso HTML");
+
+        var response = await PatchAsync(client, ownerToken, new
+        {
+            notice_text = "<b>Aviso</b> da ACME.<br><a href=\"https://exemplo.com.br\">detalhes</a>",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("notice_text_markup", await response.Content.ReadAsStringAsync());
+
+        var linhas = await TestDb.ScalarAsync<long>(Cs,
+            "SELECT count(*) FROM tenant_agent_configs WHERE tenant_id = @t AND config_version > 1",
+            ("t", tenantId));
+        Assert.Equal(0, linhas);
+    }
+
+    [Fact]
+    public async Task Patch_NoticeTextImitandoConsentimento_Retorna400()
+    {
+        var (client, _, ownerToken, _) = await SetupAsync("Org Aviso Consentimento");
+
+        var response = await PatchAsync(client, ownerToken, new
+        {
+            notice_text = "Ao clicar em Entendi você consente com o monitoramento total da máquina.",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("notice_text_consent", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Patch_NoticeTextAcimaDoLimiteDaJanela_Retorna400()
+    {
+        var (client, _, ownerToken, _) = await SetupAsync("Org Aviso Limite");
+
+        // o limite do corpo já desconta o enquadramento fixo: um caractere a mais estoura a janela
+        var noLimite = new string('a', NoticeTextPolicy.MaxBodyLength);
+        var passandoUm = new string('a', NoticeTextPolicy.MaxBodyLength + 1);
+
+        var aceito = await PatchAsync(client, ownerToken, new { notice_text = noLimite });
+        Assert.Equal(HttpStatusCode.OK, aceito.StatusCode);
+
+        var recusado = await PatchAsync(client, ownerToken, new { notice_text = passandoUm });
+        Assert.Equal(HttpStatusCode.BadRequest, recusado.StatusCode);
+        var problema = await recusado.Content.ReadAsStringAsync();
+        Assert.Contains("notice_text_too_long", problema);
+        Assert.Contains("enquadramento fixo", problema);
+    }
+
+    [Fact]
+    public async Task Patch_NoticeTextNull_VoltaAoAvisoPadraoDoAgente()
+    {
+        var (client, tenantId, ownerToken, _) = await SetupAsync("Org Aviso Null");
+
+        var definido = await PatchAsync(client, ownerToken, new { notice_text = AvisoDaAcme });
+        Assert.Equal(HttpStatusCode.OK, definido.StatusCode);
+
+        var limpo = await PatchAsync(client, ownerToken, new { notice_text = (string?)null });
+
+        Assert.Equal(HttpStatusCode.OK, limpo.StatusCode);
+        using var body = JsonDocument.Parse(await limpo.Content.ReadAsStringAsync());
+        Assert.Equal(JsonValueKind.Null, body.RootElement.GetProperty("notice_text").ValueKind);
+        Assert.Equal(3, body.RootElement.GetProperty("config_version").GetInt32());
+        Assert.Equal(3, body.RootElement.GetProperty("notice_version").GetInt32());
+
+        var noBanco = await TestDb.ScalarAsync<string>(Cs,
+            "SELECT notice_text FROM tenant_agent_configs WHERE tenant_id = @t", ("t", tenantId));
+        Assert.Null(noBanco);
+    }
+
+    [Fact]
+    public async Task Patch_NoticeText_ChegaNoProximoAckDoDevice()
+    {
+        var (client, tenantId, ownerToken, _) = await SetupAsync("Org Aviso Ack");
+        var (_, fullKey) = await fixture.CreateEnrollmentKeyWithSecretAsync(tenantId);
+        var device = await AgentClient.EnrollAsync(client, fullKey);
+
+        var patch = await PatchAsync(client, ownerToken, new { notice_text = AvisoDaAcme });
+        Assert.Equal(HttpStatusCode.OK, patch.StatusCode);
+
+        var batch = await AgentClient.SendBatchAsync(client, device.DeviceToken, [], configVersion: device.ConfigVersion);
+        using var ack = await AgentClient.ReadAckAsync(batch);
+        var config = ack.RootElement.GetProperty("config");
+        Assert.Equal(AvisoDaAcme, config.GetProperty("notice_text").GetString());
+        Assert.Equal(2, config.GetProperty("notice_version").GetInt32());
     }
 }
