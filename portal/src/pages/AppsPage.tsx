@@ -13,15 +13,22 @@
 //   quando o total passa disso.
 // - Edição inline de categoria (admin/owner): CategoryInlineSelect - vale
 //   para a organização inteira e reagrega os últimos 30 dias no backend.
+// - Sugestão do dicionário (F1.1): GET /app-catalog traz default_category, o
+//   NOME canônico de categoria sugerido pelo dicionário brasileiro. A tela só
+//   oferece a sugestão para app que a organização ainda NÃO categorizou e cuja
+//   categoria sugerida existe aqui. Aplicar é decisão do gestor: um clique por
+//   app, ou o lote em PUT /app-catalog/categories/batch, sempre com prévia do
+//   que vai mudar. O lote é declarativo no backend (sobrescreveria mapeamento
+//   existente), então é ESTA tela que garante nunca enviar app já categorizado.
 // - Drill-down do app: GET /app-catalog/{id}/titles (dado pessoal - o backend
 //   audita todo acesso); títulos mascarados viram uma linha única.
 // =============================================================================
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { AlertTriangle, ChartColumn, Info, Table, Tags } from "lucide-react";
+import { AlertTriangle, ChartColumn, Info, Lightbulb, Table, Tags } from "lucide-react";
 import type { EChartsOption } from "echarts";
 import { api } from "@/lib/api";
 import { BRAND } from "@/lib/brandTheme";
@@ -37,6 +44,8 @@ import { genericErrorMessage } from "@/lib/messages";
 import { isAdmin } from "@/lib/roles";
 import type {
   AppCatalogResponse,
+  AppCategoryBatchRequest,
+  AppCategoryBatchResponse,
   AppTitlesResponse,
   CategoriesResponse,
   CategoryItem,
@@ -45,6 +54,7 @@ import type {
   UsageCategoryItem,
   UsageReportResponse,
 } from "@/lib/types";
+import { APP_CATEGORY_BATCH_MAX } from "@/lib/types";
 import { useUrlState } from "@/lib/useUrlState";
 import type { UrlStateCodec } from "@/lib/useUrlState";
 import { cn } from "@/lib/utils";
@@ -54,12 +64,17 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EChart } from "@/components/charts/EChart";
-import { CategoryInlineSelect } from "@/components/apps/CategoryInlineSelect";
+import {
+  CategoryInlineSelect,
+  invalidateAppCategoryData,
+  useSetAppCategory,
+} from "@/components/apps/CategoryInlineSelect";
 import { DeltaBadge, useComparisonRange } from "@/components/dashboard/comparison";
 import {
   DeviceMultiSelect,
@@ -135,6 +150,25 @@ interface DonutSlice {
   color: string;
 }
 
+/**
+ * Sugestão do dicionário pronta para aplicar: o app ainda NÃO tem categoria da
+ * organização E existe aqui uma categoria com o nome exato sugerido. Sem esse
+ * casamento não há o que aplicar, e a sugestão nem aparece.
+ */
+interface DictionarySuggestion {
+  appId: string;
+  appName: string;
+  processName: string;
+  categoryId: string;
+  categoryName: string;
+}
+
+/** Progresso do lote: uma página de até 500 mapeamentos por chamada. */
+interface ApplyProgress {
+  done: number;
+  total: number;
+}
+
 /** Escapa HTML para os tooltips do ECharts (nomes vêm de dados do tenant). */
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -156,7 +190,12 @@ export function AppsPage() {
   const { deviceIds, category: categoryFilter, classification: classificationFilter, page } = filters;
   const [titlesApp, setTitlesApp] = useState<{ id: string; name: string } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [applyProgress, setApplyProgress] = useState<ApplyProgress | null>(null);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [appliedCount, setAppliedCount] = useState<number | null>(null);
   const tableSectionRef = useRef<HTMLDivElement | null>(null);
+  const queryClient = useQueryClient();
 
   const meQuery = useQuery({
     queryKey: ["me"],
@@ -232,6 +271,103 @@ export function AppsPage() {
     staleTime: 60_000,
   });
   const uncatCount = catalogQuery.data?.uncategorized_count ?? 0;
+  const catalogItems = useMemo(() => catalogQuery.data?.items ?? [], [catalogQuery.data]);
+
+  // Nome da categoria -> id: default_category é um NOME canônico (o mesmo vocabulário
+  // semeado na criação da organização) e o lote precisa de id. Quem renomeou ou excluiu
+  // a categoria simplesmente não recebe sugestão, em vez de receber uma sugestão morta.
+  const categoryIdByName = useMemo(() => {
+    const byName = new Map<string, string>();
+    for (const c of categories) {
+      if (c.name !== UNCATEGORIZED_LABEL) byName.set(c.name, c.id);
+    }
+    return byName;
+  }, [categories]);
+
+  // Candidatos ao lote. Duas travas, nesta ordem:
+  //  1. a query é ?uncategorized=true, então o backend já devolve só o que a organização
+  //     NÃO categorizou;
+  //  2. o filtro de category !== null aqui, porque o endpoint de lote é DECLARATIVO e
+  //     sobrescreveria um mapeamento existente. A garantia de nunca tocar curadoria
+  //     manual é desta tela.
+  const suggestions = useMemo<DictionarySuggestion[]>(() => {
+    const list: DictionarySuggestion[] = [];
+    for (const item of catalogItems) {
+      if (item.category !== null || item.default_category === null) continue;
+      const categoryId = categoryIdByName.get(item.default_category);
+      if (categoryId === undefined) continue;
+      list.push({
+        appId: item.app_id,
+        appName: item.custom_display_name ?? item.display_name,
+        processName: item.process_name,
+        categoryId,
+        categoryName: item.default_category,
+      });
+    }
+    return list;
+  }, [catalogItems, categoryIdByName]);
+
+  const suggestionByApp = useMemo(
+    () => new Map(suggestions.map((s) => [s.appId, s])),
+    [suggestions],
+  );
+
+  // Prévia obrigatória do lote: quantos apps e para QUAIS categorias.
+  const suggestionGroups = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of suggestions) counts.set(s.categoryName, (counts.get(s.categoryName) ?? 0) + 1);
+    return [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "pt-BR"));
+  }, [suggestions]);
+
+  // Aplicar uma sugestão só (o botão da linha) reusa o PUT individual da edição inline.
+  const applyOne = useSetAppCategory(() =>
+    setSaveError("Não foi possível aplicar a sugestão. Tente novamente."),
+  );
+
+  /**
+   * Lote: páginas de até 500 itens (teto do endpoint), sequenciais, com progresso.
+   * Cada página é uma transação com UMA reagregação no backend; se uma falhar, as
+   * anteriores permanecem aplicadas e a tela diz exatamente isso.
+   */
+  async function applySuggestions(): Promise<void> {
+    if (suggestions.length === 0 || applyProgress !== null) return;
+    setApplyError(null);
+    setAppliedCount(null);
+    setApplyProgress({ done: 0, total: suggestions.length });
+
+    let applied = 0;
+    try {
+      for (let start = 0; start < suggestions.length; start += APP_CATEGORY_BATCH_MAX) {
+        const page = suggestions.slice(start, start + APP_CATEGORY_BATCH_MAX);
+        const body: AppCategoryBatchRequest = {
+          items: page.map((s) => ({ app_id: s.appId, category_id: s.categoryId })),
+        };
+        const result = await api<AppCategoryBatchResponse>("/app-catalog/categories/batch", {
+          method: "PUT",
+          body,
+        });
+        applied += result.applied;
+        setApplyProgress((p) => (p === null ? p : { ...p, done: p.done + page.length }));
+      }
+    } catch (err) {
+      // páginas anteriores já commitaram: invalida para a tela mostrar o estado real
+      await invalidateAppCategoryData(queryClient);
+      setApplyProgress(null);
+      setApplyError(
+        applied > 0
+          ? `${applied === 1 ? "1 app foi categorizado" : `${applied} apps foram categorizados`} antes da falha. ${genericErrorMessage(err)} Abra as sugestões de novo para aplicar o restante.`
+          : `${genericErrorMessage(err)} Se persistir, use a coluna Categoria da tabela para categorizar app por app.`,
+      );
+      return;
+    }
+
+    await invalidateAppCategoryData(queryClient);
+    setApplyProgress(null);
+    setSuggestionsOpen(false);
+    setAppliedCount(applied);
+  }
 
   const deviceIdsKey = useMemo(() => [...deviceIds].sort().join(","), [deviceIds]);
   const deviceParam = deviceIdsKey.length > 0 ? `&device_ids=${deviceIdsKey}` : "";
@@ -540,6 +676,62 @@ export function AppsPage() {
         </Card>
       )}
 
+      {/* Sugestão do dicionário: discreta, e sempre com prévia antes de aplicar. */}
+      {admin && suggestions.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-viz-neutro/30 bg-viz-neutro/10 px-3 py-2 text-sm">
+          <span className="flex items-start gap-2 text-viz-neutro">
+            <Lightbulb className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <span>
+              O dicionário de apps sugere categoria para{" "}
+              <strong className="font-semibold tabular-nums">
+                {suggestions.length === 1 ? "1 app" : `${suggestions.length} apps`}
+              </strong>{" "}
+              que a organização ainda não categorizou. Nada é aplicado sem a sua confirmação.
+            </span>
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8"
+            onClick={() => {
+              setApplyError(null);
+              setAppliedCount(null);
+              setSuggestionsOpen(true);
+            }}
+          >
+            Ver sugestões
+          </Button>
+        </div>
+      )}
+
+      {appliedCount !== null && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-viz-produtivo/30 bg-viz-produtivo/10 px-3 py-2 text-sm text-viz-produtivo"
+        >
+          <span>
+            {appliedCount === 1
+              ? "1 app categorizado pela sugestão do dicionário. Você pode alterar a categoria de qualquer app na tabela abaixo."
+              : `${appliedCount} apps categorizados pela sugestão do dicionário. Você pode alterar a categoria de qualquer app na tabela abaixo.`}
+          </span>
+          <Button variant="outline" size="sm" onClick={() => setAppliedCount(null)}>
+            Fechar
+          </Button>
+        </div>
+      )}
+
+      {applyError !== null && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
+          <span>{applyError}</span>
+          <Button variant="outline" size="sm" onClick={() => setApplyError(null)}>
+            Fechar
+          </Button>
+        </div>
+      )}
+
       {/* Gráficos do período: donut por classificação + barras por categoria. */}
       <div className="grid gap-4 lg:grid-cols-2">
         <DonutCard
@@ -660,16 +852,34 @@ export function AppsPage() {
                           </td>
                           <td className="px-3 py-2">
                             {admin ? (
-                              <CategoryInlineSelect
-                                appId={item.app_id}
-                                categoryId={item.category?.id ?? null}
-                                categoryName={item.category?.name ?? null}
-                                customDisplayName={item.custom_display_name}
-                                categories={categories}
-                                onError={() =>
-                                  setSaveError("Não foi possível salvar a categoria. Tente novamente.")
-                                }
-                              />
+                              <div className="space-y-1">
+                                <CategoryInlineSelect
+                                  appId={item.app_id}
+                                  categoryId={item.category?.id ?? null}
+                                  categoryName={item.category?.name ?? null}
+                                  customDisplayName={item.custom_display_name}
+                                  categories={categories}
+                                  disabled={applyProgress !== null}
+                                  onError={() =>
+                                    setSaveError("Não foi possível salvar a categoria. Tente novamente.")
+                                  }
+                                />
+                                <AppSuggestionHint
+                                  suggestion={
+                                    item.category === null
+                                      ? (suggestionByApp.get(item.app_id) ?? null)
+                                      : null
+                                  }
+                                  disabled={applyProgress !== null || applyOne.isPending}
+                                  onApply={(s) =>
+                                    applyOne.mutate({
+                                      appId: s.appId,
+                                      categoryId: s.categoryId,
+                                      customDisplayName: item.custom_display_name,
+                                    })
+                                  }
+                                />
+                              </div>
                             ) : (
                               <span className="flex items-center gap-2">
                                 <span
@@ -830,7 +1040,135 @@ export function AppsPage() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      {/* Prévia do lote: quantos apps e para quais categorias, antes de qualquer escrita. */}
+      <Dialog
+        open={suggestionsOpen}
+        onOpenChange={(open) => {
+          // enquanto o lote roda o diálogo não fecha: o progresso mora aqui
+          if (!open && applyProgress === null) setSuggestionsOpen(false);
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="pr-8">Sugestões do dicionário de apps</DialogTitle>
+            <DialogDescription>
+              {suggestions.length === 1
+                ? "1 app sem categoria receberá a categoria abaixo."
+                : `${suggestions.length} apps sem categoria receberão as categorias abaixo.`}{" "}
+              Apps que a organização já categorizou não entram no lote. A categoria vale para
+              toda a organização e reagrega os últimos 30 dias.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Resumo por categoria: o "quais categorias" da prévia. */}
+          <div className="flex flex-wrap gap-1.5">
+            {suggestionGroups.map((g) => (
+              <span
+                key={g.name}
+                className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-0.5 text-xs text-secondary-foreground"
+              >
+                {g.name}
+                <span className="tabular-nums text-muted-foreground">{g.count}</span>
+              </span>
+            ))}
+          </div>
+
+          {/* Lista completa: o "quais apps" da prévia. */}
+          <div className="max-h-64 overflow-y-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-card">
+                <tr className="border-b text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <th scope="col" className="px-3 py-2">App</th>
+                  <th scope="col" className="px-3 py-2">Categoria sugerida</th>
+                </tr>
+              </thead>
+              <tbody>
+                {suggestions.map((s) => (
+                  <tr key={s.appId} className="border-b last:border-b-0">
+                    <td className="px-3 py-1.5">
+                      <span className="block max-w-[16rem] truncate">{s.appName}</span>
+                      <span className="block max-w-[16rem] truncate text-xs text-muted-foreground">
+                        {s.processName}
+                      </span>
+                    </td>
+                    <td className="px-3 py-1.5">{s.categoryName}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {uncatCount > suggestions.length && (
+            <p className="text-xs text-muted-foreground">
+              Os outros {uncatCount - suggestions.length} apps sem categoria não estão no
+              dicionário ou a categoria sugerida não existe nesta organização. Eles continuam
+              para você categorizar na tabela.
+            </p>
+          )}
+
+          <DialogFooter>
+            {applyProgress !== null && (
+              <span className="mr-auto self-center text-xs tabular-nums text-muted-foreground">
+                Aplicando {applyProgress.done} de {applyProgress.total}…
+              </span>
+            )}
+            <Button
+              variant="outline"
+              disabled={applyProgress !== null}
+              onClick={() => setSuggestionsOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              disabled={applyProgress !== null || suggestions.length === 0}
+              onClick={() => {
+                void applySuggestions();
+              }}
+            >
+              {applyProgress !== null
+                ? "Aplicando…"
+                : suggestions.length === 1
+                  ? "Aplicar sugestão em 1 app"
+                  : `Aplicar sugestões em ${suggestions.length} apps`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+/**
+ * Sugestão do dicionário na linha da tabela: discreta (texto pequeno abaixo do
+ * select) e reversível, porque um clique aplica SÓ aquele app e o próprio select
+ * ao lado devolve o app para Não categorizado.
+ */
+function AppSuggestionHint({
+  suggestion,
+  disabled,
+  onApply,
+}: {
+  suggestion: DictionarySuggestion | null;
+  disabled: boolean;
+  onApply: (suggestion: DictionarySuggestion) => void;
+}) {
+  if (suggestion === null) return null;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      title={`Aplicar a categoria ${suggestion.categoryName} a este app`}
+      onClick={() => onApply(suggestion)}
+      className={cn(
+        "inline-flex max-w-full items-center gap-1 rounded-sm text-left text-xs text-muted-foreground",
+        "transition-colors hover:text-viz-neutro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "disabled:cursor-not-allowed disabled:opacity-50",
+      )}
+    >
+      <Lightbulb className="h-3 w-3 shrink-0" aria-hidden />
+      <span className="truncate">Sugestão do dicionário: {suggestion.categoryName} · aplicar</span>
+    </button>
   );
 }
 
