@@ -16,6 +16,7 @@ import { formatDuration, formatRelative, stateLabels } from "@/lib/format";
 import { genericErrorMessage } from "@/lib/messages";
 import type {
   DeviceHealthSummaryResponse,
+  MeResponse,
   PresenceItem,
   PresenceResponse,
   PresenceState,
@@ -71,6 +72,14 @@ export function VisaoGeralPage() {
     refetchIntervalInBackground: false,
     placeholderData: (prev) => prev,
   });
+
+  // Mesma queryKey do AppShell: resolve do cache, sem requisição extra.
+  const meQuery = useQuery({
+    queryKey: ["me"],
+    queryFn: () => api<MeResponse>("/me"),
+    staleTime: 5 * 60 * 1000,
+  });
+  const organization = meQuery.data?.organization;
 
   // Tick de 1s só para o badge "Atualizado há Xs" (relógio local vs server_time).
   useEffect(() => {
@@ -281,6 +290,12 @@ export function VisaoGeralPage() {
       {/* Linha 1b - saúde da frota INTEIRA (F4.4 + health-summary). */}
       <FleetHealthWidget query={healthQuery} />
 
+      {/* Linha 1c - uso do plano (só quando o plano tem teto de dispositivos). */}
+      <PlanoMedidor
+        deviceLimit={organization?.device_limit ?? null}
+        activeDevices={healthQuery.data?.active_devices ?? data.items.length}
+      />
+
       {/* Linha 2 - tabela "Equipe agora" (Seção 8.4). */}
       <Card>
         <CardHeader className="pb-3">
@@ -442,6 +457,68 @@ function FleetHealthWidget({ query }: { query: UseQueryResult<DeviceHealthSummar
       </span>
       <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
     </Link>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Uso do plano (device_limit de GET /me)
+// -----------------------------------------------------------------------------
+
+/** Contato comercial para ampliação de plano (sem preço em tela: Seção 7.4). */
+const SUPORTE_EMAIL = "bruna@mais351monitor.com.br";
+
+/** A partir de 80% do teto o medidor troca de tom e convida a falar com a gente. */
+const PLANO_ATENCAO_PCT = 80;
+
+/**
+ * Medidor discreto "X de Y dispositivos do plano". Sem device_limit (plano sem
+ * teto) NÃO renderiza nada — o produto não inventa limite onde não existe.
+ * Mostra apenas contagem, jamais valor em reais: preço é decisão comercial
+ * fora do sistema.
+ */
+function PlanoMedidor({
+  deviceLimit,
+  activeDevices,
+}: {
+  deviceLimit: number | null;
+  activeDevices: number;
+}) {
+  if (deviceLimit === null || deviceLimit <= 0) return null;
+
+  const pct = Math.min(100, Math.round((activeDevices / deviceLimit) * 100));
+  const atencao = pct >= PLANO_ATENCAO_PCT;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
+        <span className={cn("tabular-nums", atencao ? "font-medium text-viz-improdutivo" : "text-muted-foreground")}>
+          {activeDevices} de {deviceLimit} dispositivos do plano
+        </span>
+        {atencao && (
+          <span className="text-xs text-muted-foreground">
+            <a
+              href={`mailto:${SUPORTE_EMAIL}?subject=${encodeURIComponent("Ampliação de plano, +351 Monitor")}`}
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Fale com a gente para ampliar o plano
+            </a>
+          </span>
+        )}
+      </div>
+      <div
+        role="progressbar"
+        aria-valuenow={activeDevices}
+        aria-valuemin={0}
+        aria-valuemax={deviceLimit}
+        aria-label={`Uso do plano: ${activeDevices} de ${deviceLimit} dispositivos`}
+        className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+      >
+        <div
+          className={cn("h-full rounded-full", atencao ? "bg-viz-improdutivo" : "bg-primary")}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
   );
 }
 

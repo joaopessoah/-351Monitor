@@ -70,7 +70,12 @@ export interface MeResponse {
     timezone: string;
     /** Horário de trabalho configurado (jsonb cru) - null quando a org não definiu. */
     business_hours: BusinessHours | null;
-    /** Plano comercial da organização (ex.: "trial"). */
+    /**
+     * Plano comercial da organização (ex.: "trial", "pro"). Governa recursos
+     * exclusivos do Pro no portal, como o e-mail de alertas de dispositivos. O
+     * PREÇO é decisão comercial fora do sistema: o portal nunca exibe valor em
+     * reais.
+     */
     plan: string;
     /** Limite de dispositivos do plano - null sem limite definido. */
     device_limit: number | null;
@@ -80,6 +85,16 @@ export interface MeResponse {
      * Visão Geral está visível; o DELETE na mesma rota reabre (volta a null).
      */
     onboarding_checklist_dismissed_at: string | null;
+    /**
+     * Meta semanal de horas ativas da EQUIPE (nunca individual) - null sem meta.
+     * Editável em PATCH /organization (1 a 10000).
+     */
+    goal_weekly_active_hours: number | null;
+    /**
+     * Meta de percentual do tempo ativo em aplicativos relacionados ao trabalho
+     * - null sem meta. Editável em PATCH /organization (1 a 100).
+     */
+    goal_work_related_pct: number | null;
   };
 }
 
