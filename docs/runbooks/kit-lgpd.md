@@ -75,23 +75,26 @@ exige mascaramento, e o servidor **jamais loga** títulos de janela.
 
 Três níveis estão previstos no protocolo (Seção 9.2):
 
-| Política | O que coleta no título | Status no MVP |
+| Política | O que coleta no título | Status |
 |---|---|---|
-| `FULL` | Título de janela completo | Só com decisão consciente da controladora (registrar no DPA); **não selecionável no MVP** |
-| `MASKED_PATTERNS` | Título com mascaramento de termos sensíveis | **Default de fábrica e única política ativa no MVP** |
-| `APP_ONLY` | Apenas o nome do aplicativo, sem nenhum título | Coleta mínima; **não selecionável no MVP** |
+| `FULL` | Título de janela completo | Só com decisão consciente da controladora **registrada no DPA**; não selecionável no portal, aplicada pela operadora (backoffice) |
+| `MASKED_PATTERNS` | Título com mascaramento de termos sensíveis | **Default de fábrica**; editável pela controladora (Owner) no portal |
+| `APP_ONLY` | Apenas o nome do aplicativo, sem nenhum título | Coleta mínima; selecionável pela controladora (Owner) no portal |
 
-> **A política de coleta não é editável no MVP.** Não há tela no portal nem endpoint de API que
-> altere a `window_title_policy`: todo tenant grava o default `MASKED_PATTERNS` no enroll e opera
-> nesse nível. `FULL` e `APP_ONLY` estão no protocolo, mas só são alcançáveis em versão futura (a
-> edição da política de coleta é follow-up). A única exceção é o rebaixamento automático para
-> `APP_ONLY` em aba anônima/privada, aplicado pelo próprio agente (abaixo). Trate a escolha de
-> política como **decisão operacional a registrar no DPA**, não como ajuste disponível na ferramenta.
+> **A política de coleta é editável pela CONTROLADORA (F5).** O portal (Configurações,
+> Privacidade) e o endpoint `PATCH /organization/agent-config` permitem ao **Owner** alternar
+> entre `MASKED_PATTERNS` e `APP_ONLY`, editar a lista de mascaramento, os processos ignorados,
+> o limiar de ociosidade e a janela de coleta. Toda mudança dá bump de `config_version`
+> (propaga à frota no próximo ack), grava trilha de auditoria com o de→para e, no caso da
+> janela de coleta, também a ação própria `collection_window_choice`. **`FULL` continua fora do
+> portal**: exige decisão consciente registrada no DPA e é aplicada pela operadora. O
+> rebaixamento automático para `APP_ONLY` em aba anônima/privada segue aplicado pelo próprio
+> agente (abaixo), independentemente da política escolhida.
 
 Pontos que o jurídico deve conhecer:
 
-- **Default seguro e fixo no MVP.** Um tenant recém-criado opera em `MASKED_PATTERNS` e permanece
-  nela - não há ajuste disponível.
+- **Default seguro.** Um tenant recém-criado opera em `MASKED_PATTERNS`; mudanças são decisão
+  da controladora (Owner), auditadas com de→para.
 - **Lista padrão de mascaramento.** Inclui termos de saúde, sindicais, religiosos, financeiros
   pessoais e padrões de CPF/cartão.
 - **Rebaixamento automático em navegação anônima/privada.** Ao detectar aba anônima/privada
@@ -231,10 +234,10 @@ funcionários, para que a página cumpra o papel de transparência.
 - [ ] **Base legal** documentada como legítimo interesse, com transparência, proporcionalidade e
       minimização; e registro de que o aceite do funcionário é **ciência, não consentimento**.
 - [ ] **Texto do aviso (NOTICE_ACK)** aprovado pela controladora, deixando claro que é ciência.
-- [ ] **Política de título de janela** registrada no DPA como decisão operacional. No MVP o
-      sistema opera fixo em `MASKED_PATTERNS` (não há ajuste no portal - item 3); `FULL`/`APP_ONLY`
-      só em versão futura. Documente a política acordada e a justificativa, mesmo que hoje só
-      `MASKED_PATTERNS` esteja ativa.
+- [ ] **Política de título de janela** registrada no DPA como decisão operacional da
+      controladora. O Owner alterna entre `MASKED_PATTERNS` e `APP_ONLY` no portal (auditado
+      com de→para); `FULL` só com registro no DPA e aplicação pela operadora (item 3).
+      Documente a política acordada e a justificativa.
 - [ ] **Lista de mascaramento** revisada (saúde, sindical, religioso, financeiro, CPF/cartão) - basta
       para o contexto do cliente?
 - [ ] **Retenções** (90d / 12m / 24m / 24m) e a janela de **35 dias de backup** aceitas e
@@ -262,11 +265,11 @@ Seja transparente com o cliente sobre os limites atuais do MVP:
   deliberada de segurança - exclusão de tenant jamais é automatizada.
 - **Não há retenção configurável por tenant.** Os prazos (90d / 12m / 24m / 24m) são **fixos no
   MVP**; configuração por tenant está planejada para v1.1.
-- **Não há edição da política de coleta.** A `window_title_policy` e a janela de coleta
-  (`collection_window`) não têm tela nem endpoint de alteração no MVP: o tenant opera no default
-  `MASKED_PATTERNS`/`ALWAYS` gravado no enroll. `FULL`/`APP_ONLY` e janela por horário comercial
-  estão no protocolo, mas a edição é follow-up. O que a controladora edita hoje no portal são os
-  campos de transparência (finalidade, contato do DPO, vigência, horário comercial).
+- **`FULL` não é selecionável no portal.** A controladora edita no portal a política de títulos
+  (`MASKED_PATTERNS`/`APP_ONLY`), a lista de mascaramento, os processos ignorados, o limiar de
+  ociosidade e a janela de coleta (`collection_window`), tudo auditado com de→para e com bump de
+  `config_version`. `FULL` (títulos sem mascaramento) exige decisão registrada no DPA e é
+  aplicada pela operadora, nunca por autosserviço.
 - **A eficácia plena do `REVOKE`** de auditoria depende de a aplicação conectar com um perfil de
   banco sem ser dono do schema (item de infraestrutura/runbook). O gatilho append-only, porém, já
   garante a imutabilidade de forma independente do perfil.

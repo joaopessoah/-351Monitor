@@ -29,6 +29,8 @@ export const auditActionLabels: Record<string, string> = {
   password_reset: "Redefiniu a senha por link de recuperação",
   mfa_reset: "Redefiniu a MFA de um usuário",
   mfa_recovery_codes: "Gerou códigos de recuperação de MFA",
+  update_privacy_config: "Alterou configuração de privacidade",
+  collection_window_choice: "Escolheu a janela de coleta",
 };
 
 /**
@@ -44,6 +46,8 @@ export const AUDIT_ACTION_FILTER_OPTIONS: { value: string; label: string }[] = [
   "dsr_delete",
   "update_category",
   "update_device",
+  "update_privacy_config",
+  "collection_window_choice",
   "revoke_device",
   "revoke_key",
   "update_user_role",

@@ -788,4 +788,40 @@ export interface OrganizationPatchRequest {
   finalidade_declarada?: string | null;
   contato_dpo?: string | null;
   data_vigencia?: string | null;
+  /** Horário de trabalho da org ({days, start, end}) ou null para limpar. */
+  business_hours?: BusinessHours | null;
+}
+
+/** Janela de coleta do agente (jsonb canônico da Seção 5.5). */
+export interface CollectionWindow {
+  mode: "ALWAYS" | "BUSINESS_HOURS";
+  days?: number[] | null;
+  start?: string | null;
+  end?: string | null;
+}
+
+/**
+ * Resposta de `GET/PATCH /api/v1/organization/agent-config` (F5, §8.7).
+ * heartbeat_sec e active_window_poll_sec são constantes do protocolo (read-only);
+ * FULL nunca é aceito pelo PATCH (exige registro em DPA, aplicado pela operadora).
+ */
+export interface AgentConfigResponse {
+  config_version: number;
+  heartbeat_sec: number;
+  active_window_poll_sec: number;
+  idle_threshold_sec: number;
+  window_title_policy: "FULL" | "MASKED_PATTERNS" | "APP_ONLY";
+  masked_patterns: string[];
+  ignored_processes: string[];
+  collection_window: CollectionWindow;
+  updated_at: string;
+}
+
+/** Body de `PATCH /api/v1/organization/agent-config` (OwnerOnly; campos ausentes não mudam). */
+export interface AgentConfigPatchRequest {
+  idle_threshold_sec?: number;
+  window_title_policy?: "MASKED_PATTERNS" | "APP_ONLY";
+  masked_patterns?: string[];
+  ignored_processes?: string[];
+  collection_window?: CollectionWindow;
 }

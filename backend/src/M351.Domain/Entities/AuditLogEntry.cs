@@ -93,6 +93,13 @@ public static class AuditActions
     /// MFA do próprio usuário; os códigos anteriores são invalidados. detail {count}.
     /// </summary>
     public const string MfaRecoveryCodes = "mfa_recovery_codes";
+
+    /// <summary>
+    /// Escolha explícita da janela de coleta (spec Seção 8.3 passo 1, linha 726): registro
+    /// próprio, além do de→para de update_privacy_config — quem decide é a CONTROLADORA e a
+    /// decisão precisa ser evidenciável por si só. detail = collection_window escolhida.
+    /// </summary>
+    public const string CollectionWindowChoice = "collection_window_choice";
 }
 
 /// <summary>Tabela audit_log — append-only, particionada por mês, retenção 24 meses (N13).</summary>
