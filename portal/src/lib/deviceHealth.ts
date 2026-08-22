@@ -37,6 +37,24 @@ export function tamperReasonLabel(reason: string | null): string {
 }
 
 /**
+ * Etapas do UPDATE_FAILED em texto de gestor: cada uma leva a uma ação
+ * diferente, e é justamente essa diferença que o contador "desatualizados"
+ * não conseguia mostrar.
+ */
+export const updateFailureReasonLabels: Record<string, string> = {
+  download: "Falha no download do instalador",
+  hash: "Instalador com conteúdo divergente do publicado",
+  signature: "Assinatura do instalador recusada",
+  install: "Instalação não pôde ser iniciada",
+};
+
+/** Rótulo da etapa de falha de atualização; etapa desconhecida cai num texto neutro. */
+export function updateFailureReasonLabel(reason: string | null): string {
+  if (reason === null) return "Falha ao atualizar";
+  return updateFailureReasonLabels[reason] ?? "Falha ao atualizar";
+}
+
+/**
  * "Está em horário de trabalho AGORA?" no fuso da organização. Usado só para
  * decidir o REALCE do "sem comunicação" (> 30 min) — fora do expediente uma
  * máquina silenciosa é esperada. Sem business_hours configurado, considera

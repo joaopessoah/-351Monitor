@@ -36,6 +36,19 @@ public class Device : ITenantEntity
     public string? LastTamperReason { get; set; }
 
     /// <summary>
+    /// Último UPDATE_FAILED materializado na ingestão (monotônico, igual ao last_tamper_at) —
+    /// vigilância de rollout: sem isto, a máquina travada num release ruim aparecia apenas como
+    /// "versão desatualizada", sem dizer em que etapa a atualização emperrou.
+    /// </summary>
+    public DateTimeOffset? LastUpdateFailureAt { get; set; }
+
+    /// <summary>Etapa que reprovou na última tentativa: download | hash | signature | install.</summary>
+    public string? LastUpdateFailureReason { get; set; }
+
+    /// <summary>Versão que a última tentativa de atualização mirava (to_version do UPDATE_FAILED).</summary>
+    public string? LastUpdateTargetVersion { get; set; }
+
+    /// <summary>
     /// F5 — token não adivinhável da página pública do funcionário ("Ver o que minha empresa
     /// vê", antecipação da v1.1): GET /public/t/{token} mostra a política vigente, retenções,
     /// canais do DPO e o status de ciência/operacional deste device, SEM dado pessoal do dia

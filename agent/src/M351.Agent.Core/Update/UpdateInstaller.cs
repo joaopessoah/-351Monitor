@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using M351.Agent.Core.Contracts;
 using M351.Agent.Core.Logging;
 
 namespace M351.Agent.Core.Update;
@@ -12,6 +13,10 @@ namespace M351.Agent.Core.Update;
 ///
 /// As acoes de efeito colateral (gravar sentinela, rodar msiexec) sao injetadas para os testes:
 /// NUNCA baixar/instalar MSI real nem rodar msiexec em teste.
+///
+/// Toda saida por falha emite UPDATE_FAILED{from_version, to_version, reason} pelo `reportFailure`
+/// injetado (no servico, a fila SQLite): antes disso uma frota travada num release ruim so
+/// aparecia como "versao desatualizada", sem dizer em que etapa ela emperrou.
 /// </summary>
 public sealed class UpdateInstaller
 {
@@ -23,6 +28,7 @@ public sealed class UpdateInstaller
     private readonly Func<string, CancellationToken, Task<bool>> _runInstaller;
     private readonly bool _verifyAuthenticode;
     private readonly string? _expectedSignerCn;
+    private readonly Action<UpdateFailedData>? _reportFailure;
 
     public UpdateInstaller(
         UpdateClient client,
@@ -32,7 +38,8 @@ public sealed class UpdateInstaller
         Func<string, CancellationToken, Task<bool>>? runInstaller = null,
         Action? clearUpdateSentinel = null,
         bool verifyAuthenticode = false,
-        string? expectedSignerCn = null)
+        string? expectedSignerCn = null,
+        Action<UpdateFailedData>? reportFailure = null)
     {
         _client = client;
         _log = log;
@@ -42,6 +49,30 @@ public sealed class UpdateInstaller
         _runInstaller = runInstaller ?? DefaultRunMsiexecAsync;
         _verifyAuthenticode = verifyAuthenticode;
         _expectedSignerCn = expectedSignerCn;
+        _reportFailure = reportFailure;
+    }
+
+    /// <summary>
+    /// Emite UPDATE_FAILED com a etapa que reprovou. Best-effort: uma falha ao enfileirar o evento
+    /// (fila cheia, disco) NUNCA pode virar excecao no loop de update — ai perderiamos tambem o
+    /// retry do proximo ciclo.
+    /// </summary>
+    private void ReportFailure(UpdateManifest manifest, string reason)
+    {
+        if (_reportFailure is null) return;
+        try
+        {
+            _reportFailure(new UpdateFailedData
+            {
+                FromVersion = AgentVersionInfo.Current,
+                ToVersion = manifest.Version,
+                Reason = reason,
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.Warn($"Auto-update: falha ao registrar o UPDATE_FAILED ({reason}): {ex.GetType().Name}.");
+        }
     }
 
     /// <summary>
@@ -57,6 +88,7 @@ public sealed class UpdateInstaller
         if (!await _client.DownloadAsync(manifest.Url, destPath, ct))
         {
             _log.Warn("Auto-update: download falhou — update adiado para o proximo ciclo.");
+            ReportFailure(manifest, UpdateFailureReasons.Download);
             return false;
         }
 
@@ -69,6 +101,7 @@ public sealed class UpdateInstaller
         {
             _log.Error("Auto-update: falha ao calcular SHA-256 do MSI baixado.", ex);
             TryDelete(destPath);
+            ReportFailure(manifest, UpdateFailureReasons.Hash);
             return false;
         }
 
@@ -76,6 +109,7 @@ public sealed class UpdateInstaller
         {
             _log.Error($"Auto-update: SHA-256 nao confere (esperado {manifest.Sha256}, obtido {actualHex}). MSI descartado — NAO instalado.");
             TryDelete(destPath);
+            ReportFailure(manifest, UpdateFailureReasons.Hash);
             return false;
         }
         _log.Info("Auto-update: SHA-256 do MSI confere.");
@@ -84,6 +118,7 @@ public sealed class UpdateInstaller
         {
             _log.Error("Auto-update: assinatura Authenticode invalida — MSI descartado.");
             TryDelete(destPath);
+            ReportFailure(manifest, UpdateFailureReasons.Signature);
             return false;
         }
 
@@ -97,6 +132,7 @@ public sealed class UpdateInstaller
         catch (Exception ex)
         {
             _log.Error("Auto-update: falha ao gravar a sentinela .update — abortando para nao mascarar o start_reason.", ex);
+            ReportFailure(manifest, UpdateFailureReasons.Install);
             return false;
         }
 
@@ -110,6 +146,7 @@ public sealed class UpdateInstaller
             _log.Error("Auto-update: msiexec nao pode ser iniciado — removendo a sentinela .update para nao rotular um stop/start normal como update.");
             try { _clearUpdateSentinel(); }
             catch (Exception ex) { _log.Warn($"Auto-update: falha ao remover a sentinela .update orfa: {ex.Message}"); }
+            ReportFailure(manifest, UpdateFailureReasons.Install);
         }
         return started;
     }

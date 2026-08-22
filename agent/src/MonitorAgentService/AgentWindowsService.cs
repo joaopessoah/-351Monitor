@@ -367,7 +367,11 @@ public sealed class AgentWindowsService : ServiceBase
             writeUpdateSentinel: () => UpdateFlag.Write(dataDir, _log),
             clearUpdateSentinel: () => UpdateFlag.Consume(dataDir, _log),
             verifyAuthenticode: installConfig?.VerifyAuthenticode ?? false,
-            expectedSignerCn: installConfig?.ExpectedSignerCn);
+            expectedSignerCn: installConfig?.ExpectedSignerCn,
+            // Falha de update vira evento na frota (UPDATE_FAILED), nao so linha de log na maquina:
+            // o motivo e CATEGORIZADO pelo installer, entao nada de texto de excecao sai daqui.
+            reportFailure: data => _runtime.Queue.Enqueue(
+                _runtime.Factory.Create(EventTypes.UpdateFailed, data)));
         var service = new UpdateService(_runtime.UpdateClient, installer, _runtime.State, _log);
         try
         {

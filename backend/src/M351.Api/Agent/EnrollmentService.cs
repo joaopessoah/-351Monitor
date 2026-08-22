@@ -119,8 +119,11 @@ public class EnrollmentService(
 
         await db.SaveChangesAsync(ct);
 
+        // a config já sai do enroll com a url de transparência DAQUELE device (/t/{token}):
+        // é como o token chega ao agente, sem canal novo
         var response = new EnrollResponse(
-            device.Id, deviceToken, config.ConfigVersion, configService.Build(config, org.Slug));
+            device.Id, deviceToken, config.ConfigVersion,
+            configService.Build(config, org.Slug, device.TransparencyToken));
 
         return Results.Created($"/api/v1/devices/{device.Id}", response);
     }

@@ -45,4 +45,6 @@ Em cima disso, a leva de melhorias da F5: recuperação de senha e recovery code
 
 A leva de continuação acrescentou três itens: painel de atividade fora do horário de trabalho (indicador de equilíbrio, nunca controle de ponto), relatório de jornada semanal por e-mail com link autenticado em vez de anexo, e o score interno de saúde de conta que avisa o CS sobre risco de churn antes da cobrança manual perceber.
 
+O fechamento seguinte deu porta de entrada a duas mecânicas que só existiam por baixo: a vigilância de rollout do agente (evento `UPDATE_FAILED` com a etapa que reprovou e a distribuição de versões da frota na tela de Dispositivos) e a entrega do link de transparência por dispositivo (o token chega ao agente pela config e o tray passa a abrir a página daquela máquina, com o endereço também disponível ao gestor no portal).
+
 Pendências externas antes do primeiro cliente real: certificado de code signing (comprar com a data do piloto marcada, lead time de 1 a 3 semanas), revisão jurídica do kit LGPD/DPA e decisão da cloud gerenciada de produção. Staging: VPS Hostinger com deploy automático no push para `main`.

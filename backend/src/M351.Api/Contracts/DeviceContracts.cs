@@ -20,6 +20,16 @@ public record DeviceResponse(
 public record PagedResponse<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
 
 /// <summary>
+/// GET /devices/{id}/transparency-link (Admin+): a URL da página pública DAQUELE dispositivo
+/// (/t/{token}), a mesma que o tray do agente abre na máquina do funcionário.
+///
+/// Endpoint próprio, e não um campo do DeviceResponse, por SEGURANÇA: o token é um segredo de
+/// baixo valor mas é um segredo, e o DeviceResponse é lido por Viewer e trafega na listagem
+/// inteira. Aqui ele só sai sob papel Admin+ e um device por vez.
+/// </summary>
+public record DeviceTransparencyLinkResponse(Guid DeviceId, string Url);
+
+/// <summary>
 /// GET /devices/health-summary (F5): contagens de saúde sobre a FROTA INTEIRA (devices
 /// active), com os MESMOS limiares do deviceHealth.ts. within_business_hours diz se o
 /// realce de "sem comunicação há mais de 30 min" está valendo agora no fuso da org.
@@ -34,4 +44,40 @@ public record DeviceHealthSummaryResponse(
     int NoticePending,
     int WithAlert,
     bool WithinBusinessHours,
+    DateTimeOffset ServerTime);
+
+/// <summary>
+/// Uma versão do agente presente na frota. Version null é a máquina que ainda não reportou versão
+/// alguma (enrolada e sem primeiro lote); ela aparece na lista para o total bater com
+/// active_devices, em vez de sumir e deixar a soma inexplicável.
+/// </summary>
+public record FleetVersionRow(string? Version, int Count, bool Outdated);
+
+/// <summary>
+/// Falha RECENTE de auto-update num device (materializada do UPDATE_FAILED). Reason é a etapa
+/// canônica que reprovou: download | hash | signature | install. Nunca há texto livre aqui.
+/// </summary>
+public record UpdateFailureRow(
+    Guid DeviceId,
+    string Hostname,
+    string? DisplayName,
+    string Reason,
+    string? TargetVersion,
+    DateTimeOffset OccurredAt);
+
+/// <summary>
+/// GET /devices/version-summary: distribuição de versões do agente na FROTA INTEIRA (devices
+/// active) mais as falhas de atualização recentes, ambas computadas no servidor, no mesmo padrão
+/// do health-summary. É a vigilância de rollout: current_version/min_version dizem para onde a
+/// frota deveria estar indo, versions diz onde ela está, e recent_failures diz em que etapa quem
+/// não chegou lá emperrou.
+/// </summary>
+public record DeviceVersionSummaryResponse(
+    int ActiveDevices,
+    string? CurrentVersion,
+    string? MinVersion,
+    IReadOnlyList<FleetVersionRow> Versions,
+    int UpdateFailures,
+    IReadOnlyList<UpdateFailureRow> RecentFailures,
+    int UpdateFailureWindowDays,
     DateTimeOffset ServerTime);

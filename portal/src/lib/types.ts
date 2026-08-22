@@ -295,6 +295,20 @@ export interface PagedResponse<T> {
 }
 
 /**
+ * Resposta de `GET /devices/{id}/transparency-link` (Admin+): a URL da página
+ * pública DAQUELE dispositivo, a mesma que o tray do agente abre na máquina do
+ * funcionário.
+ *
+ * Endpoint separado, e não um campo de DeviceItem, de propósito: a URL carrega um
+ * token, que é um segredo de baixo valor mas é um segredo. Viewer não a recebe, e
+ * ela não trafega na listagem inteira de dispositivos.
+ */
+export interface DeviceTransparencyLinkResponse {
+  device_id: string;
+  url: string;
+}
+
+/**
  * Resposta de `GET /devices/health-summary` (Viewer+): contadores de saúde da
  * FROTA INTEIRA do tenant, computados no backend sobre todos os devices não
  * arquivados. Nada a ver com a página corrente de `GET /devices` — é justamente
@@ -322,6 +336,53 @@ export interface DeviceHealthSummaryResponse {
   /** Devices com pelo menos uma dimensão acionada (nunca soma das dimensões). */
   with_alert: number;
   within_business_hours: boolean;
+  server_time: string;
+}
+
+/** Uma versão do agente presente na frota. `version` null = máquina que ainda não reportou versão. */
+export interface FleetVersionRow {
+  version: string | null;
+  count: number;
+  /** Abaixo do min_version do release vigente - comparação SEMVER no BACKEND. */
+  outdated: boolean;
+}
+
+/**
+ * Falha RECENTE de auto-update num dispositivo, materializada do evento
+ * UPDATE_FAILED. `reason` é a ETAPA que reprovou, sempre da lista canônica
+ * (download | hash | signature | install) - nunca texto livre nem mensagem de
+ * exceção, que poderia carregar caminho de arquivo ou nome de usuário.
+ */
+export interface UpdateFailureRow {
+  device_id: string;
+  hostname: string;
+  display_name: string | null;
+  reason: "download" | "hash" | "signature" | "install";
+  /** Versão que a tentativa mirava (to_version do evento). */
+  target_version: string | null;
+  occurred_at: string;
+}
+
+/**
+ * Resposta de `GET /devices/version-summary` (Viewer+): a vigilância de rollout
+ * da frota, computada no servidor no mesmo padrão do health-summary.
+ *
+ * current_version/min_version dizem para onde a frota deveria estar indo (release
+ * vigente do canal estável), `versions` diz onde ela está de fato, e
+ * `recent_failures` diz em que etapa quem não chegou lá emperrou. O contador
+ * "desatualizados" do health-summary responde só a primeira metade disso.
+ */
+export interface DeviceVersionSummaryResponse {
+  active_devices: number;
+  current_version: string | null;
+  min_version: string | null;
+  /** Da versão mais nova para a mais antiga; a desconhecida vem por último. */
+  versions: FleetVersionRow[];
+  /** Total de dispositivos com falha na janela (pode ser maior que recent_failures). */
+  update_failures: number;
+  /** Amostra detalhada das falhas mais recentes (teto no servidor). */
+  recent_failures: UpdateFailureRow[];
+  update_failure_window_days: number;
   server_time: string;
 }
 

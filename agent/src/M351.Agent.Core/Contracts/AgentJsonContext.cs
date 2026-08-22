@@ -29,6 +29,7 @@ namespace M351.Agent.Core.Contracts;
 [JsonSerializable(typeof(NoticeAckData))]
 [JsonSerializable(typeof(PolicyAppliedData))]
 [JsonSerializable(typeof(AgentErrorData))]
+[JsonSerializable(typeof(UpdateFailedData))]
 [JsonSerializable(typeof(JsonElement))]
 public partial class AgentJsonContext : JsonSerializerContext
 {

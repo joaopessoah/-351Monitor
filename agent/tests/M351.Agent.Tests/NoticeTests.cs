@@ -77,16 +77,16 @@ public class NoticeTests
         Assert.Null(config.NoticeText);   // fábrica: texto padrão do agente
         Assert.Equal(1, config.NoticeVersion);
 
-        // shape do objeto config: os 10 campos da Seção 5.5, nomes exatos
+        // shape do objeto config: os 11 campos da Seção 5.5, nomes exatos
         var json = JsonSerializer.Serialize(config, AgentJsonContext.Default.AgentConfig);
         using var doc = JsonDocument.Parse(json);
         var keys = doc.RootElement.EnumerateObject().Select(p => p.Name).OrderBy(x => x).ToList();
         Assert.Equal(
             new[]
             {
-                "active_window_poll_sec", "collection_window", "heartbeat_sec", "idle_threshold_sec",
-                "ignored_processes", "masked_patterns", "notice_text", "notice_version",
-                "transparency_url", "window_title_policy"
+                "active_window_poll_sec", "collection_window", "device_transparency_url", "heartbeat_sec",
+                "idle_threshold_sec", "ignored_processes", "masked_patterns", "notice_text",
+                "notice_version", "transparency_url", "window_title_policy"
             },
             keys);
     }

@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace M351.Agent.Core.Contracts;
 
 /// <summary>
-/// Objeto `config` do ack/enroll — Seção 5.5 do spec. 10 campos, sempre todos presentes.
+/// Objeto `config` do ack/enroll — Seção 5.5 do spec. 11 campos, sempre todos presentes.
 /// </summary>
 public sealed class AgentConfig
 {
@@ -32,6 +32,18 @@ public sealed class AgentConfig
     /// </summary>
     [JsonPropertyName("notice_version")] public int NoticeVersion { get; set; } = 1;
 
+    /// <summary>
+    /// Página pública DESTE dispositivo (/t/{token}): a mesma política da organização MAIS o bloco
+    /// "Este dispositivo" (estado da instalação, jamais dado pessoal do dia). Chega pelo MESMO
+    /// canal de config do transparency_url — resposta do enroll e config reentregue no ack.
+    ///
+    /// Null quando o servidor é anterior ao campo ou o device não tem token: nesse caso o tray cai
+    /// no transparency_url por slug (ver TransparencyLink.Resolve), e nada quebra.
+    ///
+    /// A url carrega um segredo de baixo valor: NUNCA registrar em log nem enviar em telemetria.
+    /// </summary>
+    [JsonPropertyName("device_transparency_url")] public string? DeviceTransparencyUrl { get; set; }
+
     /// <summary>Config de fábrica usada antes do primeiro enroll (sem config do servidor).</summary>
     public static AgentConfig FactoryDefault() => new()
     {
@@ -52,7 +64,8 @@ public sealed class AgentConfig
         CollectionWindow = new CollectionWindow { Mode = CollectionWindowModes.Always },
         TransparencyUrl = null,
         NoticeText = null, // aviso padrão do agente até o tenant definir o dele
-        NoticeVersion = 1
+        NoticeVersion = 1,
+        DeviceTransparencyUrl = null // só existe depois do enroll (o token nasce lá)
     };
 }
 

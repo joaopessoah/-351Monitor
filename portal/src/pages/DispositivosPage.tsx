@@ -8,10 +8,14 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Check,
   Clock,
+  Copy,
+  DownloadCloud,
   Ellipsis,
   MonitorSmartphone,
   Pencil,
+  Link2,
   Search,
   ShieldAlert,
   Tags,
@@ -20,7 +24,12 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatDateTime, formatRelative, stateLabels } from "@/lib/format";
-import { deriveDeviceHealth, tamperReasonLabel, type DeviceHealth } from "@/lib/deviceHealth";
+import {
+  deriveDeviceHealth,
+  tamperReasonLabel,
+  updateFailureReasonLabel,
+  type DeviceHealth,
+} from "@/lib/deviceHealth";
 import { genericErrorMessage } from "@/lib/messages";
 import { isAdmin } from "@/lib/roles";
 import type {
@@ -28,6 +37,8 @@ import type {
   DeviceHealthSummaryResponse,
   DeviceItem,
   DevicePatchRequest,
+  DeviceTransparencyLinkResponse,
+  DeviceVersionSummaryResponse,
   MeResponse,
   PagedResponse,
   PresenceItem,
@@ -398,6 +409,148 @@ function FleetHealthChips({
   );
 }
 
+/**
+ * Distribuição de versões do agente na FROTA INTEIRA (GET /devices/version-summary),
+ * com as falhas de atualização recentes em destaque. Server-side, no mesmo padrão
+ * dos chips de saúde acima.
+ *
+ * Por que existe: o chip "N com versão desatualizada" diz QUANTAS máquinas ficaram
+ * para trás, mas não em qual versão elas pararam nem por quê. Ver a frota partida
+ * por versão separa "release novo ainda subindo" de "release travado", e a etapa da
+ * falha (download, hash, assinatura, instalação) leva a ações diferentes.
+ */
+function FleetVersionsCard({ query }: { query: UseQueryResult<DeviceVersionSummaryResponse> }) {
+  const summary = query.data;
+
+  if (summary === undefined) {
+    if (query.isError) {
+      return (
+        <Card className="p-3">
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <span className="text-muted-foreground">
+              Não foi possível carregar a distribuição de versões do agente.
+            </span>
+            <Button variant="outline" size="sm" onClick={() => void query.refetch()}>
+              Tentar novamente
+            </Button>
+          </div>
+        </Card>
+      );
+    }
+    return (
+      <Card className="space-y-2 p-3">
+        <Skeleton className="h-4 w-56" />
+        <Skeleton className="h-3 w-72" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-full" />
+      </Card>
+    );
+  }
+
+  const total = summary.active_devices;
+  const failures = summary.recent_failures;
+
+  return (
+    <Card className="space-y-3 p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold">Versões do agente na frota</h2>
+        <p className="text-xs text-muted-foreground">
+          {summary.current_version !== null ? (
+            <>
+              Release vigente{" "}
+              <span className="font-medium tabular-nums text-foreground">
+                {summary.current_version}
+              </span>
+              {summary.min_version !== null && (
+                <> · mínima exigida <span className="tabular-nums">{summary.min_version}</span></>
+              )}
+            </>
+          ) : (
+            "Nenhum release publicado no canal estável"
+          )}
+        </p>
+      </div>
+
+      {total === 0 ? (
+        <p className="text-sm text-muted-foreground">Nenhum dispositivo ativo na organização.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {summary.versions.map((v) => {
+            const pct = Math.round((v.count / total) * 100);
+            return (
+              <li key={v.version ?? "__desconhecida__"} className="flex items-center gap-3 text-sm">
+                <span className="w-28 shrink-0 truncate tabular-nums font-medium">
+                  {v.version ?? <span className="text-muted-foreground">sem versão</span>}
+                </span>
+                <span
+                  className="h-2 min-w-[3rem] flex-1 overflow-hidden rounded-full bg-secondary"
+                  role="img"
+                  aria-label={`${v.count} de ${total} dispositivos (${pct}%)`}
+                >
+                  <span
+                    className={cn(
+                      "block h-full rounded-full",
+                      v.outdated ? "bg-viz-improdutivo" : "bg-viz-produtivo",
+                    )}
+                    style={{ width: `${Math.max(pct, 2)}%` }}
+                  />
+                </span>
+                <span className="w-28 shrink-0 text-right tabular-nums text-muted-foreground">
+                  {v.count} ({pct}%)
+                </span>
+                {v.outdated && (
+                  <span
+                    className="shrink-0 whitespace-nowrap rounded-full bg-viz-improdutivo/15 px-2 py-0.5 text-xs font-medium text-viz-improdutivo"
+                    title="Abaixo da versão mínima exigida pelo release vigente"
+                  >
+                    desatualizada
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {summary.update_failures > 0 && (
+        <div className="space-y-1.5 rounded-md border border-brand-red/30 bg-brand-red/10 p-2.5">
+          <p className="flex items-center gap-2 text-sm font-medium text-brand-red">
+            <DownloadCloud className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="tabular-nums">
+              {summary.update_failures}{" "}
+              {summary.update_failures === 1
+                ? "dispositivo falhou ao atualizar"
+                : "dispositivos falharam ao atualizar"}{" "}
+              nos últimos {summary.update_failure_window_days} dias
+            </span>
+          </p>
+          <ul className="space-y-1 text-xs">
+            {failures.map((f) => (
+              <li key={f.device_id} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span className="font-medium">{f.display_name ?? f.hostname}</span>
+                <span className="text-muted-foreground">{updateFailureReasonLabel(f.reason)}</span>
+                {f.target_version !== null && (
+                  <span className="tabular-nums text-muted-foreground">
+                    ao tentar ir para {f.target_version}
+                  </span>
+                )}
+                <span className="tabular-nums text-muted-foreground">
+                  · {formatRelative(f.occurred_at, summary.server_time)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {summary.update_failures > failures.length && (
+            <p className="text-xs text-muted-foreground">
+              Mostrando as {failures.length} falhas mais recentes.
+            </p>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 const headerCell = "px-3 py-2 text-left font-medium";
 const bodyCell = "px-3 py-1.5 align-middle";
 
@@ -532,6 +685,16 @@ export function DispositivosPage() {
   const healthQuery = useQuery({
     queryKey: ["devices", "health-summary"],
     queryFn: () => api<DeviceHealthSummaryResponse>("/devices/health-summary"),
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
+  });
+
+  // Distribuição de versões da frota + falhas de atualização recentes (mesma
+  // cadência do health-summary: são as duas leituras server-side desta tela).
+  const versionsQuery = useQuery({
+    queryKey: ["devices", "version-summary"],
+    queryFn: () => api<DeviceVersionSummaryResponse>("/devices/version-summary"),
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
     placeholderData: (prev) => prev,
@@ -725,6 +888,9 @@ export function DispositivosPage() {
         onlyAlerts={onlyAlerts}
         onToggleAlerts={() => setOnlyAlerts(!onlyAlerts)}
       />
+
+      {/* Vigilância de rollout (GET /devices/version-summary). */}
+      <FleetVersionsCard query={versionsQuery} />
 
       {presenceQuery.isError && presenceQuery.data === undefined && (
         <div className="flex items-center justify-between gap-3 rounded-md border border-brand-red/30 bg-brand-red/10 px-3 py-2 text-sm text-brand-red">
@@ -954,6 +1120,9 @@ export function DispositivosPage() {
       {action !== null && action.kind === "tags" && (
         <DeviceTagsDialog device={action.device} onClose={() => setAction(null)} />
       )}
+      {action !== null && action.kind === "transparency" && (
+        <TransparencyLinkDialog device={action.device} onClose={() => setAction(null)} />
+      )}
       {action !== null && (action.kind === "archive" || action.kind === "reactivate") && (
         <DeviceStatusDialog
           device={action.device}
@@ -969,7 +1138,7 @@ export function DispositivosPage() {
 // Ações por dispositivo (F3.7) - PATCH /devices/{id}, admin/owner
 // -----------------------------------------------------------------------------
 
-type DeviceActionKind = "rename" | "tags" | "archive" | "reactivate";
+type DeviceActionKind = "rename" | "tags" | "archive" | "reactivate" | "transparency";
 
 interface DeviceAction {
   kind: DeviceActionKind;
@@ -1038,6 +1207,10 @@ function DeviceRowActions({
           <Tags className="h-3.5 w-3.5" aria-hidden="true" />
           Editar etiquetas
         </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onAction({ kind: "transparency", device })}>
+          <Link2 className="h-3.5 w-3.5" aria-hidden="true" />
+          Link de transparência
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         {device.status === "archived" ? (
           <DropdownMenuItem onSelect={() => onAction({ kind: "reactivate", device })}>
@@ -1052,6 +1225,111 @@ function DeviceRowActions({
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** Botão de copiar (mesmo idioma do MfaFlow e da ChavesPage) - troca o ícone por 2s ao copiar. */
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard indisponível (ex.: contexto não seguro) - o campo permite seleção manual.
+    }
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="icon"
+      className="shrink-0"
+      onClick={() => void copy()}
+      aria-label={label}
+      title={copied ? "Copiado!" : label}
+    >
+      {copied ? (
+        <Check className="h-4 w-4 text-viz-produtivo" aria-hidden="true" />
+      ) : (
+        <Copy className="h-4 w-4" aria-hidden="true" />
+      )}
+    </Button>
+  );
+}
+
+/**
+ * Link de transparência DAQUELE dispositivo (GET /devices/{id}/transparency-link,
+ * admin/owner): a mesma página que o tray do agente abre na máquina do
+ * funcionário. É a única porta do portal para esse endereço - o token vive em
+ * devices.transparency_token e não aparece em nenhuma listagem.
+ *
+ * O endereço é buscado sob demanda, ao abrir este diálogo, e não junto da
+ * listagem: ele carrega um token, que é um segredo de baixo valor mas é um
+ * segredo, e não tem por que trafegar para as 50 linhas da página nem para
+ * quem só tem papel de leitura (o backend responde 403 a Viewer).
+ */
+function TransparencyLinkDialog({ device, onClose }: { device: DeviceItem; onClose: () => void }) {
+  const query = useQuery({
+    queryKey: ["devices", device.id, "transparency-link"],
+    queryFn: () =>
+      api<DeviceTransparencyLinkResponse>(
+        `/devices/${encodeURIComponent(device.id)}/transparency-link`,
+      ),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Link de transparência</DialogTitle>
+          <DialogDescription>
+            Página pública de "{device.display_name ?? device.hostname}", a mesma que o agente abre
+            no menu "Política de monitoramento" desta máquina.
+          </DialogDescription>
+        </DialogHeader>
+
+        <p className="text-sm text-muted-foreground">
+          Quem abre esse endereço vê a política de coleta vigente da organização, o que é e o que
+          nunca é coletado, os prazos de retenção, o contato do DPO e o estado desta instalação
+          (ciência registrada, último contato). Nenhum dado de uso da pessoa aparece ali.
+        </p>
+
+        {query.isPending ? (
+          <Skeleton className="h-9 w-full" />
+        ) : query.isError ? (
+          <p role="alert" className="text-sm text-destructive">
+            {genericErrorMessage(query.error)}
+          </p>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Input
+              readOnly
+              value={query.data.url}
+              aria-label="Endereço da página de transparência deste dispositivo"
+              className="font-mono text-xs"
+              onFocus={(e) => e.currentTarget.select()}
+            />
+            <CopyButton value={query.data.url} label="Copiar link de transparência" />
+          </div>
+        )}
+
+        <p className="text-xs text-muted-foreground">
+          O endereço é pessoal do dispositivo e dispensa login: envie-o a quem usa a máquina, não o
+          publique.
+        </p>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Fechar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -35,6 +35,20 @@ public class DevicesController(M351DbContext db, AuditWriter audit, NpgsqlDataSo
             new { Channel = AgentUpdateEndpoints.DefaultChannel }, cancellationToken: ct));
     }
 
+    /// <summary>
+    /// Release current do canal 'stable': a versão para onde a frota deveria estar indo e a
+    /// min_version abaixo da qual o update é forçado. Ambos null quando não há release publicado.
+    /// </summary>
+    private async Task<(string? Version, string? MinVersion)> CurrentStableReleaseAsync(CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        var row = await connection.QueryFirstOrDefaultAsync<(string? Version, string? MinVersion)>(
+            new CommandDefinition(
+                "SELECT version, min_version FROM agent_releases WHERE channel = @Channel AND is_current",
+                new { Channel = AgentUpdateEndpoints.DefaultChannel }, cancellationToken: ct));
+        return row;
+    }
+
     /// <summary>Projeção EF crua (sem semver): a flag agent_outdated é calculada em memória.</summary>
     private sealed record DeviceRow(
         Guid Id, string Hostname, string? DisplayName, string OsType, string? OsVersion,
@@ -123,6 +137,76 @@ public class DevicesController(M351DbContext db, AuditWriter audit, NpgsqlDataSo
         return Ok(new DeviceHealthSummaryResponse(
             rows.Count, offline, offlineSevere, clockSkewed, outdated, tampered, noticePending,
             withAlert, withinBusinessHours, now));
+    }
+
+    // ===== Vigilância de rollout: distribuição de versões da frota e falhas de atualização =====
+
+    /// <summary>Só falha RECENTE é destaque (mesma janela do tamper, pelo mesmo motivo).</summary>
+    public const int UpdateFailureWindowDays = 7;
+
+    /// <summary>Teto de linhas de falha detalhadas: a tela mostra os casos, não a frota inteira.</summary>
+    private const int MaxRecentFailures = 20;
+
+    private sealed record VersionRow(
+        Guid Id, string Hostname, string? DisplayName, string? AgentVersion,
+        DateTimeOffset? LastUpdateFailureAt, string? LastUpdateFailureReason, string? LastUpdateTargetVersion);
+
+    /// <summary>
+    /// GET /devices/version-summary (Viewer+): quantas máquinas estão em cada versão do agente e
+    /// quais falharam ao atualizar nos últimos 7 dias. Server-side, no padrão do health-summary:
+    /// uma passada sobre os devices active do tenant, agregação em memória (dimensionado para o
+    /// mesmo volume, ~2.500 devices).
+    ///
+    /// Até aqui a única vigilância de rollout era o contador "desatualizados", que diz QUANTOS
+    /// ficaram para trás mas não em QUAL versão eles pararam nem POR QUÊ. As duas leituras juntas
+    /// separam "release novo ainda subindo" de "release travado numa etapa".
+    /// </summary>
+    [HttpGet("version-summary")]
+    public async Task<IActionResult> VersionSummary(CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var (currentVersion, minVersion) = await CurrentStableReleaseAsync(ct);
+        var failureSince = now - TimeSpan.FromDays(UpdateFailureWindowDays);
+
+        var rows = await db.Devices
+            .Where(d => d.Status == "active")
+            .Select(d => new VersionRow(
+                d.Id, d.Hostname, d.DisplayName, d.AgentVersion,
+                d.LastUpdateFailureAt, d.LastUpdateFailureReason, d.LastUpdateTargetVersion))
+            .ToListAsync(ct);
+
+        // Agrupamento por versão exata (string do agente, não a normalizada): duas máquinas com
+        // "1.0.0" e "v1.0.0" seriam a mesma versão semântica, mas exibir o que a máquina reporta é
+        // o que permite reconhecer um agente empacotado errado.
+        var versions = rows
+            .GroupBy(d => string.IsNullOrWhiteSpace(d.AgentVersion) ? null : d.AgentVersion!.Trim())
+            .Select(g => new FleetVersionRow(g.Key, g.Count(), SemVer.IsOutdated(g.Key, minVersion)))
+            .OrderByDescending(v => SemVer.TryParse(v.Version, out var parsed) ? parsed : default)
+            .ThenBy(v => v.Version is null) // versão desconhecida sempre por último
+            .ThenBy(v => v.Version, StringComparer.Ordinal)
+            .ToList();
+
+        var failing = rows
+            .Where(d => d.LastUpdateFailureAt is { } at && at >= failureSince && d.LastUpdateFailureReason is not null)
+            .OrderByDescending(d => d.LastUpdateFailureAt)
+            .ToList();
+
+        var recentFailures = failing
+            .Take(MaxRecentFailures)
+            .Select(d => new UpdateFailureRow(
+                d.Id, d.Hostname, d.DisplayName, d.LastUpdateFailureReason!,
+                d.LastUpdateTargetVersion, d.LastUpdateFailureAt!.Value))
+            .ToList();
+
+        return Ok(new DeviceVersionSummaryResponse(
+            ActiveDevices: rows.Count,
+            CurrentVersion: currentVersion,
+            MinVersion: minVersion,
+            Versions: versions,
+            UpdateFailures: failing.Count,
+            RecentFailures: recentFailures,
+            UpdateFailureWindowDays: UpdateFailureWindowDays,
+            ServerTime: now));
     }
 
     /// <summary>
@@ -222,6 +306,37 @@ public class DevicesController(M351DbContext db, AuditWriter audit, NpgsqlDataSo
 
         var minVersion = await CurrentStableMinVersionAsync(ct);
         return Ok(ToResponse(row, minVersion));
+    }
+
+    /// <summary>
+    /// GET /devices/{id}/transparency-link (Admin+): a URL da página pública daquele dispositivo
+    /// (/t/{token}) — a MESMA que o tray do agente abre na máquina do funcionário, para o gestor
+    /// poder enviá-la a quem pedir sem precisar ler o banco.
+    ///
+    /// Fora do DeviceResponse por decisão de segurança: o token é um segredo de baixo valor mas é
+    /// um segredo, e o DeviceResponse é lido por Viewer e vai na listagem inteira. Aqui sai um
+    /// device por vez, só sob Admin+, e a url NUNCA entra em log (nem no audit, que registraria a
+    /// url num detail legível por quem lê a trilha).
+    ///
+    /// Device sem token (só aconteceria com linha anterior ao backfill que nunca re-enrollou)
+    /// responde 404, o mesmo do device inexistente — não há link a oferecer.
+    /// </summary>
+    [HttpGet("{id:guid}/transparency-link")]
+    [Authorize(Policy = AuthConstants.PolicyAdminPlus)]
+    public async Task<IActionResult> TransparencyLink(
+        Guid id, [FromServices] AgentConfigService configService, CancellationToken ct)
+    {
+        var token = await db.Devices
+            .Where(d => d.Id == id)
+            .Select(d => d.TransparencyToken)
+            .FirstOrDefaultAsync(ct);
+
+        if (token is not { } value)
+        {
+            return NotFoundProblem(); // inexistente, de outro tenant OU sem token — nunca 403
+        }
+
+        return Ok(new DeviceTransparencyLinkResponse(id, configService.DeviceTransparencyUrl(value)));
     }
 
     private const int MaxDisplayNameLength = 200;
