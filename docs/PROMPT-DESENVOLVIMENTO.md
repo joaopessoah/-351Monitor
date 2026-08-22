@@ -787,14 +787,19 @@ RBAC MVP: **Owner ⊃ Admin ⊃ Viewer** (3 papéis; enum extensível — Manage
 | `POST /auth/mfa/setup` | Viewer | provisiona TOTP (QR); **obrigatório completar para Owner/Admin antes de qualquer outra rota** |
 | `POST /auth/refresh` | cookie | renova access token (refresh simples, sem famílias) |
 | `POST /auth/logout` | Viewer | revoga refresh |
-| `POST /auth/forgot-password` / `POST /auth/reset-password` | público | token 1 h; resposta sempre genérica |
-| `GET /me` | Viewer | perfil + papel + org |
+| `POST /auth/forgot-password` / `POST /auth/reset-password` | público | token 1 h; resposta sempre genérica; o reset revoga TODAS as sessões (F5) |
+| `POST /auth/mfa/recovery-codes` | Viewer | (re)gera os 10 recovery codes; exibidos UMA vez, aceitos no `/auth/mfa/verify` (F5) |
+| `POST /users/{id}/mfa/reset` | Admin (Owner p/ Owner) | recuperação assistida: zera MFA e sessões, próximo login exige novo setup (F5) |
+| `POST /users/{id}/invitations/resend` | Admin | novo token de 7 dias, invalida os anteriores (F5) |
+| `GET /me` | Viewer | perfil + papel + org (inclui `plan`, `device_limit`, metas e estado do checklist) |
+| `GET/PATCH /me/email-prefs` | Viewer | preferências de e-mail do próprio usuário: resumo semanal, alertas de frota, jornada semanal (F5) |
 | `GET /dashboard/presence` | Viewer | cards "agora" + tabela "Equipe agora" — lê `device_current_state` (estado, app em foco, "neste app há X min", último contato); regra N6 |
 | `GET /dashboard/summary?from&to&device_id&device_user_id` | Viewer | KPIs de `daily_device_summaries` |
 | `GET /dashboard/top-apps?from&to&limit=10` | Viewer | de `daily_app_usage` |
 | `GET /timeline/device?device_id&date` | Viewer | intervalos do dia (resolução fixa 1 min, cap ~3.000 — N21); inclui `data_incomplete` e fuso do device |
 | `GET /timeline/team?date` | Viewer | **uma lane por device, visão do dia** — mesma agregação; FICA no MVP (F3, demo vendável) |
-| `GET /devices?status&tag&q&page` | Viewer | lista paginada + saúde (último contato, versão, `os_type`) |
+| `GET /devices?status&tag&q&page&health` | Viewer | lista paginada + saúde (último contato, versão, `os_type`); `health=alert` filtra a FROTA inteira (F5) |
+| `GET /devices/health-summary` | Viewer | contagens de saúde da frota inteira por dimensão, para o card de atenção e os chips totais (F5) |
 | `GET /devices/{id}` | Viewer | detalhe |
 | `PATCH /devices/{id}` | Admin | renomear, tags, `status` (`active`/`paused`/`archived`) |
 | `POST /devices/{id}/revoke` | Admin | revoga token (`status=revoked`) + enfileira `UNENROLL` |
@@ -806,14 +811,16 @@ RBAC MVP: **Owner ⊃ Admin ⊃ Viewer** (3 papéis; enum extensível — Manage
 | `GET /app-catalog?uncategorized=true&q` · `PUT /app-catalog/{appId}/category` | Viewer · Admin | apps vistos pelo tenant; mapeamento |
 | `GET/POST /enrollment-keys` · `DELETE /enrollment-keys/{id}` | Admin | segredo exibido UMA única vez no POST |
 | `GET /users` · `POST /users/invitations` · `PATCH /users/{id}` · `DELETE /users/{id}` | Admin (owner só por Owner) | sempre ≥ 1 Owner ativo |
-| `GET/PATCH /organization` | Owner | timezone, business_hours, config de coleta (gera bump de `config_version` dos devices) |
+| `GET/PATCH /organization` | Viewer / Admin | leitura para qualquer papel; edição (Admin+) de transparência, business_hours e metas semanais agregadas (F5) |
+| `GET/PATCH /organization/agent-config` | Admin / **Owner** | config de coleta operável pela controladora: política de títulos (`MASKED_PATTERNS`/`APP_ONLY`; `FULL` só via operadora com registro em DPA), padrões de mascaramento (regex validada), processos ignorados, idle e janela de coleta. PATCH bumpa `config_version` na mesma transação e registra `update_privacy_config` + `collection_window_choice` (F5) |
+| `POST/DELETE /organization/onboarding-checklist/dismiss` | Admin | dispensa e reabre o card de primeiros passos (Seção 8.3 passo 4) |
 | `GET /audit-logs?from&to&actor&action` | Owner/Admin | trilha LGPD |
 | `POST /privacy/subjects/{deviceUserId}/export` | Admin | DSR: pacote JSON+CSV de todos os dados do titular (assíncrono, link expira 72 h); auditado |
 | `DELETE /privacy/subjects/{deviceUserId}/data` | Owner | DSR: exclusão definitiva (confirmação dupla + motivo); recibo com contagens; auditado |
 | `POST /privacy/devices/{deviceId}/export` · `DELETE /privacy/devices/{deviceId}/data` | Admin · Owner | mesmo fluxo por device |
 | `POST /privacy/tenant/full-export` | Owner | acervo completo do tenant (offboarding; processo de purge manual documentado) |
 | `GET /agent/update-manifest?current=` | device token | manifesto de auto-update (Seção 6.7) |
-| `GET /billing/billable-devices?month=` | Owner | **relatório interno mensal de devices cobráveis** (device com ≥ 1 batch no mês, excluindo `archived`) — insumo do billing manual |
+| `GET /billing/billable-devices?month=` | Owner | **relatório interno mensal de devices cobráveis** (device com ≥ 1 batch no mês, excluindo `archived`) — insumo do billing manual. F5: mês fechado vem CONGELADO de `device_billing_months` (`frozen: true`), então arquivar device não reescreve mais meses passados; o mês corrente segue ao vivo |
 
 Auditoria automática (middleware): toda chamada a timeline/relatórios/exports/DSR grava `audit_log` com ação, alvo, período e filtros — responde "quem viu os dados de quem, quando" (exposta a Owner/Admin).
 
@@ -836,6 +843,13 @@ Auditoria automática (middleware): toda chamada a timeline/relatórios/exports/
 | `RetentionPurge` | diário | `DELETE` de summaries > 24 meses; execução logada em `audit_log` |
 | `ExportWorker` | contínuo | gera CSVs (streaming p/ arquivo, nunca em memória) e pacotes DSR |
 | `Housekeeping` | diário | expira invitations, refresh tokens, export_jobs |
+| `WeeklyDigest` (F5) | horário | envia o resumo semanal às orgs cuja hora local é segunda 08h (multi-fuso sem um trigger por org); idempotência por `organizations.last_weekly_digest_at` |
+| `FleetAlert` (F5) | 15 min | alertas de saúde de frota por e-mail, só plano `pro`: 1 e-mail por org por ciclo, cooldown de 24 h por device+tipo (`device_alert_state`), silencioso fora do horário de trabalho da org |
+| `JornadaWeekly` (F5) | segunda 07h BRT | enfileira o export de jornada da semana anterior para quem assinou e envia o LINK (nunca anexo) |
+| `BillingSnapshot` (F5) | diário 04:00 BRT | congela os meses fechados em `device_billing_months` (idempotente, no fuso de cada tenant) |
+| `AccountHealth` (F5) | segunda 09h BRT | score interno de contas em risco por e-mail ao CS; só registrado com `Cs:AlertEmail` configurado |
+| `DemoKeepAlive` / `DemoReseed` (F5) | 60 s / domingo 04:30 BRT | mantêm a demo pública viva e re-semeada; só registrados com `Demo:Slug` configurado |
+| `DeadManSwitch` (F5) | 5 min | ping externo (healthchecks.io) que denuncia worker morto; só registrado com `DeadMan:WorkerUrl` |
 
 ### 7.7 NFRs (dimensionados para ~2.500 devices — N25)
 
