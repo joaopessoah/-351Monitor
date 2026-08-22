@@ -247,6 +247,9 @@ CREATE TABLE app_catalog (
   curated boolean NOT NULL DEFAULT false  -- false = auto-criado por telemetria, pendente
 );
 -- processo desconhecido no ingest ⇒ INSERT ON CONFLICT DO NOTHING com display_name=process_name
+-- curadoria (F1.1): o dicionário versionado apps-br.csv (embutido na Infrastructure) é aplicado
+-- por um seeder idempotente no startup da API, preenchendo display_name, default_category e
+-- curated=true. O seeder nunca escreve em tenant_app_categories nem em custom_display_name.
 
 -- POR TENANT: classificação produtivo/improdutivo é decisão de negócio do cliente
 CREATE TABLE categories (
@@ -452,8 +455,9 @@ Papéis: `Owner ⊃ Admin ⊃ Manager ⊃ Viewer`. **No MVP, Manager = Viewer** 
 | `POST /exports` | Viewer | `{kind:'usage_csv', params:{...}}` ⇒ `202 {export_id}` (assíncrono no worker; máx. 500 k linhas) |
 | `GET /exports/{id}` | Viewer (dono) | status + URL de download assinada (expira 7 dias) |
 | `GET/POST /categories`, `PATCH/DELETE /categories/{id}` | Admin | CRUD; produtividade por tenant |
-| `GET /app-catalog?uncategorized=true&q` | Viewer | apps vistos pelo tenant |
+| `GET /app-catalog?uncategorized=true&q` | Viewer | apps vistos pelo tenant; inclui `default_category` (sugestão do dicionário brasileiro, F1.1) |
 | `PUT /app-catalog/{appId}/category` | Admin | mapeia app ⇒ categoria do tenant |
+| `PUT /app-catalog/categories/batch` | Admin | N mapeamentos numa única transação, com uma única reagregação de 30 dias (F1.1) |
 | `GET/POST /enrollment-keys`, `DELETE /enrollment-keys/{id}` | Admin | segredo exibido **uma única vez** no POST |
 | `GET /users`, `POST /users/invitations`, `PATCH /users/{id}`, `DELETE /users/{id}` | Admin (papel `owner` só editável por Owner) | gestão do portal |
 | `GET/PATCH /organization` | Owner | timezone, business hours, toggles de coleta, retenção |
