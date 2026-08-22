@@ -1,26 +1,42 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { AlertTriangle, Check, Eye, Printer, X } from "lucide-react";
+import { AlertTriangle, Check, Eye, Laptop, Printer, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import type { TransparenciaPublicResponse } from "@/lib/types";
+import type { TransparenciaDeviceBlock, TransparenciaPublicResponse } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 /**
- * Página PÚBLICA de transparência (/transparencia/:slug), SEM login, SEM
- * cookies, nenhum dado pessoal. Faz fetch de GET /public/transparencia/{slug}
- * (AllowAnonymous) e renderiza a política de coleta REAL e vigente da
- * organização (Seção 8.8). O backend já entrega tudo em pt-BR amigável e
- * jamais expõe window_title nem os masked_patterns crus.
+ * Página PÚBLICA de transparência, SEM login, SEM cookies, nenhum dado pessoal.
+ * Serve DUAS rotas com o mesmo conteúdo:
+ *  - /transparencia/:slug - a página da ORGANIZAÇÃO (link divulgável);
+ *  - /t/:token - a página DO FUNCIONÁRIO, aberta pelo tray da própria máquina.
+ *    A resposta traz `device` e a tela ganha o bloco "Este dispositivo": ciência
+ *    registrada e última comunicação daquela instalação.
+ *
+ * O bloco do dispositivo NÃO mostra hora ativa/ociosa nem aplicativo: o backend
+ * não os envia de propósito, porque a URL não tem autenticação. Quem quiser os
+ * próprios dados pede ao DPO da organização (pacote DSR).
+ *
+ * O backend entrega tudo em pt-BR amigável e jamais expõe window_title ou os
+ * masked_patterns crus.
  */
 export function TransparenciaPage() {
-  const { slug } = useParams<{ slug: string }>();
+  const { slug, token } = useParams<{ slug?: string; token?: string }>();
 
   const [data, setData] = useState<TransparenciaPublicResponse | null>(null);
   const [status, setStatus] = useState<"loading" | "ok" | "not_found" | "error">("loading");
 
+  // A rota por token vence quando presente; as duas respondem o mesmo contrato.
+  const path =
+    token !== undefined && token.length > 0
+      ? `/public/t/${encodeURIComponent(token)}`
+      : slug !== undefined && slug.length > 0
+        ? `/public/transparencia/${encodeURIComponent(slug)}`
+        : null;
+
   useEffect(() => {
-    if (slug === undefined || slug.length === 0) {
+    if (path === null) {
       setStatus("not_found");
       return;
     }
@@ -29,10 +45,7 @@ export function TransparenciaPage() {
     setData(null);
 
     // Endpoint público: SEM Authorization, SEM retry de refresh (auth:false).
-    api<TransparenciaPublicResponse>(`/public/transparencia/${encodeURIComponent(slug)}`, {
-      auth: false,
-      signal: controller.signal,
-    })
+    api<TransparenciaPublicResponse>(path, { auth: false, signal: controller.signal })
       .then((res) => {
         setData(res);
         setStatus("ok");
@@ -43,7 +56,7 @@ export function TransparenciaPage() {
       });
 
     return () => controller.abort();
-  }, [slug]);
+  }, [path]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -57,7 +70,7 @@ export function TransparenciaPage() {
       <main className="mx-auto max-w-3xl space-y-6 px-4 py-10">
         {status === "loading" && <LoadingState />}
         {status === "not_found" && <NotFoundState slug={slug} />}
-        {status === "error" && <ErrorState slug={slug} />}
+        {status === "error" && <ErrorState slug={slug ?? token} />}
         {status === "ok" && data !== null && <Content data={data} />}
       </main>
     </div>
@@ -90,6 +103,9 @@ function Content({ data }: { data: TransparenciaPublicResponse }) {
           Imprimir
         </Button>
       </div>
+
+      {/* Só na rota por token: o estado da instalação desta máquina. */}
+      {data.device !== null && <DeviceCard device={data.device} />}
 
       <Card className="print-plain">
         <CardHeader>
@@ -187,6 +203,69 @@ function Content({ data }: { data: TransparenciaPublicResponse }) {
       </p>
     </>
   );
+}
+
+/**
+ * "Este dispositivo" - presente só na página aberta pelo tray da máquina
+ * (/t/:token). Mostra o que a EMPRESA vê sobre a INSTALAÇÃO: hostname, se a
+ * ciência do aviso foi registrada e quando o agente falou com o servidor pela
+ * última vez. Sem hora ativa/ociosa e sem aplicativo, por decisão do contrato.
+ */
+function DeviceCard({ device }: { device: TransparenciaDeviceBlock }) {
+  return (
+    <Card className="print-plain">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Laptop className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          Este dispositivo
+        </CardTitle>
+        <CardDescription>
+          Você vê o que sua empresa vê sobre esta instalação. Nenhuma informação da sua atividade
+          de hoje aparece nesta página.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <dl className="divide-y">
+          <DefRow label="Nome do dispositivo" value={device.hostname} />
+          <DefRow
+            label="Ciência do aviso"
+            value={
+              device.notice_acked_at !== null
+                ? `Registrada em ${formatDateTime(device.notice_acked_at)}`
+                : null
+            }
+            fallback="Pendente: o aviso ainda não foi confirmado nesta máquina."
+          />
+          <DefRow
+            label="Última comunicação"
+            value={device.last_seen_at !== null ? formatDateTime(device.last_seen_at) : null}
+            fallback="Sem comunicação registrada."
+          />
+          <DefRow label="Situação do monitoramento" value={deviceStatusLabel(device.status)} />
+        </dl>
+        <p className="mt-4 text-xs text-muted-foreground">
+          Para receber os dados registrados sobre você, peça o acesso ao encarregado de dados
+          (DPO) da sua organização, indicado acima.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Situação da coleta na máquina, em linguagem para o funcionário. */
+function deviceStatusLabel(status: TransparenciaDeviceBlock["status"]): string {
+  switch (status) {
+    case "active":
+      return "Ativo: a coleta segue a política descrita nesta página.";
+    case "paused":
+      return "Pausado pela organização: nada está sendo coletado agora.";
+    case "archived":
+      return "Arquivado: a coleta foi encerrada e o histórico segue a retenção abaixo.";
+    case "revoked":
+      return "Desativado: o agente foi desligado desta máquina.";
+    default:
+      return status;
+  }
 }
 
 function DefRow({

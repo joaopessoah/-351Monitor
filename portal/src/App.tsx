@@ -23,6 +23,7 @@ import { PrivacidadePage } from "@/pages/configuracoes/PrivacidadePage";
 import { ColetaPage } from "@/pages/configuracoes/ColetaPage";
 import { OrganizacaoPage } from "@/pages/configuracoes/OrganizacaoPage";
 import { AuditoriaPage } from "@/pages/configuracoes/AuditoriaPage";
+import { ConformidadePage } from "@/pages/configuracoes/ConformidadePage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 
 export function App() {
@@ -34,6 +35,10 @@ export function App() {
       <Route path="/recuperar-senha" element={<RecuperarSenhaPage />} />
       <Route path="/redefinir-senha/:token" element={<RedefinirSenhaPage />} />
       <Route path="/transparencia/:slug" element={<TransparenciaPage />} />
+      {/* Mesma página, alcançada pelo token do dispositivo: é o link que o tray
+          do agente abre na máquina do funcionário, e a resposta soma o bloco
+          "Este dispositivo". */}
+      <Route path="/t/:token" element={<TransparenciaPage />} />
 
       {/* Rotas protegidas */}
       <Route element={<RequireAuth />}>
@@ -62,6 +67,7 @@ export function App() {
             <Route path="coleta" element={<ColetaPage />} />
             <Route path="organizacao" element={<OrganizacaoPage />} />
             <Route path="auditoria" element={<AuditoriaPage />} />
+            <Route path="conformidade" element={<ConformidadePage />} />
           </Route>
         </Route>
       </Route>

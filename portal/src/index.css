@@ -107,4 +107,19 @@
     box-shadow: none !important;
     background: transparent !important;
   }
+
+  /* F5 — o dossiê de conformidade (/configuracoes/conformidade) é uma página
+     INTERNA: vive dentro do AppShell, e a navegação lateral, a topbar e as abas
+     não pertencem ao documento impresso. Toda <aside>/<header>/<nav> do portal é
+     chrome de navegação (nenhuma carrega conteúdo), então a regra vale para o
+     app inteiro e qualquer tela ganha impressão limpa de graça. */
+  aside,
+  header,
+  nav {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
 }

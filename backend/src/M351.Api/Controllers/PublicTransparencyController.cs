@@ -10,7 +10,11 @@ using Npgsql;
 namespace M351.Api.Controllers;
 
 /// <summary>
-/// GET /api/v1/public/transparencia/{slug} (F4.8, Seção 8.8) — página PÚBLICA de transparência.
+/// Páginas PÚBLICAS de transparência (F4.8, Seção 8.8) em duas rotas, mesmo payload:
+///  - GET /api/v1/public/transparencia/{slug} — a página da ORGANIZAÇÃO, link divulgável;
+///  - GET /api/v1/public/t/{token} (F5) — a página DO FUNCIONÁRIO, aberta pelo tray da própria
+///    máquina (devices.transparency_token), que soma o bloco "Este dispositivo": estado da
+///    INSTALAÇÃO, jamais dado pessoal do dia (ver GetByToken).
 ///
 /// [AllowAnonymous]: SEM login, SEM cookie. É o link que o tray do agente abre para o funcionário
 /// (transparency_url = Portal:BaseUrl + /transparencia/{slug}). Renderiza o estado REAL das configs
@@ -39,6 +43,12 @@ public class PublicTransparencyController(NpgsqlDataSource dataSource) : Control
     public const int CacheMaxAgeSeconds = 300;
 
     /// <summary>
+    /// Cache da rota por token: PRIVADO (a URL carrega um segredo — cache compartilhado não pode
+    /// guardá-la) e mais curto, porque o último contato do device avança a cada minuto.
+    /// </summary>
+    public const int DeviceCacheMaxAgeSeconds = 60;
+
+    /// <summary>
     /// Projeção da leitura por slug. Classe mutável (não record posicional) porque o Dapper mapeia
     /// coluna→propriedade individualmente — necessário para o date NULLABLE (data_vigencia) chegar
     /// como DateOnly? sem o Dapper exigir um construtor com assinatura exata.
@@ -53,6 +63,15 @@ public class PublicTransparencyController(NpgsqlDataSource dataSource) : Control
         public DateOnly? DataVigencia { get; init; }
     }
 
+    /// <summary>Projeção do bloco "Este dispositivo" (rota por token). Só estado de instalação.</summary>
+    private sealed class DeviceRow
+    {
+        public string Hostname { get; init; } = string.Empty;
+        public DateTimeOffset? NoticeAckedAt { get; init; }
+        public DateTimeOffset? LastSeenAt { get; init; }
+        public string Status { get; init; } = string.Empty;
+    }
+
     [HttpGet("{slug}")]
     public async Task<IActionResult> Get(string slug, CancellationToken ct)
     {
@@ -61,17 +80,7 @@ public class PublicTransparencyController(NpgsqlDataSource dataSource) : Control
         // org + config do agente do tenant em uma só leitura (LEFT JOIN: a config pode não existir
         // ainda — tenant sem nenhum enroll). Sem filtro de tenant: o slug é a chave pública única.
         var row = await connection.QueryFirstOrDefaultAsync<OrgConfigRow>(new CommandDefinition(
-            """
-            SELECT o.name                  AS Name,
-                   c.window_title_policy    AS WindowTitlePolicy,
-                   c.collection_window::text AS CollectionWindow,
-                   o.finalidade_declarada   AS FinalidadeDeclarada,
-                   o.contato_dpo            AS ContatoDpo,
-                   o.data_vigencia          AS DataVigencia
-            FROM organizations o
-            LEFT JOIN tenant_agent_configs c ON c.tenant_id = o.id
-            WHERE o.slug = @Slug
-            """,
+            $"{OrgConfigSelect}\nWHERE o.slug = @Slug",
             new { Slug = slug }, cancellationToken: ct));
 
         if (row is null)
@@ -80,6 +89,77 @@ public class PublicTransparencyController(NpgsqlDataSource dataSource) : Control
             return Problem(title: "Organização não encontrada.", statusCode: StatusCodes.Status404NotFound);
         }
 
+        var response = await BuildResponseAsync(connection, row, device: null, ct);
+        Response.Headers.CacheControl = $"public, max-age={CacheMaxAgeSeconds}";
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// GET /api/v1/public/t/{token} (AllowAnonymous) — a MESMA página, alcançada pelo link que o
+    /// tray do agente abre na própria máquina do funcionário (devices.transparency_token). Mesmo
+    /// rate limit por IP e mesmo 404 opaco da rota por slug.
+    ///
+    /// Devolve o payload da transparência do tenant do device MAIS o bloco device com o estado da
+    /// INSTALAÇÃO (hostname, ciência registrada, último contato, status). NADA de dado pessoal do
+    /// dia: horas ativas/ociosas e aplicativo em foco ficam de FORA por decisão — o token é uma
+    /// capability numa URL sem autenticação, e quem obtivesse o link (histórico de navegador de
+    /// máquina compartilhada, print, encaminhamento) leria o comportamento de quem usa o
+    /// equipamento. Para os próprios dados, o caminho é o pedido de acesso ao DPO da organização,
+    /// que responde com o pacote DSR.
+    ///
+    /// Cache PRIVADO e curto (não "public" como a rota por slug): a URL contém um segredo, então
+    /// cache compartilhado não pode guardá-la, e last_seen_at avança a cada minuto.
+    /// </summary>
+    [HttpGet("/api/v1/public/t/{token:guid}")]
+    public async Task<IActionResult> GetByToken(Guid token, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+
+        // o token é a chave pública ÚNICA (índice único em devices.transparency_token): resolve
+        // device → tenant → org/config numa leitura. Sem filtro de tenant (requisição anônima).
+        var row = await connection.QueryFirstOrDefaultAsync<OrgConfigRow>(new CommandDefinition(
+            $"{OrgConfigSelect}\nJOIN devices d ON d.tenant_id = o.id\nWHERE d.transparency_token = @Token",
+            new { Token = token }, cancellationToken: ct));
+
+        if (row is null)
+        {
+            // token inexistente → MESMO 404 opaco da rota por slug (nada distingue token
+            // inválido de token de outro ambiente — a resposta não confirma existência)
+            return Problem(title: "Organização não encontrada.", statusCode: StatusCodes.Status404NotFound);
+        }
+
+        var device = await connection.QueryFirstOrDefaultAsync<DeviceRow>(new CommandDefinition(
+            """
+            SELECT hostname AS Hostname, notice_acked_at AS NoticeAckedAt,
+                   last_seen_at AS LastSeenAt, status AS Status
+            FROM devices WHERE transparency_token = @Token
+            """,
+            new { Token = token }, cancellationToken: ct));
+
+        var response = await BuildResponseAsync(connection, row, device, ct);
+        Response.Headers.CacheControl = $"private, max-age={DeviceCacheMaxAgeSeconds}";
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Leitura compartilhada pelas duas rotas: org + config do agente (LEFT JOIN — a config pode
+    /// não existir num tenant sem nenhum enroll). O WHERE fica com cada rota (slug ou token).
+    /// </summary>
+    private const string OrgConfigSelect = """
+        SELECT o.name                  AS Name,
+               c.window_title_policy    AS WindowTitlePolicy,
+               c.collection_window::text AS CollectionWindow,
+               o.finalidade_declarada   AS FinalidadeDeclarada,
+               o.contato_dpo            AS ContatoDpo,
+               o.data_vigencia          AS DataVigencia
+        FROM organizations o
+        LEFT JOIN tenant_agent_configs c ON c.tenant_id = o.id
+        """;
+
+    /// <summary>Monta o payload público (idêntico nas duas rotas; device só na rota por token).</summary>
+    private static async Task<PublicTransparencyResponse> BuildResponseAsync(
+        NpgsqlConnection connection, OrgConfigRow row, DeviceRow? device, CancellationToken ct)
+    {
         // config ausente (tenant ainda sem enroll): cai nos defaults de fábrica (MASKED_PATTERNS,
         // janela ALWAYS) — é o que um device receberia no enroll.
         var policyMode = string.IsNullOrWhiteSpace(row.WindowTitlePolicy)
@@ -96,7 +176,7 @@ public class PublicTransparencyController(NpgsqlDataSource dataSource) : Control
             """,
             cancellationToken: ct));
 
-        var response = new PublicTransparencyResponse(
+        return new PublicTransparencyResponse(
             OrganizationName: row.Name,
             WindowTitlePolicy: new WindowTitlePolicyPublic(policyMode, DescribeTitlePolicy(policyMode)),
             CollectionWindow: new CollectionWindowPublic(
@@ -108,10 +188,10 @@ public class PublicTransparencyController(NpgsqlDataSource dataSource) : Control
             Vigencia: row.DataVigencia,
             UltimaPurga: ultimaPurga,
             Coletado: BuildColetado(policyMode),
-            NuncaColetado: NuncaColetado);
-
-        Response.Headers.CacheControl = $"public, max-age={CacheMaxAgeSeconds}";
-        return Ok(response);
+            NuncaColetado: NuncaColetado,
+            Device: device is null
+                ? null
+                : new PublicDeviceBlock(device.Hostname, device.NoticeAckedAt, device.LastSeenAt, device.Status));
     }
 
     // ---------------------------------------------------------------- descrições pt-BR amigáveis

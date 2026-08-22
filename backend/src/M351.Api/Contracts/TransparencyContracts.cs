@@ -27,9 +27,25 @@ public record CollectionWindowPublic(string Mode, int[]? Days, string? Start, st
 public record RetencoesPublic(int EventosDias, int IntervalosMeses, int AgregadosMeses, int AuditoriaMeses);
 
 /// <summary>
-/// Resposta de GET /api/v1/public/transparencia/{slug} (AllowAnonymous). Renderizada do estado
-/// REAL das configs do tenant. ZERO dado pessoal: sem window_title, sem masked_patterns, sem
-/// nome de usuário/device.
+/// Bloco "Este dispositivo" da página por TOKEN (GET /api/v1/public/t/{token}). Só o estado da
+/// INSTALAÇÃO: hostname (que o funcionário lê na própria máquina), quando a ciência do aviso foi
+/// registrada, o último contato do agente e o status.
+///
+/// O que NÃO entra, por decisão: nenhum dado pessoal do dia — horas ativas, ociosas, aplicativo
+/// em foco. A URL é uma capability sem autenticação; quem tiver o link veria o comportamento de
+/// quem usa a máquina. Transparência sobre a POLÍTICA e sobre a INSTALAÇÃO, nunca sobre a pessoa.
+/// </summary>
+public record PublicDeviceBlock(
+    string Hostname,
+    DateTimeOffset? NoticeAckedAt,
+    DateTimeOffset? LastSeenAt,
+    string Status);
+
+/// <summary>
+/// Resposta de GET /api/v1/public/transparencia/{slug} e de GET /api/v1/public/t/{token}
+/// (AllowAnonymous). Renderizada do estado REAL das configs do tenant. ZERO dado pessoal: sem
+/// window_title, sem masked_patterns, sem nome de usuário. Device só é preenchido na rota por
+/// token (o link do tray da própria máquina) e mesmo ali carrega apenas o estado da instalação.
 /// </summary>
 public record PublicTransparencyResponse(
     string OrganizationName,
@@ -41,7 +57,8 @@ public record PublicTransparencyResponse(
     DateOnly? Vigencia,
     DateTimeOffset? UltimaPurga,
     IReadOnlyList<string> Coletado,
-    IReadOnlyList<string> NuncaColetado);
+    IReadOnlyList<string> NuncaColetado,
+    PublicDeviceBlock? Device = null);
 
 // ---------------------------------------------------------------------- org autenticado (GET/PATCH)
 

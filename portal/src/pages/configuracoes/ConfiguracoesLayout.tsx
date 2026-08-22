@@ -24,6 +24,10 @@ const coletaTab = { to: "/configuracoes/coleta", label: "Política de coleta" } 
 // aparece quando o papel permite — assim o Viewer nunca tropeça no link.
 const auditTab = { to: "/configuracoes/auditoria", label: "Auditoria" } as const;
 
+// Conformidade (F5): evidências dos controles de privacidade + dossiê imprimível.
+// GET /compliance/summary é AdminPlus, mesmo gate da Auditoria.
+const complianceTab = { to: "/configuracoes/conformidade", label: "Conformidade" } as const;
+
 /** Layout de Configurações com sub-navegação em abas. */
 export function ConfiguracoesLayout() {
   const meQuery = useQuery({
@@ -31,7 +35,9 @@ export function ConfiguracoesLayout() {
     queryFn: () => api<MeResponse>("/me"),
     staleTime: 5 * 60 * 1000,
   });
-  const tabs = isAdmin(meQuery.data) ? [...baseTabs, coletaTab, auditTab] : [...baseTabs];
+  const tabs = isAdmin(meQuery.data)
+    ? [...baseTabs, coletaTab, auditTab, complianceTab]
+    : [...baseTabs];
 
   return (
     <div className="space-y-6">

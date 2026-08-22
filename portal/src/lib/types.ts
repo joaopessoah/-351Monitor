@@ -865,10 +865,26 @@ export interface RetencoesPublic {
 }
 
 /**
- * Resposta de `GET /api/v1/public/transparencia/{slug}` (AllowAnonymous,
- * rate-limited). SEM auth, SEM cookies, Cache-Control público curto. Slug
- * inexistente -> 404. `coletado`/`nunca_coletado` chegam prontos em pt-BR
- * (derivados da política e da lista fixa da 9.7); o portal apenas renderiza.
+ * Bloco "Este dispositivo", presente APENAS na resposta da rota por token
+ * (`GET /public/t/{token}` - o link que o tray da máquina abre). Só estado da
+ * INSTALAÇÃO: nenhuma hora ativa/ociosa e nenhum aplicativo, porque a URL não
+ * tem autenticação e o link circula.
+ */
+export interface TransparenciaDeviceBlock {
+  hostname: string;
+  /** Instante em que o agente confirmou a exibição do aviso - null se pendente. */
+  notice_acked_at: string | null;
+  last_seen_at: string | null;
+  status: "active" | "paused" | "archived" | "revoked";
+}
+
+/**
+ * Resposta de `GET /api/v1/public/transparencia/{slug}` e de
+ * `GET /api/v1/public/t/{token}` (AllowAnonymous, rate-limited). SEM auth, SEM
+ * cookies, Cache-Control curto. Slug/token inexistente -> 404.
+ * `coletado`/`nunca_coletado` chegam prontos em pt-BR (derivados da política e
+ * da lista fixa da 9.7); o portal apenas renderiza. `device` só vem preenchido
+ * na rota por token.
  */
 export interface TransparenciaPublicResponse {
   organization_name: string;
@@ -885,6 +901,55 @@ export interface TransparenciaPublicResponse {
   coletado: string[];
   /** Lista FIXA do que nunca é coletado (Seção 9.7), em pt-BR. */
   nunca_coletado: string[];
+  /** Estado da instalação - só na rota por token; null na página por slug. */
+  device: TransparenciaDeviceBlock | null;
+}
+
+// =============================================================================
+// Contrato de GET /api/v1/compliance/summary (Admin/Owner, read-only): as
+// evidências de conformidade da organização. Nenhum dado pessoal - contagens e
+// carimbos de tempo. maintenance_runs é tabela GLOBAL: o backend expõe só
+// job_name/finished_at/status, nunca o detail jsonb (que soma todos os tenants).
+// =============================================================================
+
+/** Última execução de um job de manutenção; status "never_run" quando nunca rodou. */
+export interface MaintenanceRunSummary {
+  job_name: string;
+  finished_at: string | null;
+  status: string;
+}
+
+/** Cobertura de ciência do aviso na frota ATIVA (status active). */
+export interface NoticeCoverageSummary {
+  active_devices: number;
+  acknowledged: number;
+  pending: number;
+}
+
+/** Contagens da trilha no mês corrente (fuso da organização), month = "yyyy-MM". */
+export interface AuditActivitySummary {
+  month: string;
+  view_timeline: number;
+  view_report: number;
+  export_csv: number;
+  dsr_export: number;
+  dsr_delete: number;
+}
+
+/** Pacotes DSR de titular/dispositivo por status. */
+export interface DsrExportStatusSummary {
+  status: string;
+  count: number;
+}
+
+export interface ComplianceSummaryResponse {
+  organization_name: string;
+  /** Carimbo do servidor - a data impressa no dossiê. */
+  generated_at: string;
+  maintenance_runs: MaintenanceRunSummary[];
+  notice_coverage: NoticeCoverageSummary;
+  audit_activity: AuditActivitySummary;
+  dsr_exports: DsrExportStatusSummary[];
 }
 
 /**
