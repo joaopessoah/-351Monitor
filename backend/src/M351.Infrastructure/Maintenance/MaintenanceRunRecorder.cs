@@ -20,6 +20,14 @@ public static class MaintenanceRunRecorder
     public const string RetentionPurge = "RetentionPurge";
     public const string Housekeeping = "Housekeeping";
 
+    /// <summary>
+    /// Score de saude de conta (telemetria INTERNA de CS). Grava aqui pelo mesmo motivo dos
+    /// demais: e a evidencia de que o job rodou. NAO entra na lista de jobs do dossie de
+    /// Conformidade (ComplianceController.MaintenanceJobs): o cliente nao tem por que saber
+    /// que existe um job de CS olhando a saude comercial da conta dele.
+    /// </summary>
+    public const string AccountHealth = "AccountHealth";
+
     public const string StatusOk = "ok";
     public const string StatusError = "error";
 
