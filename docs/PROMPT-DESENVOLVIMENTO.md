@@ -815,7 +815,8 @@ RBAC MVP: **Owner ⊃ Admin ⊃ Viewer** (3 papéis; enum extensível — Manage
 | `GET /device-users?device_id&q` · `PATCH /device-users/{id}` | Viewer · Admin | usuários Windows; editar `display_name` |
 | `GET /reports/jornada?from&to&device_ids` | Viewer | linha por device×dia: primeiro/último evento, ligada/ativa/ociosa/bloqueada + disclaimer fixo (Seção 8.6) |
 | `GET /reports/usage?from&to&group_by=app\|category\|device\|device_user` | Viewer | tabular paginado |
-| `POST /exports` · `GET /exports/{id}` | Viewer | CSV assíncrono (worker; máx. 500 k linhas; UTF-8 com BOM, separador `;`); auditado |
+| `GET /reports/fora-do-horario?from&to&device_ids&include_devices` | Viewer | atividade fora do horário de trabalho: tempo ATIVO somado fora da `business_hours` da org, no fuso do tenant, sobre `activity_intervals`. Indicador de EQUILÍBRIO, jamais hora extra ou banco de horas. `status` explica os dois casos sem número (`horario_nao_configurado`, `coleta_restrita_ao_horario`) em vez de devolver zero. Sem `include_devices` a resposta é agregado de equipe e não audita |
+| `POST /exports` · `GET /exports/{id}` | Viewer | CSV assíncrono (worker; máx. 500 k linhas; UTF-8 com BOM, separador `;`); auditado. Kinds: `usage_csv`, `jornada_csv`, `fora_horario_csv` (este exige horário declarado e coleta contínua, senão 409) |
 | `GET/POST /categories` · `PATCH/DELETE /categories/{id}` | Admin | CRUD; dispara reagregação 30 dias |
 | `GET /app-catalog?uncategorized=true&q` · `PUT /app-catalog/{appId}/category` | Viewer · Admin | apps vistos pelo tenant; mapeamento. A listagem devolve `default_category`, a SUGESTÃO do dicionário brasileiro semeado em `app_catalog` (F1.1); quem decide continua sendo o tenant |
 | `PUT /app-catalog/categories/batch` | Admin | aplica N mapeamentos app ⇒ categoria numa ÚNICA transação, com UMA única reagregação de 30 dias e auditoria `update_category` por app (F1.1). Nunca toca `custom_display_name` |
@@ -893,6 +894,7 @@ SPA React (stack da Seção 4). Idioma: pt-BR hardcoded. Formatos: datas `dd/mm/
 /apps                       Detalhe de aplicativos
 /relatorios                 Hub (Jornada · Uso de apps · Exportações)
 /relatorios/jornada         /relatorios/uso (consome GET /reports/usage)         /relatorios/exportacoes
+/relatorios/uso?aba=fora-do-horario   Aba de atividade fora do horário de trabalho (GET /reports/fora-do-horario)
 /configuracoes/organizacao  /configuracoes/dispositivos   /configuracoes/categorias
 /configuracoes/usuarios     /configuracoes/chaves         /configuracoes/privacidade
 /configuracoes/privacidade/titulares    (DSR — Dados do Titular)
