@@ -93,6 +93,22 @@ public sealed partial class ExportService(
         "Data;Dia da semana;Dispositivo;Usuários;Primeiro evento;Último evento;"
         + "Tempo ligada;Tempo ativo;Tempo ocioso;Tempo bloqueado;Horas decimais (ativo);Observação";
 
+    /// <summary>
+    /// Cabeçalho FIXO do CSV de atividade fora do horário de trabalho. Vocabulário de
+    /// EQUILÍBRIO: jamais hora extra, jornada extraordinária ou banco de horas.
+    /// </summary>
+    public const string ForaDoHorarioHeader =
+        "Dispositivo;Tempo ativo no período;Atividade fora do horário;Antes do horário;"
+        + "Depois do horário;Em dias fora da escala;Dias com atividade fora;Horas decimais (fora do horário)";
+
+    /// <summary>
+    /// A janela deixou de existir entre o POST (que a exige) e a geração: o arquivo sai com o
+    /// motivo em vez de uma tabela vazia sem explicação.
+    /// </summary>
+    public const string ForaDoHorarioSemJanela =
+        "Horário de trabalho não configurado para a organização: sem janela declarada não há "
+        + "como apurar atividade fora dela.";
+
     /// <summary>Dias da semana pt-BR fixos (independe de ICU do runtime).</summary>
     private static readonly string[] WeekdayNames =
         ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
@@ -195,8 +211,19 @@ public sealed partial class ExportService(
         {
             "jornada_csv" => await WriteJornadaAsync(writer, job.TenantId, p, timezone, ct),
             "usage_csv" => await WriteUsageAsync(writer, job.TenantId, p, ct),
+            "fora_horario_csv" => await WriteForaDoHorarioAsync(writer, job.TenantId, p, timezone, ct),
             _ => throw new InvalidOperationException($"Kind de export não suportado: {job.Kind}."),
         };
+    }
+
+    /// <summary>business_hours cru da org (null quando a janela não está configurada).</summary>
+    private async Task<string?> TenantBusinessHoursAsync(Guid tenantId, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var command = new NpgsqlCommand(
+            "SELECT business_hours::text FROM organizations WHERE id = @t", connection);
+        command.Parameters.AddWithValue("t", tenantId);
+        return await command.ExecuteScalarAsync(ct) as string;
     }
 
     private async Task<string> TenantTimezoneAsync(Guid tenantId, CancellationToken ct)
@@ -293,6 +320,68 @@ public sealed partial class ExportService(
             rows++;
         }
 
+        return (rows, truncated);
+    }
+
+    /// <summary>
+    /// CSV de atividade fora do horário de trabalho: MESMO SQL do endpoint
+    /// (ForaDoHorarioReportSql.Rows, sem paginação), mesmas linhas, mesmos números (11.3).
+    /// Uma linha por dispositivo COM atividade fora da janela, ordenada por tempo fora desc.
+    ///
+    /// Disclaimer da Portaria 671/MTE como ÚLTIMA linha, inclusive em arquivo truncado, pelo
+    /// mesmo motivo da jornada: o arquivo circula fora do portal e não pode ser lido como
+    /// registro de ponto. O POST /exports já recusa o pedido quando a janela não está
+    /// configurada ou quando a coleta é restrita ao horário de trabalho; se a configuração
+    /// mudar entre o POST e a geração, o arquivo sai com o motivo em vez de números falsos.
+    /// </summary>
+    private async Task<(int Rows, bool Truncated)> WriteForaDoHorarioAsync(
+        StreamWriter writer, Guid tenantId, ExportParams p, string timezone, CancellationToken ct)
+    {
+        await writer.WriteLineAsync(ForaDoHorarioHeader);
+
+        if (!BusinessHoursWindow.TryParse(await TenantBusinessHoursAsync(tenantId, ct), out var schedule))
+        {
+            await writer.WriteLineAsync(Csv(ForaDoHorarioSemJanela));
+            await writer.WriteLineAsync(JornadaDisclaimer);
+            return (0, false);
+        }
+
+        var rows = 0;
+        var truncated = false;
+        await using (var connection = await dataSource.OpenConnectionAsync(ct))
+        await using (var command = new NpgsqlCommand($"{ForaDoHorarioReportSql.Rows}\nLIMIT @RowLimit", connection))
+        {
+            AddRangeParameters(command, tenantId, p);
+            command.Parameters.AddWithValue("Timezone", timezone);
+            command.Parameters.AddWithValue("BusinessDays", schedule!.IsoDays);
+            command.Parameters.AddWithValue("BusinessStart", schedule.Start.ToString("HH\\:mm"));
+            command.Parameters.AddWithValue("BusinessEnd", schedule.End.ToString("HH\\:mm"));
+            // mesmo padrão da jornada: LIMIT teto+1, a linha extra só sinaliza truncated
+            command.Parameters.AddWithValue("RowLimit", maxDataRows + 1);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                if (rows == maxDataRows)
+                {
+                    truncated = true;
+                    break;
+                }
+
+                var secondsOutside = reader.GetInt64(3);
+                await writer.WriteLineAsync(string.Join(';',
+                    Csv(reader.GetString(1)),                 // dispositivo
+                    FormatDuration(reader.GetInt64(2)),       // tempo ativo no período
+                    FormatDuration(secondsOutside),           // atividade fora do horário
+                    FormatDuration(reader.GetInt64(4)),       // antes do horário
+                    FormatDuration(reader.GetInt64(5)),       // depois do horário
+                    FormatDuration(reader.GetInt64(6)),       // em dias fora da escala
+                    reader.GetInt32(7).ToString(CultureInfo.InvariantCulture),
+                    DecimalHours(secondsOutside)));
+                rows++;
+            }
+        }
+
+        await writer.WriteLineAsync(JornadaDisclaimer);
         return (rows, truncated);
     }
 

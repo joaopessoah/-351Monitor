@@ -103,3 +103,70 @@ public sealed record JornadaDeviceTotalsResponse(
     long SecondsIdle,
     long SecondsLocked,
     int DaysWithData);
+
+// ----- GET /api/v1/reports/fora-do-horario (atividade fora do horário de trabalho) -----
+
+/// <summary>Situações em que o painel NÃO pode mostrar número (ver o status da resposta).</summary>
+public static class ForaDoHorarioStatus
+{
+    /// <summary>Janela configurada e coleta contínua: os números valem.</summary>
+    public const string Ok = "ok";
+
+    /// <summary>business_hours ausente/malformada: sem janela declarada não há "fora dela".</summary>
+    public const string HorarioNaoConfigurado = "horario_nao_configurado";
+
+    /// <summary>
+    /// collection_window = BUSINESS_HOURS: fora da janela o agente NÃO coleta, por decisão da
+    /// própria organização. Zero aqui seria um número falso, então a tela explica em vez de exibir.
+    /// </summary>
+    public const string ColetaRestritaAoHorario = "coleta_restrita_ao_horario";
+}
+
+/// <summary>Janela declarada da organização, ecoada para a tela desenhar a explicação.</summary>
+public sealed record ForaDoHorarioWindowResponse(int[] Days, string Start, string End);
+
+/// <summary>
+/// Totais do período INTEIRO. seconds_outside = before + after + non_business_day;
+/// seconds_active é o tempo ativo total do mesmo recorte e da MESMA fonte (activity_intervals),
+/// para que o percentual da tela seja internamente consistente.
+/// </summary>
+public sealed record ForaDoHorarioTotalsResponse(
+    long SecondsActive,
+    long SecondsOutside,
+    long SecondsBefore,
+    long SecondsAfter,
+    long SecondsNonBusinessDay,
+    int DevicesWithActivityOutside);
+
+/// <summary>Uma linha por dispositivo COM atividade fora do horário no período.</summary>
+public sealed record ForaDoHorarioItemResponse(
+    Guid DeviceId,
+    string DeviceName,
+    long SecondsActive,
+    long SecondsOutside,
+    long SecondsBefore,
+    long SecondsAfter,
+    long SecondsNonBusinessDay,
+    int DaysWithActivityOutside);
+
+/// <summary>
+/// Painel de atividade fora do horário de trabalho. Indicador de EQUILÍBRIO da equipe: nunca
+/// hora extra, banco de horas ou qualquer leitura de controle de ponto.
+///
+/// status != "ok" traz totals null e items vazio DE PROPÓSITO: sem janela declarada, ou com a
+/// coleta restrita ao próprio horário de trabalho, qualquer número seria enganoso, a tela
+/// explica o motivo em vez de exibir zero.
+///
+/// items só vem preenchido com include_devices=true (ou device_ids); total é o número de
+/// dispositivos com atividade fora do horário no período inteiro, não o da página.
+/// </summary>
+public sealed record ForaDoHorarioResponse(
+    string Status,
+    string Timezone,
+    ForaDoHorarioWindowResponse? BusinessHours,
+    string CollectionWindowMode,
+    ForaDoHorarioTotalsResponse? Totals,
+    IReadOnlyList<ForaDoHorarioItemResponse> Items,
+    int Total,
+    int Page,
+    int PageSize);

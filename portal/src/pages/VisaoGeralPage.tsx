@@ -10,6 +10,7 @@ import {
   Info,
   KeyRound,
   MonitorSmartphone,
+  Moon,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import {
@@ -25,6 +26,7 @@ import { genericErrorMessage } from "@/lib/messages";
 import type {
   DashboardSummaryResponse,
   DeviceHealthSummaryResponse,
+  ForaDoHorarioResponse,
   MeResponse,
   PresenceItem,
   PresenceResponse,
@@ -36,6 +38,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { OnboardingChecklist } from "@/components/dashboard/OnboardingChecklist";
 import { WeeklyChartsRow } from "@/components/dashboard/WeeklyChartsRow";
+import {
+  businessHoursLabel,
+  foraDoHorarioEmptyState,
+  foraDoHorarioKey,
+  foraDoHorarioPct,
+  foraDoHorarioUrl,
+} from "@/components/reports/ForaDoHorario";
 
 /** Tooltip pedagógico do estado Ocioso (Seção 8.4) - sempre presente via title. */
 const IDLE_HINT =
@@ -114,6 +123,27 @@ export function VisaoGeralPage() {
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
     placeholderData: (prev) => prev,
+  });
+
+  /**
+   * Atividade fora do horário de trabalho na semana corrente. SEM
+   * include_devices: o card é um agregado de EQUIPE, e por isso a leitura não
+   * gera view_report (o recorte pessoal só existe na aba do relatório de Uso).
+   * Sem polling: o indicador é semanal, não muda a cada minuto.
+   */
+  const foraParams = {
+    from: weekFrom ?? "",
+    to: weekTo ?? "",
+    deviceIdsKey: "",
+    page: 1,
+    includeDevices: false,
+    pageSize: 1,
+  };
+  const foraQuery = useQuery({
+    queryKey: foraDoHorarioKey(foraParams),
+    queryFn: () => api<ForaDoHorarioResponse>(foraDoHorarioUrl(foraParams)),
+    enabled: weekFrom !== null,
+    staleTime: 5 * 60 * 1000,
   });
 
   // Tick de 1s só para o badge "Atualizado há Xs" (relógio local vs server_time).
@@ -335,6 +365,9 @@ export function VisaoGeralPage() {
         weekTo={weekTo}
         query={weekSummaryQuery}
       />
+
+      {/* Linha 1c-bis - atividade fora do horário de trabalho na semana. */}
+      <ForaDoHorarioWidget query={foraQuery} weekFrom={weekFrom} weekTo={weekTo} />
 
       {/* Linha 1d - uso do plano (só quando o plano tem teto de dispositivos). */}
       <PlanoMedidor
@@ -623,6 +656,102 @@ function MetaSemanaWidget({
         </div>
       )}
     </Card>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Atividade fora do horário de trabalho (GET /reports/fora-do-horario)
+// -----------------------------------------------------------------------------
+
+/**
+ * Card de EQUILÍBRIO da semana: quanto tempo ativo a equipe registrou fora do
+ * horário de trabalho declarado. Vocabulário fixo "atividade fora do horário de
+ * trabalho" - o produto não calcula, e a tela não sugere, hora extra, jornada
+ * extraordinária ou banco de horas.
+ *
+ * Os dois estados sem número (horário não configurado e coleta restrita ao
+ * horário) viram uma linha discreta EXPLICATIVA: zero seria uma resposta falsa,
+ * e o gestor precisa saber por que não há indicador em vez de ler "tudo certo".
+ */
+function ForaDoHorarioWidget({
+  query,
+  weekFrom,
+  weekTo,
+}: {
+  query: UseQueryResult<ForaDoHorarioResponse>;
+  weekFrom: string | null;
+  weekTo: string | null;
+}) {
+  const data = query.data;
+
+  if (data === undefined) {
+    // Erro aqui não vira card de erro: é um indicador secundário da tela.
+    return query.isError ? null : <Skeleton className="h-[52px] w-full rounded-lg" />;
+  }
+
+  const periodo =
+    weekFrom !== null && weekTo !== null ? `semana de ${ddmm(weekFrom)} a ${ddmm(weekTo)}` : "semana";
+
+  const vazio = foraDoHorarioEmptyState(data);
+  if (vazio !== null) {
+    return (
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+        <Info className="h-4 w-4 shrink-0" aria-hidden />
+        <span>
+          Atividade fora do horário de trabalho: {vazio.titulo.toLocaleLowerCase("pt-BR")}.
+        </span>
+        {vazio.acao !== null && (
+          <Link
+            to={vazio.acao.to}
+            className="font-medium text-primary underline-offset-2 hover:underline"
+          >
+            {vazio.acao.label}
+          </Link>
+        )}
+      </p>
+    );
+  }
+
+  const totals = data.totals;
+  if (totals === null || totals.seconds_outside === 0) {
+    return (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-viz-produtivo" aria-hidden />
+        Nenhuma atividade fora do horário de trabalho na {periodo}.
+      </p>
+    );
+  }
+
+  const pct = foraDoHorarioPct(totals.seconds_outside, totals.seconds_active);
+  const dispositivos =
+    totals.devices_with_activity_outside === 1
+      ? "1 dispositivo"
+      : `${totals.devices_with_activity_outside} dispositivos`;
+
+  return (
+    <Link
+      to="/relatorios/uso?aba=fora-do-horario"
+      className={cn(
+        "flex items-center gap-4 rounded-lg border px-4 py-3 text-card-foreground shadow-sm transition-colors",
+        "hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+      )}
+    >
+      <Moon className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-baseline gap-2">
+          <span className="text-2xl font-semibold leading-none tabular-nums">
+            {formatDuration(totals.seconds_outside)}
+          </span>
+          <span className="text-sm font-medium">de atividade fora do horário de trabalho</span>
+        </span>
+        <span className="mt-1 block truncate text-xs tabular-nums text-muted-foreground">
+          {dispositivos} na {periodo}
+          {pct !== null && ` · ${pct}% do tempo ativo da equipe`}
+          {data.business_hours !== null && ` · horário declarado: ${businessHoursLabel(data.business_hours)}`}
+        </span>
+      </span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+    </Link>
   );
 }
 

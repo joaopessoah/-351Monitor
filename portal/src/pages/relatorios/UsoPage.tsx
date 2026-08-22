@@ -17,6 +17,12 @@
 //   para a visão individual (/pessoas/{device_user_id}), exceto na lane-máquina.
 // - Exportar CSV (admin E viewer): POST /exports {kind:"usage_csv"} com o
 //   group_by corrente; acompanhamento em /relatorios/exportacoes.
+// - Aba "Fora do horário" (?aba=fora-do-horario): atividade fora do horário de
+//   trabalho declarado, reusando os MESMOS filtros de período e dispositivos da
+//   aba de uso. Indicador de EQUILÍBRIO - jamais hora extra ou banco de horas -
+//   com o disclaimer da Portaria 671/MTE herdado do relatório de Jornada e
+//   exportação própria (kind fora_horario_csv), desabilitada quando a
+//   organização não tem horário declarado ou restringe a coleta a ele.
 // =============================================================================
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -28,6 +34,7 @@ import { classificationColor, classificationLabel, mergeUncategorizedRows } from
 import { ddmm, formatDuration } from "@/lib/format";
 import { genericErrorMessage } from "@/lib/messages";
 import type {
+  ForaDoHorarioResponse,
   MeResponse,
   UsageAppItem,
   UsageCategoryItem,
@@ -51,6 +58,8 @@ import {
   useReportRange,
 } from "@/components/reports/filters";
 import { ExportCsvBanner, ExportCsvButton, useCsvExport } from "@/components/reports/ExportCsv";
+import { foraDoHorarioKey, foraDoHorarioUrl } from "@/components/reports/ForaDoHorario";
+import { FORA_PAGE_SIZE, ForaDoHorarioPanel } from "@/components/reports/ForaDoHorarioPanel";
 import { DeltaBadge, useComparisonRange } from "@/components/dashboard/comparison";
 
 /** page_size máximo do contrato - mais linhas sob a ordenação client-side. */
@@ -58,6 +67,14 @@ const PAGE_SIZE = 100;
 
 /** UUID zero = lane-máquina (sem usuário Windows): não é pessoa, não tem página. */
 const MACHINE_LANE = "00000000-0000-0000-0000-000000000000";
+
+/** Abas da tela: o uso de aplicativos e o painel de fora do horário de trabalho. */
+type UsoTab = "uso" | "fora-do-horario";
+
+const TAB_OPTIONS: { value: UsoTab; label: string }[] = [
+  { value: "uso", label: "Uso de aplicativos" },
+  { value: "fora-do-horario", label: "Fora do horário de trabalho" },
+];
 
 type GroupBy = "app" | "category" | "device" | "device_user";
 
@@ -124,6 +141,7 @@ function sortFromUrl(params: URLSearchParams): SortState | null {
 
 /** Estado da tela na URL - ciclo completo: a URL é lida E escrita (replace). */
 interface UsoUrlState {
+  tab: UsoTab;
   groupBy: GroupBy;
   sort: SortState | null;
   page: number;
@@ -135,12 +153,14 @@ const USO_CODEC: UrlStateCodec<UsoUrlState> = {
   parse: (params) => {
     const rawPage = Number(params.get("page"));
     return {
+      tab: params.get("aba") === "fora-do-horario" ? "fora-do-horario" : "uso",
       groupBy: groupByFromUrl(params),
       sort: sortFromUrl(params),
       page: Number.isInteger(rawPage) && rawPage > 1 ? rawPage : 1,
     };
   },
   serialize: (value) => ({
+    aba: value.tab !== "uso" ? value.tab : null,
     group_by: value.groupBy !== "app" ? value.groupBy : null,
     sort: value.sort !== null ? value.sort.key : null,
     // desc é o default do sortFromUrl: só "asc" precisa ir para a URL.
@@ -249,12 +269,13 @@ export function UsoPage() {
   // Agrupamento, ordenação e página vivem na URL (deep-link do hub de
   // Relatórios) - lidos no mount E escritos de volta a cada interação.
   const [urlState, setUrlState] = useUrlState(USO_CODEC);
-  const { groupBy, sort, page } = urlState;
+  const { tab, groupBy, sort, page } = urlState;
+  const foraTab = tab === "fora-do-horario";
   const [deviceIds, setDeviceIds] = useState<string[]>([]);
   // Coluna "vs anterior": toggle DESLIGADO por padrão e indisponível no
   // agrupamento por pessoa (nunca comparar pessoas entre si).
   const [compareOn, setCompareOn] = useState(false);
-  const compareActive = compareOn && groupBy !== "device_user";
+  const compareActive = compareOn && groupBy !== "device_user" && !foraTab;
 
   const meQuery = useQuery({
     queryKey: ["me"],
@@ -294,7 +315,7 @@ export function UsoPage() {
       api<UsageReportResponse<UsageRow>>(
         `/reports/usage?from=${range?.from ?? ""}&to=${range?.to ?? ""}${deviceParam}&group_by=${groupBy}&page=${page}&page_size=${PAGE_SIZE}`,
       ),
-    enabled: range !== null,
+    enabled: range !== null && !foraTab,
     // Mantém a leitura anterior ao trocar página/período/devices, mas NÃO ao
     // trocar o agrupamento: as linhas têm formato diferente por group_by e
     // renderizar app como device (ou vice-versa) mostraria NaN no flash.
@@ -383,26 +404,56 @@ export function UsoPage() {
           : ["Dispositivo", "Usuário"];
   const colCount = textHeaders.length + numericCols.length + (compareActive ? 1 : 0);
 
+  // MESMA queryKey do ForaDoHorarioPanel: o TanStack resolve do cache, sem
+  // requisição extra. O botão de exportar precisa do status para não oferecer um
+  // CSV que o backend recusaria com 409 (organização sem horário declarado ou
+  // com a coleta restrita ao horário de trabalho).
+  const foraParams = {
+    from: range?.from ?? "",
+    to: range?.to ?? "",
+    deviceIdsKey,
+    page: 1,
+    includeDevices: true,
+    pageSize: FORA_PAGE_SIZE,
+  };
+  const foraStatusQuery = useQuery({
+    queryKey: foraDoHorarioKey(foraParams),
+    queryFn: () => api<ForaDoHorarioResponse>(foraDoHorarioUrl(foraParams)),
+    enabled: range !== null && foraTab,
+    placeholderData: (prev) => prev,
+  });
+  const foraExportavel = foraStatusQuery.data?.status === "ok";
+
   const exportMutation = useCsvExport();
   const exportRequest =
-    range !== null
-      ? {
-          kind: "usage_csv" as const,
-          params: {
-            from: range.from,
-            to: range.to,
-            group_by: groupBy,
-            ...(deviceIds.length > 0 ? { device_ids: deviceIds } : {}),
-          },
-        }
-      : null;
+    range === null
+      ? null
+      : foraTab
+        ? {
+            kind: "fora_horario_csv" as const,
+            params: {
+              from: range.from,
+              to: range.to,
+              ...(deviceIds.length > 0 ? { device_ids: deviceIds } : {}),
+            },
+          }
+        : {
+            kind: "usage_csv" as const,
+            params: {
+              from: range.from,
+              to: range.to,
+              group_by: groupBy,
+              ...(deviceIds.length > 0 ? { device_ids: deviceIds } : {}),
+            },
+          };
 
   const header = (
     <div>
       <h1 className="text-2xl font-semibold tracking-tight">Uso de aplicativos</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Relatório tabular de uso por aplicativo, categoria, dispositivo ou pessoa, com exportação em
-        CSV.
+        {foraTab
+          ? "Atividade fora do horário de trabalho declarado pela organização, por dispositivo, com exportação em CSV."
+          : "Relatório tabular de uso por aplicativo, categoria, dispositivo ou pessoa, com exportação em CSV."}
       </p>
     </div>
   );
@@ -429,26 +480,52 @@ export function UsoPage() {
     <div className="space-y-4">
       {header}
 
-      {/* Barra de filtros (controles em h-9): agrupamento, período, devices, export. */}
+      {/* Abas da tela: uso de aplicativos | fora do horário de trabalho. */}
+      <div role="tablist" aria-label="Visão do relatório" className="flex flex-wrap gap-1 border-b">
+        {TAB_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            role="tab"
+            aria-selected={tab === opt.value}
+            onClick={() => setUrlState({ tab: opt.value, groupBy, sort: null, page: 1 })}
+            className={cn(
+              "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              tab === opt.value
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Barra de filtros (controles em h-9): agrupamento, período, devices, export.
+          Período e dispositivos servem as DUAS abas; o agrupamento só faz sentido
+          no uso de aplicativos. */}
       <Card>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-          <div
-            role="group"
-            aria-label="Agrupar por"
-            className="inline-flex h-9 items-stretch rounded-md border border-input bg-card p-0.5"
-          >
-            {GROUP_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                aria-pressed={groupBy === opt.value}
-                onClick={() => setUrlState({ groupBy: opt.value, sort: null, page: 1 })}
-                className={cn(segmentedButton, groupBy === opt.value ? segmentedOn : segmentedOff)}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+          {!foraTab && (
+            <div
+              role="group"
+              aria-label="Agrupar por"
+              className="inline-flex h-9 items-stretch rounded-md border border-input bg-card p-0.5"
+            >
+              {GROUP_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  aria-pressed={groupBy === opt.value}
+                  onClick={() => setUrlState({ tab, groupBy: opt.value, sort: null, page: 1 })}
+                  className={cn(segmentedButton, groupBy === opt.value ? segmentedOn : segmentedOff)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           <PeriodPresetGroup active={activePreset} onSelect={applyPreset} disabled={todayStr === null} />
           {range !== null && (
@@ -464,7 +541,7 @@ export function UsoPage() {
             }
             onClear={() => setDeviceIds([])}
           />
-          {groupBy !== "device_user" && (
+          {!foraTab && groupBy !== "device_user" && (
             <Button
               variant="outline"
               size="sm"
@@ -477,14 +554,31 @@ export function UsoPage() {
             </Button>
           )}
           <div className="ml-auto">
-            <ExportCsvButton mutation={exportMutation} request={exportRequest} />
+            {/* Na aba de fora do horário o CSV só existe com janela declarada e
+                coleta contínua: sem isso o botão fica desabilitado, e o painel
+                logo abaixo explica o motivo. */}
+            <ExportCsvButton
+              mutation={exportMutation}
+              request={exportRequest}
+              disabled={foraTab && !foraExportavel}
+            />
           </div>
         </div>
       </Card>
 
       <ExportCsvBanner mutation={exportMutation} />
 
-      {usageQuery.isError && data !== undefined && (
+      {/* Aba "Fora do horário": painel próprio, mesmos filtros de período e
+          dispositivos da aba de uso. */}
+      {foraTab && (
+        <ForaDoHorarioPanel
+          range={range}
+          deviceIdsKey={deviceIdsKey}
+          onClearDevices={() => setDeviceIds([])}
+        />
+      )}
+
+      {!foraTab && usageQuery.isError && data !== undefined && (
         <div
           role="alert"
           className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
@@ -496,118 +590,179 @@ export function UsoPage() {
         </div>
       )}
 
-      <Card>
-        {usageQuery.isError && data === undefined ? (
-          <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
-            <AlertTriangle className="h-8 w-8 text-destructive" aria-hidden />
-            <p className="text-sm text-muted-foreground">{genericErrorMessage(usageQuery.error)}</p>
-            <Button variant="outline" onClick={() => void usageQuery.refetch()}>
-              Tentar novamente
-            </Button>
-          </div>
-        ) : (
-          <div className={cn("overflow-x-auto", usageQuery.isPlaceholderData && "opacity-70 transition-opacity")}>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {textHeaders.map((label, i) => (
-                    <th scope="col" key={label} className={cn("py-2", i === 0 ? "px-6" : "px-3")}>
-                      {label}
-                    </th>
-                  ))}
-                  {numericCols.map((col) => (
-                    <SortableTh key={col.key} col={col} sort={sort} onToggle={toggleSort} />
-                  ))}
-                  {compareActive && (
-                    <th
-                      scope="col"
-                      className="px-3 py-2 text-right"
-                      title="Tempo ativo comparado ao período imediatamente anterior, de mesma duração"
-                    >
-                      vs anterior
-                    </th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {data === undefined ? (
-                  Array.from({ length: 8 }, (_, i) => (
-                    <tr key={i} className="border-b last:border-b-0">
-                      <td colSpan={colCount} className="px-6 py-2">
-                        <Skeleton className="h-8 w-full" />
+      {!foraTab && (
+        <Card>
+          {usageQuery.isError && data === undefined ? (
+            <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
+              <AlertTriangle className="h-8 w-8 text-destructive" aria-hidden />
+              <p className="text-sm text-muted-foreground">{genericErrorMessage(usageQuery.error)}</p>
+              <Button variant="outline" onClick={() => void usageQuery.refetch()}>
+                Tentar novamente
+              </Button>
+            </div>
+          ) : (
+            <div className={cn("overflow-x-auto", usageQuery.isPlaceholderData && "opacity-70 transition-opacity")}>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {textHeaders.map((label, i) => (
+                      <th scope="col" key={label} className={cn("py-2", i === 0 ? "px-6" : "px-3")}>
+                        {label}
+                      </th>
+                    ))}
+                    {numericCols.map((col) => (
+                      <SortableTh key={col.key} col={col} sort={sort} onToggle={toggleSort} />
+                    ))}
+                    {compareActive && (
+                      <th
+                        scope="col"
+                        className="px-3 py-2 text-right"
+                        title="Tempo ativo comparado ao período imediatamente anterior, de mesma duração"
+                      >
+                        vs anterior
+                      </th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data === undefined ? (
+                    Array.from({ length: 8 }, (_, i) => (
+                      <tr key={i} className="border-b last:border-b-0">
+                        <td colSpan={colCount} className="px-6 py-2">
+                          <Skeleton className="h-8 w-full" />
+                        </td>
+                      </tr>
+                    ))
+                  ) : sortedItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={colCount} className="px-6 py-10 text-center text-sm text-muted-foreground">
+                        {deviceIds.length > 0 ? (
+                          <span className="inline-flex flex-col items-center gap-2">
+                            <span>Nenhum resultado</span>
+                            <Button variant="outline" size="sm" onClick={() => setDeviceIds([])}>
+                              Limpar filtros
+                            </Button>
+                          </span>
+                        ) : (
+                          "Nenhum dado no período."
+                        )}
                       </td>
                     </tr>
-                  ))
-                ) : sortedItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={colCount} className="px-6 py-10 text-center text-sm text-muted-foreground">
-                      {deviceIds.length > 0 ? (
-                        <span className="inline-flex flex-col items-center gap-2">
-                          <span>Nenhum resultado</span>
-                          <Button variant="outline" size="sm" onClick={() => setDeviceIds([])}>
-                            Limpar filtros
-                          </Button>
-                        </span>
-                      ) : (
-                        "Nenhum dado no período."
-                      )}
-                    </td>
-                  </tr>
-                ) : (
-                  sortedItems.map((row) => {
-                    if (groupBy === "app") {
-                      const item = row as UsageAppItem;
-                      return (
-                        <tr key={item.app_id} className="border-b transition-colors last:border-b-0 hover:bg-accent/50">
-                          <td className="px-6 py-2">
-                            <span className="block max-w-[20rem] truncate font-medium">
-                              {item.custom_display_name ?? item.display_name}
-                            </span>
-                            <span className="block max-w-[20rem] truncate text-xs text-muted-foreground">
-                              {item.process_name}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2">
-                            <CategoryDot
-                              name={item.category?.name ?? null}
-                              color={item.category?.color ?? null}
-                              classification={item.category?.classification ?? null}
-                            />
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
-                            {formatDuration(item.seconds_active)}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
-                            {item.device_count}
-                          </td>
-                          {compareActive && (
-                            <ComparisonCell
-                              seconds={item.seconds_active}
-                              rowKey={comparisonKeyOf(groupBy, item)}
-                              prevSecondsByKey={prevSecondsByKey}
-                              prevRange={prevRange}
-                            />
-                          )}
-                        </tr>
-                      );
-                    }
-                    if (groupBy === "category") {
-                      const item = row as UsageCategoryItem;
+                  ) : (
+                    sortedItems.map((row) => {
+                      if (groupBy === "app") {
+                        const item = row as UsageAppItem;
+                        return (
+                          <tr key={item.app_id} className="border-b transition-colors last:border-b-0 hover:bg-accent/50">
+                            <td className="px-6 py-2">
+                              <span className="block max-w-[20rem] truncate font-medium">
+                                {item.custom_display_name ?? item.display_name}
+                              </span>
+                              <span className="block max-w-[20rem] truncate text-xs text-muted-foreground">
+                                {item.process_name}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2">
+                              <CategoryDot
+                                name={item.category?.name ?? null}
+                                color={item.category?.color ?? null}
+                                classification={item.category?.classification ?? null}
+                              />
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                              {formatDuration(item.seconds_active)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                              {item.device_count}
+                            </td>
+                            {compareActive && (
+                              <ComparisonCell
+                                seconds={item.seconds_active}
+                                rowKey={comparisonKeyOf(groupBy, item)}
+                                prevSecondsByKey={prevSecondsByKey}
+                                prevRange={prevRange}
+                              />
+                            )}
+                          </tr>
+                        );
+                      }
+                      if (groupBy === "category") {
+                        const item = row as UsageCategoryItem;
+                        return (
+                          <tr
+                            key={item.category_id ?? "uncategorized"}
+                            className="border-b transition-colors last:border-b-0 hover:bg-accent/50"
+                          >
+                            <td className="px-6 py-2 font-medium">
+                              <CategoryDot name={item.name} color={item.color} classification={item.classification} />
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2">
+                              {classificationLabel(item.classification)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                              {formatDuration(item.seconds_active)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{item.app_count}</td>
+                            {compareActive && (
+                              <ComparisonCell
+                                seconds={item.seconds_active}
+                                rowKey={comparisonKeyOf(groupBy, item)}
+                                prevSecondsByKey={prevSecondsByKey}
+                                prevRange={prevRange}
+                              />
+                            )}
+                          </tr>
+                        );
+                      }
+                      const item = row as UsageDeviceItem;
+                      const user =
+                        groupBy === "device_user" ? (row as UsageDeviceUserItem) : null;
                       return (
                         <tr
-                          key={item.category_id ?? "uncategorized"}
+                          key={user !== null ? `${item.device_id}:${user.device_user_id}` : item.device_id}
                           className="border-b transition-colors last:border-b-0 hover:bg-accent/50"
                         >
-                          <td className="px-6 py-2 font-medium">
-                            <CategoryDot name={item.name} color={item.color} classification={item.classification} />
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2">
-                            {classificationLabel(item.classification)}
-                          </td>
+                          <td className="max-w-[16rem] truncate px-6 py-2 font-medium">{item.device_name}</td>
+                          {user !== null && (
+                            // display_name resolvido pelo backend: nome amigável de
+                            // device_users, lane máquina e titular removido (DSR) inclusos.
+                            // Vira link para a visão individual, exceto na lane-máquina
+                            // (UUID zero é sintética - não existe pessoa para abrir).
+                            <td className="max-w-[12rem] truncate px-3 py-2">
+                              {user.device_user_id === MACHINE_LANE ? (
+                                user.display_name
+                              ) : (
+                                <Link
+                                  to={`/pessoas/${user.device_user_id}`}
+                                  className="underline decoration-dotted underline-offset-4 hover:text-primary"
+                                >
+                                  {user.display_name}
+                                </Link>
+                              )}
+                            </td>
+                          )}
                           <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
                             {formatDuration(item.seconds_active)}
                           </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{item.app_count}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                            {formatDuration(item.seconds_idle)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                            {formatDuration(item.seconds_locked)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                            {formatDuration(item.seconds_on)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                            {formatDuration(item.seconds_work_related)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                            {formatDuration(item.seconds_neutral)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                            {formatDuration(item.seconds_not_work_related)}
+                          </td>
+                          {/* compareActive é sempre false em device_user (nunca comparar pessoas). */}
                           {compareActive && (
                             <ComparisonCell
                               seconds={item.seconds_active}
@@ -618,111 +773,52 @@ export function UsoPage() {
                           )}
                         </tr>
                       );
-                    }
-                    const item = row as UsageDeviceItem;
-                    const user =
-                      groupBy === "device_user" ? (row as UsageDeviceUserItem) : null;
-                    return (
-                      <tr
-                        key={user !== null ? `${item.device_id}:${user.device_user_id}` : item.device_id}
-                        className="border-b transition-colors last:border-b-0 hover:bg-accent/50"
+                    })
+                  )}
+                </tbody>
+              </table>
+
+              {data !== undefined && (
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t px-6 py-3 text-sm">
+                  <span className="tabular-nums text-muted-foreground">
+                    {data.total > PAGE_SIZE
+                      ? `${(page - 1) * PAGE_SIZE + 1} a ${Math.min(page * PAGE_SIZE, data.total)} de ${data.total} itens · a ordenação vale para esta página`
+                      : `Tempo ativo total do período: ${formatDuration(data.total_seconds_active)}`}
+                  </span>
+                  {data.total > PAGE_SIZE && (
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={page <= 1}
+                        onClick={() => setUrlState({ ...urlState, page: Math.max(1, page - 1) })}
                       >
-                        <td className="max-w-[16rem] truncate px-6 py-2 font-medium">{item.device_name}</td>
-                        {user !== null && (
-                          // display_name resolvido pelo backend: nome amigável de
-                          // device_users, lane máquina e titular removido (DSR) inclusos.
-                          // Vira link para a visão individual, exceto na lane-máquina
-                          // (UUID zero é sintética - não existe pessoa para abrir).
-                          <td className="max-w-[12rem] truncate px-3 py-2">
-                            {user.device_user_id === MACHINE_LANE ? (
-                              user.display_name
-                            ) : (
-                              <Link
-                                to={`/pessoas/${user.device_user_id}`}
-                                className="underline decoration-dotted underline-offset-4 hover:text-primary"
-                              >
-                                {user.display_name}
-                              </Link>
-                            )}
-                          </td>
-                        )}
-                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
-                          {formatDuration(item.seconds_active)}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
-                          {formatDuration(item.seconds_idle)}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
-                          {formatDuration(item.seconds_locked)}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
-                          {formatDuration(item.seconds_on)}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
-                          {formatDuration(item.seconds_work_related)}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
-                          {formatDuration(item.seconds_neutral)}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
-                          {formatDuration(item.seconds_not_work_related)}
-                        </td>
-                        {/* compareActive é sempre false em device_user (nunca comparar pessoas). */}
-                        {compareActive && (
-                          <ComparisonCell
-                            seconds={item.seconds_active}
-                            rowKey={comparisonKeyOf(groupBy, item)}
-                            prevSecondsByKey={prevSecondsByKey}
-                            prevRange={prevRange}
-                          />
-                        )}
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                        Anterior
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={page >= Math.ceil(data.total / PAGE_SIZE)}
+                        onClick={() => setUrlState({ ...urlState, page: page + 1 })}
+                      >
+                        Próxima
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
 
-            {data !== undefined && (
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t px-6 py-3 text-sm">
-                <span className="tabular-nums text-muted-foreground">
-                  {data.total > PAGE_SIZE
-                    ? `${(page - 1) * PAGE_SIZE + 1} a ${Math.min(page * PAGE_SIZE, data.total)} de ${data.total} itens · a ordenação vale para esta página`
-                    : `Tempo ativo total do período: ${formatDuration(data.total_seconds_active)}`}
-                </span>
-                {data.total > PAGE_SIZE && (
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page <= 1}
-                      onClick={() => setUrlState({ ...urlState, page: Math.max(1, page - 1) })}
-                    >
-                      Anterior
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page >= Math.ceil(data.total / PAGE_SIZE)}
-                      onClick={() => setUrlState({ ...urlState, page: page + 1 })}
-                    >
-                      Próxima
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Nota da base do comparativo: página 1 (top 100) do período anterior. */}
-            {compareActive && prevRange !== null && data !== undefined && (
-              <p className="border-t px-6 py-3 text-xs text-muted-foreground">
-                A comparação considera os {PAGE_SIZE} itens com mais tempo ativo do período
-                anterior, de {ddmm(prevRange.from)} a {ddmm(prevRange.to)}.
-              </p>
-            )}
-          </div>
-        )}
-      </Card>
+              {/* Nota da base do comparativo: página 1 (top 100) do período anterior. */}
+              {compareActive && prevRange !== null && data !== undefined && (
+                <p className="border-t px-6 py-3 text-xs text-muted-foreground">
+                  A comparação considera os {PAGE_SIZE} itens com mais tempo ativo do período
+                  anterior, de {ddmm(prevRange.from)} a {ddmm(prevRange.to)}.
+                </p>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
     </div>
   );
 }
