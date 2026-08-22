@@ -25,6 +25,49 @@ refletir o estado pós-purga do dia):
 
 Saída: `/var/backups/m351/m351_<db>_<stamp>.dump`. Retenção local: **14 dias** (`RETENTION_DAYS`).
 
+Antes de qualquer cópia, o script valida o dump com `pg_restore --list`: arquivo truncado
+ou corrompido é apagado e o backup falha, para não passar por bom nem subir para o off-site.
+
+## Cópia off-site cifrada (obrigatória antes do primeiro cliente)
+
+Um dump é a base inteira em um arquivo só, com dados pessoais dentro. Ele **não pode**
+sair da VPS sem cifra. O `backup.sh` faz a cópia com `rclone` e reconhece duas posturas:
+
+| Variável (`infra/.env`) | O que faz |
+| --- | --- |
+| `OFFSITE_CRYPT_REMOTE` | Remote do tipo `crypt` do rclone. Cifra no cliente, o dump sai da VPS já ilegível. **Forma preferida** e tem precedência no upload e no `rclone check`. |
+| `OFFSITE_RCLONE_REMOTE` | Remote puro, mantido por compatibilidade. A cifra fica por conta do bucket, então só é aceitável junto com `OFFSITE_SSE_CONFIRMADO=sim`. |
+| `OFFSITE_SSE_CONFIRMADO` | `sim` declara que a cifra em repouso do bucket (SSE-S3, SSE-KMS ou Azure SSE) foi conferida no console do provedor. |
+| `OFFSITE_RETENTION_DAYS` | Retenção remota, padrão **30 dias** (teto do DPA: 35). |
+
+**Se nenhuma cifra estiver declarada**, o script imprime um aviso grave no log e
+**continua mesmo assim**. A escolha é deliberada e está comentada no próprio
+`backup.sh`: um dump íntegro que subiu sem cifra ainda é melhor que ficar sem cópia
+do dia, e falhar o backup por um problema de postura trocaria um risco por outro
+maior. O aviso é gritante justamente para não virar rotina, trate como incidente.
+
+Fluxo da cópia: `rclone copy` do dump, `rclone check --one-way` do arquivo recém-enviado
+(com crypt o rclone compara o conteúdo já decifrado; para conferência byte a byte, rode
+manualmente com `--download`), e por fim `rclone delete --min-age` aplicando a retenção
+remota. Com object lock em modo compliance a exclusão só ocorre depois do prazo de
+bloqueio: nesse caso o script apenas avisa, não falha.
+
+### Provisionamento do bucket, requisitos que não são negociáveis
+
+1. **Região brasileira.** As opções válidas são **AWS S3 `sa-east-1`**, **Azure Blob
+   Brazil South** ou **Magalu Object Storage**. Backblaze B2 **não** tem região no
+   Brasil e violaria o compromisso público de hospedagem 100% Brasil, não use.
+2. **Object lock ligado** (WORM), para ransomware não conseguir apagar a cópia fria.
+   Prazo de bloqueio alinhado à retenção: 30 dias.
+3. **Cifra em repouso ativa** no bucket, mesmo quando já existe remote `crypt`.
+4. **Retenção de 30 dias**, dentro do teto de **35 dias** declarado no DPA (ver abaixo).
+5. **Credencial dedicada** ao backup, com escopo só nesse bucket, e sem permissão de
+   apagar objeto antes do prazo.
+6. **Somar o provedor à lista de subprocessadores** publicada na página de privacidade
+   e no DPA. Escolher o bucket é decisão contratual, não só de infra.
+7. **Senha do remote `crypt` no cofre.** Sem ela não existe restore, e ela não pode
+   viver só na VPS que está sendo copiada.
+
 ## Restore — teste em staging (item "pronto quando" da F4)
 
 Procedimento validável (executar na VPS de staging — exige acesso SSH, ver memória `staging-acesso`):
@@ -50,10 +93,17 @@ Procedimento validável (executar na VPS de staging — exige acesso SSH, ver me
 ## LGPD / DPA
 
 - **Residência:** dumps contêm dados pessoais — armazenar **somente no Brasil**, com acesso restrito.
+  Vale igual para a cópia off-site: só S3 `sa-east-1`, Azure Brazil South ou Magalu Object Storage.
+- **Cifra:** cópia fora da VPS só com cifra declarada, no cliente (`crypt` do rclone) ou em
+  repouso no bucket (SSE). Sem isso, um vazamento do bucket expõe a base inteira em claro e
+  dispara comunicação à ANPD e aos titulares (LGPD art. 48).
+- **Subprocessadores:** o provedor do bucket de backup é subprocessador. Somar à lista
+  publicada na página de privacidade e ao DPA antes de ligar a cópia off-site.
 - **Janela de saída do backup (DPA):** um dado expurgado pela retenção (N10 raw 90d / N11
   intervals 12m / N12 agregados 24m / N13 auditoria 24m) ainda pode residir em backup por até
-  **35 dias** — é o que se declara no DPA. A retenção dos backups (PITR do provedor e os
-  `.dump`) deve portanto ser **≤ 35 dias**; o `backup.sh` usa 14 dias, dentro do limite.
+  **35 dias**, é o que se declara no DPA. A retenção dos backups (PITR do provedor, os `.dump`
+  locais e a cópia off-site) deve portanto ser **≤ 35 dias**; o `backup.sh` usa 14 dias local e
+  30 dias remoto, dentro do limite. O prazo do object lock não pode passar de 35 dias.
 - **`device_token`/segredos:** o dump guarda apenas hashes (SHA-256), não os tokens em claro.
 
 ## Perda zero pós-ack
