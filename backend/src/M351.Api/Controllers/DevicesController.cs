@@ -6,6 +6,7 @@ using M351.Api.Contracts;
 using M351.Api.Services;
 using M351.Domain;
 using M351.Domain.Entities;
+using M351.Infrastructure;
 using M351.Infrastructure.Data;
 using M351.Infrastructure.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -48,18 +49,97 @@ public class DevicesController(M351DbContext db, AuditWriter audit, NpgsqlDataSo
             d.NoticeAckedAt, d.LastTamperAt, d.LastTamperReason,
             AgentOutdated: SemVer.IsOutdated(d.AgentVersion, minVersion));
 
+    // ===== F5 — saúde de frota SERVER-SIDE (os mesmos limiares do deviceHealth.ts do portal;
+    // até aqui a derivação era 100% client-side e os totais valiam só para a página de 50) =====
+
+    /// <summary>N6: contato > 180 s sem desligamento limpo = sem comunicação.</summary>
+    public const int OfflineLimitSeconds = 180;
+
+    /// <summary>Banner global (Seção 8.1): sem comunicação há > 30 min em horário de trabalho.</summary>
+    public const int OfflineSevereSeconds = 30 * 60;
+
+    /// <summary>Seção 8.7: |offset| > 2 min = relógio dessincronizado.</summary>
+    public const long ClockSkewLimitMs = 120_000;
+
+    /// <summary>Só adulteração recente é destaque (raw_events expira em 90 d).</summary>
+    public const int TamperWindowDays = 7;
+
+    private sealed record HealthRow(
+        DateTimeOffset? LastSeenAt, long ClockOffsetMs, string? AgentVersion,
+        DateTimeOffset? NoticeAckedAt, DateTimeOffset? LastTamperAt);
+
+    private static bool HasAlert(HealthRow d, DateTimeOffset now, string? minVersion, bool withinBusinessHours)
+    {
+        var sinceLastSeen = d.LastSeenAt is { } seen ? now - seen : (TimeSpan?)null;
+        var offline = sinceLastSeen is null || sinceLastSeen.Value.TotalSeconds > OfflineLimitSeconds;
+        return offline
+            || Math.Abs(d.ClockOffsetMs) > ClockSkewLimitMs
+            || SemVer.IsOutdated(d.AgentVersion, minVersion)
+            || (d.LastTamperAt is { } tamper && now - tamper <= TimeSpan.FromDays(TamperWindowDays))
+            || d.NoticeAckedAt is null;
+    }
+
+    /// <summary>
+    /// GET /devices/health-summary (F5): contagens de saúde sobre a FROTA INTEIRA numa
+    /// passada (status active; paused/archived são estado deliberado do gestor, não alerta).
+    /// Alimenta o card "X dispositivos precisam de atenção" da Visão Geral e os chips totais
+    /// da tela Dispositivos, que antes contavam só a página corrente.
+    /// </summary>
+    [HttpGet("health-summary")]
+    public async Task<IActionResult> HealthSummary(CancellationToken ct)
+    {
+        var org = await db.Organizations.FirstAsync(ct);
+        var now = DateTimeOffset.UtcNow;
+        var withinBusinessHours = BusinessHoursWindow.IsWithin(org.BusinessHours, org.Timezone, now);
+        var minVersion = await CurrentStableMinVersionAsync(ct);
+
+        var rows = await db.Devices
+            .Where(d => d.Status == "active")
+            .Select(d => new HealthRow(d.LastSeenAt, d.ClockOffsetMs, d.AgentVersion, d.NoticeAckedAt, d.LastTamperAt))
+            .ToListAsync(ct);
+
+        int offline = 0, offlineSevere = 0, clockSkewed = 0, outdated = 0, tampered = 0, noticePending = 0, withAlert = 0;
+        foreach (var d in rows)
+        {
+            var sinceLastSeen = d.LastSeenAt is { } seen ? now - seen : (TimeSpan?)null;
+            var isOffline = sinceLastSeen is null || sinceLastSeen.Value.TotalSeconds > OfflineLimitSeconds;
+            var isSevere = isOffline
+                && (sinceLastSeen is null || sinceLastSeen.Value.TotalSeconds > OfflineSevereSeconds)
+                && withinBusinessHours;
+            var isSkewed = Math.Abs(d.ClockOffsetMs) > ClockSkewLimitMs;
+            var isOutdated = SemVer.IsOutdated(d.AgentVersion, minVersion);
+            var isTampered = d.LastTamperAt is { } tamper && now - tamper <= TimeSpan.FromDays(TamperWindowDays);
+            var isNoticePending = d.NoticeAckedAt is null;
+
+            if (isOffline) offline++;
+            if (isSevere) offlineSevere++;
+            if (isSkewed) clockSkewed++;
+            if (isOutdated) outdated++;
+            if (isTampered) tampered++;
+            if (isNoticePending) noticePending++;
+            if (isOffline || isSkewed || isOutdated || isTampered || isNoticePending) withAlert++;
+        }
+
+        return Ok(new DeviceHealthSummaryResponse(
+            rows.Count, offline, offlineSevere, clockSkewed, outdated, tampered, noticePending,
+            withAlert, withinBusinessHours, now));
+    }
+
     /// <summary>
     /// Lista paginada de devices do tenant com filtros da F2 (Seção 7.4):
     /// ?status (active|paused|archived|revoked), ?tag (match em tags[]), ?q (hostname/nome).
     /// F3.7: ?include_archived (default TRUE, preservando o comportamento existente) — false
     /// esconde os archived (toggle "incluir arquivados" da tela Dispositivos, spec linha 954).
     /// O filtro explícito ?status=archived continua funcionando e IGNORA include_archived.
+    /// F5: ?health=alert filtra a FROTA INTEIRA pelos mesmos limiares do health-summary
+    /// (derivação em memória sobre o conjunto filtrado; dimensionado para ~2.500 devices).
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> List(
         [FromQuery] int page = 1, [FromQuery(Name = "page_size")] int pageSize = 50,
         [FromQuery] string? status = null, [FromQuery] string? tag = null, [FromQuery] string? q = null,
         [FromQuery(Name = "include_archived")] bool includeArchived = true,
+        [FromQuery] string? health = null,
         CancellationToken ct = default)
     {
         page = Math.Max(page, 1);
@@ -78,18 +158,47 @@ public class DevicesController(M351DbContext db, AuditWriter audit, NpgsqlDataSo
         }
 
         var query = filtered.OrderBy(d => d.Hostname);
-        var total = await query.CountAsync(ct);
-        var rows = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Select(d => new DeviceRow(
-                d.Id, d.Hostname, d.DisplayName, d.OsType, d.OsVersion, d.AgentVersion,
-                d.Status, d.Tags, d.LastSeenAt, d.TzOffsetMin, d.ClockOffsetMs,
-                d.NoticeAckedAt, d.LastTamperAt, d.LastTamperReason))
-            .ToListAsync(ct);
 
         // min_version lido UMA vez por request; agent_outdated comparado em memória (SemVer no backend)
         var minVersion = await CurrentStableMinVersionAsync(ct);
+
+        List<DeviceRow> rows;
+        int total;
+        if (health == "alert")
+        {
+            // filtro de saúde vale sobre TODO o conjunto filtrado (não só a página): carrega a
+            // projeção completa e pagina em memória — aceitável no dimensionamento do MVP
+            var org = await db.Organizations.FirstAsync(ct);
+            var now = DateTimeOffset.UtcNow;
+            var within = BusinessHoursWindow.IsWithin(org.BusinessHours, org.Timezone, now);
+
+            var all = await query
+                .Select(d => new DeviceRow(
+                    d.Id, d.Hostname, d.DisplayName, d.OsType, d.OsVersion, d.AgentVersion,
+                    d.Status, d.Tags, d.LastSeenAt, d.TzOffsetMin, d.ClockOffsetMs,
+                    d.NoticeAckedAt, d.LastTamperAt, d.LastTamperReason))
+                .ToListAsync(ct);
+
+            var alerting = all.Where(d => HasAlert(
+                new HealthRow(d.LastSeenAt, d.ClockOffsetMs, d.AgentVersion, d.NoticeAckedAt, d.LastTamperAt),
+                now, minVersion, within)).ToList();
+
+            total = alerting.Count;
+            rows = alerting.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        }
+        else
+        {
+            total = await query.CountAsync(ct);
+            rows = await query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(d => new DeviceRow(
+                    d.Id, d.Hostname, d.DisplayName, d.OsType, d.OsVersion, d.AgentVersion,
+                    d.Status, d.Tags, d.LastSeenAt, d.TzOffsetMin, d.ClockOffsetMs,
+                    d.NoticeAckedAt, d.LastTamperAt, d.LastTamperReason))
+                .ToListAsync(ct);
+        }
+
         var items = rows.Select(d => ToResponse(d, minVersion)).ToList();
 
         return Ok(new PagedResponse<DeviceResponse>(items, total, page, pageSize));

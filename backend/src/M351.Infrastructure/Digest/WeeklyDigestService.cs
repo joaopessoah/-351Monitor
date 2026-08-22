@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net;
 using System.Text;
 using M351.Infrastructure.Exports;
 using M351.Infrastructure.Email;
@@ -335,5 +334,5 @@ public class WeeklyDigestService(
         return $"{(int)ts.TotalHours}h{ts.Minutes:00}";
     }
 
-    private static string Html(string value) => WebUtility.HtmlEncode(value);
+    private static string Html(string value) => HtmlText.Escape(value);
 }

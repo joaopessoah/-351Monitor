@@ -1,5 +1,7 @@
 using M351.Infrastructure;
 using M351.Infrastructure.Aggregation;
+using M351.Infrastructure.Alerts;
+using M351.Infrastructure.Billing;
 using M351.Infrastructure.Digest;
 using M351.Infrastructure.Email;
 using M351.Infrastructure.Exports;
@@ -82,6 +84,17 @@ builder.Services.AddSingleton<WeeklyDigestService>(sp => new WeeklyDigestService
     builder.Configuration["Portal:BaseUrl"] ?? "http://localhost:5173",
     sp.GetRequiredService<ILogger<WeeklyDigestService>>()));
 
+// Alertas de saúde de frota (F5, exclusivos do plano Pro) e congelamento mensal do
+// sinal de cobrança (fecha o caveat de subfaturamento do BillingController)
+builder.Services.AddSingleton<FleetAlertService>(sp => new FleetAlertService(
+    sp.GetRequiredService<NpgsqlDataSource>(),
+    sp.GetRequiredService<IEmailSender>(),
+    builder.Configuration["Portal:BaseUrl"] ?? "http://localhost:5173",
+    sp.GetRequiredService<ILogger<FleetAlertService>>()));
+builder.Services.AddSingleton<BillingSnapshotService>(sp => new BillingSnapshotService(
+    sp.GetRequiredService<NpgsqlDataSource>(),
+    sp.GetRequiredService<ILogger<BillingSnapshotService>>()));
+
 // Quartz (Seção 7.6): Intervalization a cada 60 s; DailyAggregation a cada 15 min;
 // ExportWorker a cada 15 s ("contínuo" da spec via polling curto — padrão dos demais jobs);
 // jobs noturnos de retenção/purga (F4.6) em cron no fuso America/Sao_Paulo (tzdata no container):
@@ -147,6 +160,25 @@ builder.Services.AddQuartz(quartz =>
         .ForJob(digestKey)
         .WithIdentity("weekly-digest-hourly")
         .WithCronSchedule("0 5 * ? * *"));
+
+    // Alertas de saúde de frota (F5): a cada 15 min; o serviço aplica quiet hours pelo
+    // horário de trabalho da org, cooldown de 24 h por device+tipo e gate do plano Pro.
+    var fleetAlertKey = new JobKey("fleet-alert");
+    quartz.AddJob<FleetAlertJob>(options => options.WithIdentity(fleetAlertKey));
+    quartz.AddTrigger(trigger => trigger
+        .ForJob(fleetAlertKey)
+        .WithIdentity("fleet-alert-15min")
+        .StartNow()
+        .WithSimpleSchedule(schedule => schedule.WithIntervalInMinutes(15).RepeatForever()));
+
+    // Congelamento do sinal de cobrança (F5): diário 04:00 BRT, idempotente (congela os
+    // meses fechados ainda sem snapshot, no fuso de cada tenant).
+    var billingSnapshotKey = new JobKey("billing-snapshot");
+    quartz.AddJob<BillingSnapshotJob>(options => options.WithIdentity(billingSnapshotKey));
+    quartz.AddTrigger(trigger => trigger
+        .ForJob(billingSnapshotKey)
+        .WithIdentity("billing-snapshot-0400-brt")
+        .WithCronSchedule("0 0 4 * * ?", cron => cron.InTimeZone(saoPaulo)));
 
     // Demo pública permanente (F5): keep-alive 60 s + reseed semanal (domingo 04:30 BRT,
     // apaga e re-semeia o tenant demo, limpando o audit_log dos acessos públicos).
