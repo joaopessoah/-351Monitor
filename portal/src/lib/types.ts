@@ -652,6 +652,51 @@ export interface DsrDeleteResponse {
 }
 
 // =============================================================================
+// Contratos das chaves de instalação (enrollment keys - Seção 8.3), endpoints
+// /enrollment-keys (PolicyAdminPlus). O segredo completo (`key`) aparece UMA
+// única vez, na resposta do POST - depois disso só o key_prefix é exibido.
+// =============================================================================
+
+/** Item de `GET /enrollment-keys`. */
+export interface EnrollmentKeyItem {
+  id: string;
+  /** Prefixo visível da chave (ex.: "ek_ab12") - o segredo completo nunca volta. */
+  key_prefix: string;
+  label: string | null;
+  /** Limite de usos - null sem limite. */
+  max_uses: number | null;
+  use_count: number;
+  /** Expiração - null sem expiração. */
+  expires_at: string | null;
+  /** Instante da revogação - null enquanto a chave está válida. */
+  revoked_at: string | null;
+}
+
+export interface EnrollmentKeysResponse {
+  items: EnrollmentKeyItem[];
+}
+
+/** Body de `POST /enrollment-keys` (201) - todos os campos opcionais. */
+export interface EnrollmentKeyCreateRequest {
+  label?: string;
+  max_uses?: number;
+  expires_at?: string;
+}
+
+/**
+ * Resposta 201 de `POST /enrollment-keys` - `key` é o segredo COMPLETO,
+ * retornado uma única vez (o portal exibe com aviso de guardar agora).
+ */
+export interface EnrollmentKeyCreateResponse {
+  id: string;
+  key: string;
+  key_prefix: string;
+  label: string | null;
+  max_uses: number | null;
+  expires_at: string | null;
+}
+
+// =============================================================================
 // Contratos da F4.7: auditoria de acesso (GET /audit-logs) e a listagem de
 // usuários (GET /users) usada para o filtro por ator. PolicyAdminPlus
 // (Owner+Admin) — o Viewer NÃO acessa nenhum dos dois. JSON snake_case.
