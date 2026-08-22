@@ -108,6 +108,7 @@ Layout persistente: sidebar esquerda colapsável (Visão Geral, Linha do Tempo, 
 - **Top 10 aplicativos da semana** (barras horizontais, tempo ativo; cor pela classificação da categoria — ver §3.3; clique → `/apps` filtrado).
 
 **Filtros:** sem filtros complexos no MVP — apenas seletor de semana nos gráficos. Densidade > flexibilidade aqui.
+- **Seletor de equipe (F5):** um único seletor no cabeçalho recorta presença, resumo da semana, os gráficos e o card de fora do horário pela etiqueta do dispositivo, com o estado na URL (`?tag=`) para o recorte sobreviver ao compartilhamento do link. Sempre oferece "Todas as equipes" e escolhe UMA por vez: não existe comparação de equipes lado a lado nem ranking entre elas. A faixa de saúde da frota fica de fora de propósito, ela se declara da frota inteira. Sem etiqueta cadastrada, o seletor não é renderizado.
 
 ---
 
@@ -140,6 +141,8 @@ Layout persistente: sidebar esquerda colapsável (Visão Geral, Linha do Tempo, 
 - **Acessibilidade:** alternativa tabular ("Ver como tabela") com os mesmos intervalos — também é o fallback mobile e de screen reader.
 
 **API:** `GET /api/v1/timeline?deviceId=&date=2026-06-09&resolutionSec=60` e `GET /api/v1/timeline/team?date=&resolutionSec=90`. Servidor devolve intervalos já mesclados na resolução pedida, máx. ~3.000 intervalos por resposta (ver §5.1).
+
+- **Seletor de equipe (F5):** presente só no modo equipe (no modo device o recorte já é de uma máquina), compartilhando o `?tag=` da Visão Geral e dos relatórios. Etiqueta sem dispositivo mostra estado vazio explicando o recorte, em vez de lanes em branco.
 
 ---
 
@@ -174,6 +177,7 @@ Layout persistente: sidebar esquerda colapsável (Visão Geral, Linha do Tempo, 
 - Linha de totais por device no rodapé do grupo; dias sem dados em dia útil destacados ("Sem dados — máquina desligada o dia todo" vs "⚠ Agente sem comunicação").
 - **Banner fixo não-dispensável no topo da tela e rodapé de todo PDF/CSV:** "Relatório gerencial de uso de estação de trabalho. **Não constitui registro de ponto** nos termos da Portaria MTE 671/2021 e não substitui o controle de jornada exigido pelo art. 74 da CLT." (ver §7).
 - **Export:** botão "Exportar" → CSV (UTF-8 **com BOM**, separador `;` — Excel pt-BR) ou PDF (gerado no servidor). Exports são jobs assíncronos: `POST /api/v1/reports/jornada/export` → toast "Gerando…" → notificação + download em `/relatorios/exportacoes` (histórico de 30 dias, com quem gerou e com quais filtros — trilha de auditoria LGPD).
+- **Filtro de equipe (F5):** o mesmo seletor da Visão Geral aparece em Uso, Jornada e Fora do horário, com `?tag=` na URL. O recorte vale para a tela E para o CSV gerado pelo worker, então o arquivo exportado bate com o que estava na tela, denominador dos percentuais incluído. A etiqueta escolhida é registrada na trilha `view_report` e na `export_csv`. O disclaimer da Portaria 671 é emitido igual no recorte filtrado.
 
 ---
 
@@ -182,6 +186,9 @@ Layout persistente: sidebar esquerda colapsável (Visão Geral, Linha do Tempo, 
 **Organização (`/configuracoes/organizacao`)** — nome, fuso padrão (IANA, default `America/Sao_Paulo`), semana de trabalho (dias + horário, ex. seg–sex 08:00–18:00; usado como referência visual nos gráficos e na janela default da timeline), feriados: tabela de feriados nacionais BR pré-carregada por ano + CRUD de feriados do tenant (estaduais/municipais/pontes).
 
 **Dispositivos (`/configuracoes/dispositivos`)** — tabela: nome de exibição (editável; default = hostname), hostname, usuário Windows mais frequente, grupo (tag livre no MVP — ex. "Comercial", "Dev"; vira entidade Equipe pós-MVP), versão do agente, fuso do device, último heartbeat, status. Ações: Renomear · Atribuir grupo · **Arquivar** (para de contar no limite do plano e some dos dashboards; histórico preservado e acessível em relatórios com toggle "incluir arquivados") · Reexibir. Filtros: status, grupo, versão do agente. Linha vermelha para "Sem comunicação".
+- **Versões do agente na frota (F5):** card com a distribuição por versão (barra, contagem e percentual), marcação das máquinas abaixo da versão mínima do canal `stable` e, quando houver, bloco com as falhas de auto-update recentes traduzidas para texto de gestor (etapa que reprovou, versão alvo e há quanto tempo). Alimentado por `GET /devices/version-summary`.
+- **Link de transparência do dispositivo (F5):** no menu de ações da linha, exclusivo de Admin+, com botão de copiar. É o endereço da página pública daquela máquina, o mesmo que o tray abre. Não aparece para dispositivo revogado, porque o menu inteiro não é renderizado nesse estado.
+
 
 **Categorias de apps (`/configuracoes/categorias`)** — duas abas:
 - *Categorias:* lista com classificação por tenant. Defaults de fábrica (editáveis): Desenvolvimento, Escritório/Documentos, Comunicação, Reuniões, Navegação, Design, ERP/Sistemas internos, Sistema/Utilitários → **Relacionado ao trabalho**; Música/Streaming de áudio → **Neutro**; Jogos, Redes sociais, Vídeo/Streaming → **Não relacionado**; Não categorizado → **Neutro**. Classificações possíveis: `Relacionado ao trabalho` / `Neutro` / `Não relacionado ao trabalho` (vocabulário deliberado — ver §3.3).
@@ -197,6 +204,7 @@ Layout persistente: sidebar esquerda colapsável (Visão Geral, Linha do Tempo, 
 - **Limiar de ociosidade:** 3–15 min, default 5, com explicação do efeito.
 - **Coleta fora do horário de trabalho:** Coletar sempre (default) / Coletar apenas na janela de trabalho ± 2h. (decisão sensível — ver Perguntas Abertas).
 - Toda alteração aqui é registrada em log de auditoria (quem, quando, de→para) exibido no rodapé da tela.
+- **Aviso de ciência no primeiro logon (F5, Coleta):** o Proprietário escreve o corpo do aviso na linguagem da empresa, com contador de caracteres e **preview do texto final** na própria tela. O preview mostra, em bloco separado e marcado como fixo, o enquadramento que o agente concatena na máquina e que nenhuma configuração desliga, porque é ele que sustenta "isto registra CIÊNCIA, não é pedido de consentimento". A tela avisa que salvar reexibe o aviso em toda a frota. A validação do cliente cobre só o óbvio (limite e marcação); a palavra final é do servidor.
 
 ---
 

@@ -20,14 +20,24 @@ O `pg_dump` diário já roda, mas **no mesmo disco da VPS**. Sem os itens abaixo
    fora do Brasil: hospedagem 100% BR é compromisso público do produto e cláusula de DPA.
 2. Ative object lock (proteção contra ransomware) e retenção de **30 dias** (o teto do DPA é 35).
 3. Configure o `rclone` na VPS com um `rclone.conf` fora do repositório, acesso restrito.
-4. Preencha em `infra/.env`:
-   - `OFFSITE_RCLONE_REMOTE=m351offsite:m351-backups`
+4. **Configure a cifra antes de ligar a cópia.** O dump é a base inteira em um arquivo só,
+   com dados pessoais dentro, e não pode sair da VPS em claro. Caminho preferido: um remote
+   do tipo `crypt` do rclone, que cifra ainda na VPS. Guarde a senha do `crypt` no cofre,
+   sem ela não existe restore, e ela não pode viver só na máquina que está sendo copiada.
+5. Preencha em `infra/.env`:
+   - `OFFSITE_CRYPT_REMOTE=m351crypt:` (remote `crypt`, tem precedência no upload e no check)
+   - ou, só se a cifra ficar por conta do bucket, `OFFSITE_RCLONE_REMOTE=m351offsite:m351-backups`
+     **mais** `OFFSITE_SSE_CONFIRMADO=sim`, que você só declara depois de conferir a cifra em
+     repouso no console do provedor
    - `RCLONE_CONFIG=/etc/m351/rclone.conf`
    - `OFFSITE_RETENTION_DAYS=30`
-5. Crie um check no healthchecks.io (plano gratuito serve) e preencha `HEALTHCHECKS_BACKUP_URL`.
+   Sem nenhuma das duas posturas o `backup.sh` imprime um aviso grave e **continua mesmo
+   assim**, de propósito: dump íntegro sem cifra ainda vale mais que ficar sem cópia do dia.
+   Se esse aviso aparecer no log, trate como incidente, não como ruído.
+6. Crie um check no healthchecks.io (plano gratuito serve) e preencha `HEALTHCHECKS_BACKUP_URL`.
    O ping só acontece **depois** de o upload ser validado, então "ping ausente" significa
    backup ausente, e o healthchecks avisa.
-6. Adicione o provedor de object storage à **lista de subprocessadores do DPA**
+7. Adicione o provedor de object storage à **lista de subprocessadores do DPA**
    (`docs/runbooks/kit-lgpd.md`).
 
 ### 1.2 Teste de restore automatizado
@@ -160,6 +170,18 @@ migração destrutiva) e falha o job de CI se o `/healthz` não voltar em 60 s.
   em DPA e aplicação pela operadora. O kit LGPD já foi atualizado com essa divisão.
 - Ao mudar a janela de coleta, além do `update_privacy_config` fica registrada a ação
   `collection_window_choice`: é a evidência de que **a controladora** escolheu.
+- **O texto do aviso de ciência também é editável (fechamento da F5).** Em
+  **Configurações > Coleta**, o Proprietário escreve o corpo do aviso na linguagem da empresa
+  e vê o preview do texto final. O fecho é acrescentado pelo próprio agente, na máquina, e
+  nenhuma configuração o remove: é ele que deixa explícito que aquilo registra **ciência** e
+  não pede consentimento, que é o que sustenta a base legal. Por isso o servidor recusa texto
+  com HTML ou marcação, texto que não caiba na janela já contando o fecho, e texto que imite
+  pedido de consentimento ou aceite.
+- **Salvar o texto reexibe o aviso em toda a frota** (sobe `notice_version`). Combine a
+  mudança com a controladora antes de salvar, e não faça isso no meio de um piloto sem avisar.
+  Atenção: o `notice_acked_at` de quem já deu ciência **não** é zerado, então o painel segue
+  contando esses dispositivos como cientes até o agente reexibir o aviso e mandar o
+  `NOTICE_ACK` novo.
 
 ---
 
@@ -238,6 +260,38 @@ denominador saem da mesma fonte.
 
 ---
 
+## 9. O que passou a ter porta de entrada no fechamento da F5
+
+Diferente das seções acima, **nada aqui depende de variável de ambiente**: já está no ar assim
+que a `main` for publicada. O checklist é de conferência e de conversa com o cliente.
+
+- **Filtro de equipe nos relatórios e no dashboard.** O seletor aparece sozinho quando a
+  organização tem pelo menos uma etiqueta em `Dispositivos`. Se o cliente não vê o seletor, o
+  que falta é etiquetar dispositivo, não configuração. Confira que o CSV exportado com filtro
+  traz o mesmo recorte da tela. Ao apresentar, deixe claro que é recorte de visualização e que
+  o produto não compara equipes lado a lado nem monta ranking entre elas.
+- **Sugestão do dicionário de apps.** Na tela de Aplicativos, apps sem categoria ganham a
+  sugestão do dicionário brasileiro, aplicável em um clique ou em lote. O lote **sempre** passa
+  por uma prévia que mostra quantos apps e quais categorias antes de qualquer escrita. Se a
+  organização renomeou as categorias de fábrica, a sugestão simplesmente não aparece, porque a
+  tradução é pelo nome exato da categoria. Chame de "sugestão do dicionário" na frente do
+  cliente, nunca de "categorização automática".
+- **Vigilância de rollout do agente.** O card "Versões do agente na frota", em Dispositivos,
+  já funciona hoje para a distribuição de versões. As **falhas** de auto-update (`UPDATE_FAILED`)
+  só aparecem depois que as máquinas subirem para uma versão do agente que emita o evento:
+  rollout agente-primeiro, igual ao do `AGENT_ERROR`. Confira o card depois de cada publicação
+  de release, é a resposta a "o update chegou em todo mundo?".
+- **Link de transparência por dispositivo.** O token chega ao agente pela config na próxima
+  reentrega, e a partir daí o tray abre a página daquela máquina em vez da página da
+  organização. No portal, o endereço fica no menu de ações da linha, em Dispositivos, visível
+  só para Admin+. Dispositivo revogado não mostra o link. Use isso no onboarding: é o argumento
+  de transparência mais forte que existe, o funcionário vê a própria página.
+- **Cartão de preview do portal.** `portal/index.html` passou a emitir `og:image` e as metatags
+  de preview, então o link do painel colado no WhatsApp ou no LinkedIn mostra a marca. Confira
+  uma vez, depois do deploy, colando a URL do painel em uma conversa de teste.
+
+---
+
 ## Ordem recomendada
 
 1. Seção 1 inteira (backup, restore, monitoramento). Antes do primeiro agente em cliente.
@@ -247,3 +301,4 @@ denominador saem da mesma fonte.
 5. Seções 5 e 6 no dia do certificado e na assinatura do primeiro DPA.
 6. Seção 7 quando o piloto começar.
 7. Seção 8 no onboarding de cada cliente, junto com a decisão da janela de coleta.
+8. Seção 9 não tem ordem: é conferência pós-deploy e roteiro de conversa com o cliente.

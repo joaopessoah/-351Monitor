@@ -448,6 +448,8 @@ Papéis: `Owner ⊃ Admin ⊃ Manager ⊃ Viewer`. **No MVP, Manager = Viewer** 
 | `DELETE /devices/{id}` | Admin | revoga token, `status=revoked` (soft) |
 | `POST /devices/{id}/rotate-token` | Admin | enfileira `ROTATE_TOKEN` |
 | `GET /devices/{id}/timeline?date` | Viewer | intervalos do dia (de `activity_intervals`) |
+| `GET /devices/version-summary` | Viewer | distribuição de versões do agente na frota (F5): total ativo, versão vigente e mínima do canal `stable`, contagem por versão com marcação de desatualizada por SemVer, e as falhas de auto-update dos últimos 7 dias (`UPDATE_FAILED`, teto de 20 linhas) |
+| `GET /devices/{id}/transparency-link` | **Admin** | endereço da página pública tokenizada daquele dispositivo (`/public/t/{token}`). Endpoint próprio de propósito: o `DeviceResponse` é lido por Viewer e trafega na listagem inteira. Dispositivo sem token responde `404`, igual ao inexistente |
 | `GET /device-users?device_id&q` | Viewer | usuários Windows observados |
 | `PATCH /device-users/{id}` | Admin | `display_name` |
 | `GET /device-users/{id}/timeline?date` | Viewer | timeline consolidada do usuário (multi-device) |
@@ -463,6 +465,7 @@ Papéis: `Owner ⊃ Admin ⊃ Manager ⊃ Viewer`. **No MVP, Manager = Viewer** 
 | `GET/POST /enrollment-keys`, `DELETE /enrollment-keys/{id}` | Admin | segredo exibido **uma única vez** no POST |
 | `GET /users`, `POST /users/invitations`, `PATCH /users/{id}`, `DELETE /users/{id}` | Admin (papel `owner` só editável por Owner) | gestão do portal |
 | `GET/PATCH /organization` | Owner | timezone, business hours, toggles de coleta, retenção |
+| `GET/PATCH /organization/agent-config` | Admin / **Owner** | política de coleta operável pela controladora e, na F5, o `notice_text`: o corpo do aviso de ciência exibido no primeiro logon. Limite já descontando o enquadramento fixo do agente, recusa de HTML ou marcação e recusa de texto que imite pedido de consentimento (`notice_text_too_long`, `notice_text_markup`, `notice_text_consent`). Salvar sobe `config_version` **e** `notice_version`, que é o que reexibe o aviso na frota |
 | `GET /audit-logs?from&to&actor&action` | Owner | trilha LGPD |
 | `POST /webhooks` *(pós-MVP)* | Admin | eventos: `device.offline>24h`, `export.ready`, `device.enrolled` |
 
