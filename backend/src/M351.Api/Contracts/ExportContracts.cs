@@ -10,8 +10,12 @@ namespace M351.Api.Contracts;
 /// </summary>
 public sealed record ExportCreateRequest(string? Kind, ExportParamsRequest? Params);
 
-/// <summary>group_by só vale (e é obrigatório) para usage_csv.</summary>
-public sealed record ExportParamsRequest(string? From, string? To, string[]? DeviceIds, string? GroupBy);
+/// <summary>
+/// group_by só vale (e é obrigatório) para usage_csv. tag (F5) é o recorte de equipe por
+/// etiqueta, com a MESMA semântica dos endpoints de leitura: vazio equivale a sem filtro e
+/// etiqueta inexistente gera um CSV vazio, nunca um erro.
+/// </summary>
+public sealed record ExportParamsRequest(string? From, string? To, string[]? DeviceIds, string? GroupBy, string? Tag);
 
 /// <summary>202 do POST — o job entrou na fila do worker.</summary>
 public sealed record ExportCreateResponse(Guid Id, string Kind, string Status, DateTimeOffset CreatedAt);

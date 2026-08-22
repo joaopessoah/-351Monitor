@@ -211,7 +211,7 @@ public class TimelineController(
                 // permissão; o papel Manager-por-equipe segue adiado para a v1.1). Filtrar
                 // aqui também alivia o cap de ~3.000 intervalos: com o recorte, as lanes da
                 // equipe pedida raramente são truncadas.
-                Tag = string.IsNullOrWhiteSpace(tag) ? null : tag.Trim(),
+                Tag = NormalizeTeamTag(tag),
             }, cancellationToken: ct))).ToList();
         var deviceIds = devices.Select(d => d.Id).ToArray();
 

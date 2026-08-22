@@ -30,13 +30,14 @@ namespace M351.Infrastructure.Reports;
 ///  - arredondamento: floor da soma em segundos por dispositivo (mesma direção conservadora do
 ///    gate 11.3, jamais arredondar para cima um indicador de equilíbrio);
 ///  - devices: por default só não-archived; device_ids EXPLÍCITO inclui archived, mesmo
-///    recorte do relatório de jornada, reusando o DevicesCte de <see cref="JornadaReportSql"/>.
+///    recorte do relatório de jornada, reusando o DevicesCte de <see cref="JornadaReportSql"/>,
+///    e com ele o recorte por etiqueta de equipe (@Tag, F5).
 /// </summary>
 public static class ForaDoHorarioReportSql
 {
     /// <summary>
     /// Blocos ativos do recorte já fatiados nos três baldes. Parâmetros: os do
-    /// <see cref="JornadaReportSql.DevicesCte"/> (@TenantId, @FilterDevices, @DeviceIds) +
+    /// <see cref="JornadaReportSql.DevicesCte"/> (@TenantId, @FilterDevices, @DeviceIds, @Tag) +
     /// @From/@To (yyyy-MM-dd, dias locais do tenant), @Timezone (fuso IANA da org) e
     /// @BusinessDays (int[] ISO 1..7) / @BusinessStart / @BusinessEnd ("HH:mm" locais).
     /// </summary>

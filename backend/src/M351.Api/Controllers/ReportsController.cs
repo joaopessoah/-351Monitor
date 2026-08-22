@@ -20,6 +20,14 @@ namespace M351.Api.Controllers;
 /// fixa por seconds_active desc (o portal reordena client-side; "quem ficou mais tempo
 /// ocioso" sai do group_by=device pelos seconds_idle).
 ///
+/// F5 — ?tag: filtro de VISUALIZAÇÃO por etiqueta de equipe ("me mostra só o comercial"),
+/// com a MESMA semântica já usada nos dashboards e na timeline de equipe: não é escopo de
+/// permissão (qualquer papel continua vendo tudo, só escolhe o recorte exibido), vazio
+/// equivale a sem filtro, etiqueta inexistente devolve recorte VAZIO e nunca 404 (etiqueta
+/// não é recurso com dono) e o denominador dos percentuais é recortado junto, senão a soma
+/// das linhas passaria de 100%. Combina com device_ids por interseção. O recorte é sempre
+/// agregado: filtrar uma equipe nunca coloca equipes lado a lado em ranking.
+///
 /// Auditoria (DoD 11.3): view_report QUANDO group_by=device|device_user OU device_ids
 /// presente (dado pessoal identificável); app/category sem filtro são agregados de equipe.
 /// </summary>
@@ -45,6 +53,7 @@ public class ReportsController(
         [FromQuery(Name = "to")] string? to,
         [FromQuery(Name = "group_by")] string? groupBy,
         [FromQuery(Name = "device_ids")] string? deviceIdsRaw,
+        [FromQuery(Name = "tag")] string? tag,
         [FromQuery(Name = "page")] int page = 1,
         [FromQuery(Name = "page_size")] int pageSize = DefaultPageSize,
         CancellationToken ct = default)
@@ -85,6 +94,7 @@ public class ReportsController(
             To = to,
             FilterDevices = deviceIds is { Length: > 0 },
             DeviceIds = deviceIds ?? [],
+            Tag = NormalizeTeamTag(tag),
             Limit = pageSize,
             Offset = (page - 1) * pageSize,
         };
@@ -108,7 +118,14 @@ public class ReportsController(
                 Auth.CurrentUser.UserId(User),
                 targetType: deviceIds is { Length: 1 } ? "device" : "team",
                 targetId: deviceIds is { Length: 1 } ? deviceIds[0] : null,
-                detailJson: JsonSerializer.Serialize(new { from, to, group_by = groupBy, device_ids = deviceIds }));
+                detailJson: JsonSerializer.Serialize(new
+                {
+                    from,
+                    to,
+                    group_by = groupBy,
+                    device_ids = deviceIds,
+                    tag = NormalizeTeamTag(tag),
+                }));
         }
 
         return Ok(response);
@@ -135,6 +152,7 @@ public class ReportsController(
         [FromQuery(Name = "from")] string? from,
         [FromQuery(Name = "to")] string? to,
         [FromQuery(Name = "device_ids")] string? deviceIdsRaw,
+        [FromQuery(Name = "tag")] string? tag,
         [FromQuery(Name = "page")] int page = 1,
         [FromQuery(Name = "page_size")] int pageSize = DefaultPageSize,
         CancellationToken ct = default)
@@ -168,6 +186,7 @@ public class ReportsController(
             To = to,
             FilterDevices = deviceIds is { Length: > 0 },
             DeviceIds = deviceIds ?? [],
+            Tag = NormalizeTeamTag(tag),
             Limit = pageSize,
             Offset = (page - 1) * pageSize,
         };
@@ -199,7 +218,13 @@ public class ReportsController(
             Auth.CurrentUser.UserId(User),
             targetType: deviceIds is { Length: 1 } ? "device" : "team",
             targetId: deviceIds is { Length: 1 } ? deviceIds[0] : null,
-            detailJson: JsonSerializer.Serialize(new { from, to, device_ids = deviceIds }));
+            detailJson: JsonSerializer.Serialize(new
+            {
+                from,
+                to,
+                device_ids = deviceIds,
+                tag = NormalizeTeamTag(tag),
+            }));
 
         return Ok(response);
     }
@@ -235,6 +260,7 @@ public class ReportsController(
         [FromQuery(Name = "from")] string? from,
         [FromQuery(Name = "to")] string? to,
         [FromQuery(Name = "device_ids")] string? deviceIdsRaw,
+        [FromQuery(Name = "tag")] string? tag,
         [FromQuery(Name = "include_devices")] bool includeDevices = false,
         [FromQuery(Name = "page")] int page = 1,
         [FromQuery(Name = "page_size")] int pageSize = DefaultPageSize,
@@ -306,6 +332,7 @@ public class ReportsController(
             To = to,
             FilterDevices = deviceIds is { Length: > 0 },
             DeviceIds = deviceIds ?? [],
+            Tag = NormalizeTeamTag(tag),
             Timezone = org.Timezone,
             BusinessDays = schedule!.IsoDays,
             BusinessStart = schedule.Start.ToString("HH\\:mm"),
@@ -353,6 +380,7 @@ public class ReportsController(
                     to,
                     report = "fora_do_horario",
                     device_ids = deviceIds,
+                    tag = NormalizeTeamTag(tag),
                 }));
         }
 
@@ -401,6 +429,7 @@ public class ReportsController(
               AND d.status <> 'archived'
               AND u.summary_date BETWEEN @From::date AND @To::date
               AND (@FilterDevices = false OR u.device_id = ANY(@DeviceIds))
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
             GROUP BY u.app_id, a.process_name, a.display_name, tac.custom_display_name,
                      c.id, c.name, c.classification, c.color
             ORDER BY seconds_active DESC, a.process_name
@@ -418,6 +447,7 @@ public class ReportsController(
               AND d.status <> 'archived'
               AND u.summary_date BETWEEN @From::date AND @To::date
               AND (@FilterDevices = false OR u.device_id = ANY(@DeviceIds))
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
             """,
             args, cancellationToken: ct));
 
@@ -449,6 +479,7 @@ public class ReportsController(
               AND d.status <> 'archived'
               AND u.summary_date BETWEEN @From::date AND @To::date
               AND (@FilterDevices = false OR u.device_id = ANY(@DeviceIds))
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
             GROUP BY c.id, c.name, c.classification, c.color
             """;
 
@@ -489,6 +520,7 @@ public class ReportsController(
               AND d.status <> 'archived'
               AND s.summary_date BETWEEN @From::date AND @To::date
               AND (@FilterDevices = false OR s.device_id = ANY(@DeviceIds))
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
             GROUP BY s.device_id, COALESCE(d.display_name, d.hostname)
             """;
 
@@ -532,6 +564,7 @@ public class ReportsController(
               AND d.status <> 'archived'
               AND s.summary_date BETWEEN @From::date AND @To::date
               AND (@FilterDevices = false OR s.device_id = ANY(@DeviceIds))
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
             GROUP BY s.device_user_id, s.device_id, COALESCE(d.display_name, d.hostname),
                      du.windows_username, du.display_name
             """;
