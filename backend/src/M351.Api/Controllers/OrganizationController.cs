@@ -41,7 +41,8 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
 
         return Ok(new OrganizationResponse(
             org.Name, org.Slug, org.Timezone, ParseBusinessHours(org.BusinessHours),
-            org.FinalidadeDeclarada, org.ContatoDpo, org.DataVigencia));
+            org.FinalidadeDeclarada, org.ContatoDpo, org.DataVigencia,
+            org.GoalWeeklyActiveHours, org.GoalWorkRelatedPct));
     }
 
     [HttpPatch]
@@ -90,10 +91,33 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
             businessHours = businessHoursEl.GetRawText();
         }
 
+        // ----- metas semanais AGREGADAS da org (F5): ausente = não muda; null = remove -----
+        // Nunca por pessoa e nunca comparando pessoas: o default sugerido pelo portal é a
+        // média das últimas semanas da PRÓPRIA org (sem benchmark entre clientes).
+        var goalHours = ParseOptionalInt(body, "goal_weekly_active_hours", 1, 10_000,
+            out var hasGoalHours, out var goalHoursError);
+        if (goalHoursError is not null) return goalHoursError;
+
+        var goalPct = ParseOptionalInt(body, "goal_work_related_pct", 1, 100,
+            out var hasGoalPct, out var goalPctError);
+        if (goalPctError is not null) return goalPctError;
+
         var org = await db.Organizations.FirstAsync(ct);
 
         // aplica somente o que mudou e registra o de→para por campo (detail do audit)
         var changes = new Dictionary<string, object?>();
+        if (hasGoalHours && org.GoalWeeklyActiveHours != goalHours)
+        {
+            changes["goal_weekly_active_hours"] = new { from = org.GoalWeeklyActiveHours, to = goalHours };
+            org.GoalWeeklyActiveHours = goalHours;
+        }
+
+        if (hasGoalPct && org.GoalWorkRelatedPct != goalPct)
+        {
+            changes["goal_work_related_pct"] = new { from = org.GoalWorkRelatedPct, to = goalPct };
+            org.GoalWorkRelatedPct = goalPct;
+        }
+
         if (hasFinalidade && org.FinalidadeDeclarada != finalidade)
         {
             changes["finalidade_declarada"] = new { from = org.FinalidadeDeclarada, to = finalidade };
@@ -133,7 +157,8 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
 
         return Ok(new OrganizationResponse(
             org.Name, org.Slug, org.Timezone, ParseBusinessHours(org.BusinessHours),
-            org.FinalidadeDeclarada, org.ContatoDpo, org.DataVigencia));
+            org.FinalidadeDeclarada, org.ContatoDpo, org.DataVigencia,
+            org.GoalWeeklyActiveHours, org.GoalWorkRelatedPct));
     }
 
     // =====================================================================================
@@ -518,6 +543,30 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
         {
             error = ProblemResponse(StatusCodes.Status400BadRequest,
                 $"{field} excede o limite de {MaxTextLength} caracteres.");
+            return null;
+        }
+
+        return value;
+    }
+
+    /// <summary>
+    /// Inteiro opcional do corpo: ausente (não muda); null (limpa); número dentro da faixa.
+    /// Mesmo contrato do ParseOptionalText, para os campos numéricos das metas.
+    /// </summary>
+    private int? ParseOptionalInt(
+        JsonElement body, string field, int min, int max, out bool hasField, out ObjectResult? error)
+    {
+        error = null;
+        hasField = body.TryGetProperty(field, out var el);
+        if (!hasField || el.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        if (el.ValueKind != JsonValueKind.Number || !el.TryGetInt32(out var value) || value < min || value > max)
+        {
+            error = ProblemResponse(StatusCodes.Status400BadRequest,
+                $"{field} deve ser um inteiro entre {min} e {max}, ou null para remover a meta.");
             return null;
         }
 

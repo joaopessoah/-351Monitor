@@ -18,7 +18,15 @@ public record MeOrganizationResponse(
     JsonElement? BusinessHours,
     string Plan,
     int? DeviceLimit,
-    DateTimeOffset? OnboardingChecklistDismissedAt);
+    DateTimeOffset? OnboardingChecklistDismissedAt,
+    int? GoalWeeklyActiveHours,
+    int? GoalWorkRelatedPct);
+
+/// <summary>
+/// GET/PATCH /me/email-prefs (F5): preferências de e-mail do próprio usuário. Sem linha no
+/// banco valem os defaults (digest e alertas de frota ligados, jornada semanal desligada).
+/// </summary>
+public record EmailPrefsResponse(bool WeeklyDigest, bool FleetAlerts, bool JornadaWeekly);
 
 /// <summary>Resposta de GET /api/v1/me (Seção 7.4: perfil + papel + org).</summary>
 public record MeResponse(MeUserResponse User, MeOrganizationResponse Organization);
