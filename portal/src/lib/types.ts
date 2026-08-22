@@ -70,6 +70,16 @@ export interface MeResponse {
     timezone: string;
     /** Horário de trabalho configurado (jsonb cru) - null quando a org não definiu. */
     business_hours: BusinessHours | null;
+    /** Plano comercial da organização (ex.: "trial"). */
+    plan: string;
+    /** Limite de dispositivos do plano - null sem limite definido. */
+    device_limit: number | null;
+    /**
+     * Instante do dismiss do checklist de primeiros passos (POST
+     * /organization/onboarding-checklist/dismiss) - null enquanto o card da
+     * Visão Geral está visível; o DELETE na mesma rota reabre (volta a null).
+     */
+    onboarding_checklist_dismissed_at: string | null;
   };
 }
 
@@ -862,7 +872,11 @@ export interface OrganizationPatchRequest {
   finalidade_declarada?: string | null;
   contato_dpo?: string | null;
   data_vigencia?: string | null;
-  /** Horário de trabalho da org ({days, start, end}) ou null para limpar. */
+  /**
+   * Horário de trabalho ({days,start,end}, dias ISO 1-7) ou null para limpar;
+   * campo ausente não muda. Alimenta a linha de referência dos gráficos e do
+   * relatório de jornada (Seção 8.5).
+   */
   business_hours?: BusinessHours | null;
 }
 
