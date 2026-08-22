@@ -5,7 +5,7 @@
 // OWNER). Responde "quantos dispositivos contam neste mês e por quê", com
 // evidência por dispositivo, para o Proprietário anexar à conversa de fatura.
 //
-// SEM PREÇO: a tela mostra contagem e evidências e NUNCA valor em reais —
+// SEM PREÇO: a tela mostra contagem e evidências e NUNCA valor em reais,
 // precificação é decisão comercial que vive fora do sistema.
 //
 // Gate de papel: apenas Owner (espelho do PolicyOwnerOnly do backend). Os
@@ -14,7 +14,7 @@
 //
 // Impressão: reusa o par no-print/print-plain de src/index.css (mesmo padrão da
 // página pública de transparência). O extrato impresso identifica organização,
-// mês e data de emissão em texto normal — nada de conteúdo só-impressão.
+// mês e data de emissão em texto normal, nada de conteúdo só-impressão.
 // =============================================================================
 
 import { useMemo, useState } from "react";

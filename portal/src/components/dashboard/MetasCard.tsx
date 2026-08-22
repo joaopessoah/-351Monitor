@@ -5,7 +5,7 @@
 // progresso contra essas metas aparece na Visão Geral.
 //
 // VOCABULÁRIO: metas são sempre da EQUIPE, no agregado. O produto não tem meta
-// individual e não faz ranking de pessoas — e o estado de máquina jamais é
+// individual e não faz ranking de pessoas, e o estado de máquina jamais é
 // chamado de produtivo/improdutivo (a classificação vive na camada de
 // categorias do cliente: relacionado ao trabalho, neutro, não relacionado).
 //

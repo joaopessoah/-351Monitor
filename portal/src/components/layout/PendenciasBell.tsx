@@ -56,7 +56,7 @@ interface Pendencia {
 /**
  * Milissegundos do timestamp embutido num UUIDv7 (48 bits big-endian iniciais),
  * ou null quando o id não é v7. Os ids de usuário do backend são UUIDv7 e o
- * GET /users não devolve data de convite — é a mesma leitura que o backend faz
+ * GET /users não devolve data de convite, é a mesma leitura que o backend faz
  * para derivar o enrolled_at do relatório de cobrança. Id sem timestamp
  * legível NÃO conta como convite parado: melhor omitir do que alarmar errado.
  */
@@ -97,7 +97,7 @@ export function PendenciasBell() {
   const userId = meQuery.data?.user.id;
   const admin = isAdmin(meQuery.data);
 
-  // Apps sem categoria — mesma key/URL do badge da tela Aplicativos.
+  // Apps sem categoria, mesma key/URL do badge da tela Aplicativos.
   const catalogQuery = useQuery({
     queryKey: ["app-catalog", { uncategorized: true, q: "" }],
     queryFn: () => api<AppCatalogResponse>("/app-catalog?uncategorized=true"),
@@ -106,7 +106,7 @@ export function PendenciasBell() {
     refetchIntervalInBackground: false,
   });
 
-  // Dispositivos com alerta — mesma key da Visão Geral e de Dispositivos.
+  // Dispositivos com alerta, mesma key da Visão Geral e de Dispositivos.
   const healthQuery = useQuery({
     queryKey: ["devices", "health-summary"],
     queryFn: () => api<DeviceHealthSummaryResponse>("/devices/health-summary"),
@@ -114,7 +114,7 @@ export function PendenciasBell() {
     refetchIntervalInBackground: false,
   });
 
-  // Exportações prontas — mesma key da tela Exportações.
+  // Exportações prontas, mesma key da tela Exportações.
   const exportsQuery = useQuery({
     queryKey: ["exports"],
     queryFn: () => api<ExportsResponse>("/exports"),
@@ -122,7 +122,7 @@ export function PendenciasBell() {
     refetchIntervalInBackground: false,
   });
 
-  // Convites parados — mesma key do filtro por ator da Auditoria (Admin+).
+  // Convites parados, mesma key do filtro por ator da Auditoria (Admin+).
   const usersQuery = useQuery({
     queryKey: ["users"],
     queryFn: () => api<UsersResponse>("/users"),
@@ -208,7 +208,7 @@ export function PendenciasBell() {
   // mudar (contagem nova ou pendência nova traz o badge de volta).
   const signature = pendencias.map((p) => `${p.key}:${p.count}`).join("|");
   // Relê o localStorage quando o /me resolve (userId chega depois do primeiro
-  // render) e depois de cada marcação — daí o contador de releitura.
+  // render) e depois de cada marcação, daí o contador de releitura.
   const [releituras, setReleituras] = useState(0);
   const lidas = useMemo(() => readLidas(userId), [userId, releituras]);
   const badgeVisible = total > 0 && lidas !== signature;
