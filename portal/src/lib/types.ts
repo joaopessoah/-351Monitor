@@ -295,6 +295,20 @@ export interface PagedResponse<T> {
 }
 
 /**
+ * Resposta de `GET /devices/{id}/transparency-link` (Admin+): a URL da página
+ * pública DAQUELE dispositivo, a mesma que o tray do agente abre na máquina do
+ * funcionário.
+ *
+ * Endpoint separado, e não um campo de DeviceItem, de propósito: a URL carrega um
+ * token, que é um segredo de baixo valor mas é um segredo. Viewer não a recebe, e
+ * ela não trafega na listagem inteira de dispositivos.
+ */
+export interface DeviceTransparencyLinkResponse {
+  device_id: string;
+  url: string;
+}
+
+/**
  * Resposta de `GET /devices/health-summary` (Viewer+): contadores de saúde da
  * FROTA INTEIRA do tenant, computados no backend sobre todos os devices não
  * arquivados. Nada a ver com a página corrente de `GET /devices` — é justamente

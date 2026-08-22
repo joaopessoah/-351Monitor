@@ -8,11 +8,14 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Check,
   Clock,
+  Copy,
   DownloadCloud,
   Ellipsis,
   MonitorSmartphone,
   Pencil,
+  Link2,
   Search,
   ShieldAlert,
   Tags,
@@ -34,6 +37,7 @@ import type {
   DeviceHealthSummaryResponse,
   DeviceItem,
   DevicePatchRequest,
+  DeviceTransparencyLinkResponse,
   DeviceVersionSummaryResponse,
   MeResponse,
   PagedResponse,
@@ -1116,6 +1120,9 @@ export function DispositivosPage() {
       {action !== null && action.kind === "tags" && (
         <DeviceTagsDialog device={action.device} onClose={() => setAction(null)} />
       )}
+      {action !== null && action.kind === "transparency" && (
+        <TransparencyLinkDialog device={action.device} onClose={() => setAction(null)} />
+      )}
       {action !== null && (action.kind === "archive" || action.kind === "reactivate") && (
         <DeviceStatusDialog
           device={action.device}
@@ -1131,7 +1138,7 @@ export function DispositivosPage() {
 // Ações por dispositivo (F3.7) - PATCH /devices/{id}, admin/owner
 // -----------------------------------------------------------------------------
 
-type DeviceActionKind = "rename" | "tags" | "archive" | "reactivate";
+type DeviceActionKind = "rename" | "tags" | "archive" | "reactivate" | "transparency";
 
 interface DeviceAction {
   kind: DeviceActionKind;
@@ -1200,6 +1207,10 @@ function DeviceRowActions({
           <Tags className="h-3.5 w-3.5" aria-hidden="true" />
           Editar etiquetas
         </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onAction({ kind: "transparency", device })}>
+          <Link2 className="h-3.5 w-3.5" aria-hidden="true" />
+          Link de transparência
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         {device.status === "archived" ? (
           <DropdownMenuItem onSelect={() => onAction({ kind: "reactivate", device })}>
@@ -1214,6 +1225,111 @@ function DeviceRowActions({
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** Botão de copiar (mesmo idioma do MfaFlow e da ChavesPage) - troca o ícone por 2s ao copiar. */
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard indisponível (ex.: contexto não seguro) - o campo permite seleção manual.
+    }
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="icon"
+      className="shrink-0"
+      onClick={() => void copy()}
+      aria-label={label}
+      title={copied ? "Copiado!" : label}
+    >
+      {copied ? (
+        <Check className="h-4 w-4 text-viz-produtivo" aria-hidden="true" />
+      ) : (
+        <Copy className="h-4 w-4" aria-hidden="true" />
+      )}
+    </Button>
+  );
+}
+
+/**
+ * Link de transparência DAQUELE dispositivo (GET /devices/{id}/transparency-link,
+ * admin/owner): a mesma página que o tray do agente abre na máquina do
+ * funcionário. É a única porta do portal para esse endereço - o token vive em
+ * devices.transparency_token e não aparece em nenhuma listagem.
+ *
+ * O endereço é buscado sob demanda, ao abrir este diálogo, e não junto da
+ * listagem: ele carrega um token, que é um segredo de baixo valor mas é um
+ * segredo, e não tem por que trafegar para as 50 linhas da página nem para
+ * quem só tem papel de leitura (o backend responde 403 a Viewer).
+ */
+function TransparencyLinkDialog({ device, onClose }: { device: DeviceItem; onClose: () => void }) {
+  const query = useQuery({
+    queryKey: ["devices", device.id, "transparency-link"],
+    queryFn: () =>
+      api<DeviceTransparencyLinkResponse>(
+        `/devices/${encodeURIComponent(device.id)}/transparency-link`,
+      ),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Link de transparência</DialogTitle>
+          <DialogDescription>
+            Página pública de "{device.display_name ?? device.hostname}", a mesma que o agente abre
+            no menu "Política de monitoramento" desta máquina.
+          </DialogDescription>
+        </DialogHeader>
+
+        <p className="text-sm text-muted-foreground">
+          Quem abre esse endereço vê a política de coleta vigente da organização, o que é e o que
+          nunca é coletado, os prazos de retenção, o contato do DPO e o estado desta instalação
+          (ciência registrada, último contato). Nenhum dado de uso da pessoa aparece ali.
+        </p>
+
+        {query.isPending ? (
+          <Skeleton className="h-9 w-full" />
+        ) : query.isError ? (
+          <p role="alert" className="text-sm text-destructive">
+            {genericErrorMessage(query.error)}
+          </p>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Input
+              readOnly
+              value={query.data.url}
+              aria-label="Endereço da página de transparência deste dispositivo"
+              className="font-mono text-xs"
+              onFocus={(e) => e.currentTarget.select()}
+            />
+            <CopyButton value={query.data.url} label="Copiar link de transparência" />
+          </div>
+        )}
+
+        <p className="text-xs text-muted-foreground">
+          O endereço é pessoal do dispositivo e dispensa login: envie-o a quem usa a máquina, não o
+          publique.
+        </p>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Fechar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
