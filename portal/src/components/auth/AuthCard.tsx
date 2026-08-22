@@ -7,6 +7,46 @@ interface AuthCardProps {
   description?: string;
   children: ReactNode;
   footer?: ReactNode;
+  /** Conteúdo extra do painel de marca (desktop) - ex.: bullets de confiança do login. */
+  brandPanelExtra?: ReactNode;
+}
+
+const institutionalLinkClass =
+  "underline-offset-4 transition-colors hover:text-foreground hover:underline";
+
+/** Rodapé institucional presente em TODAS as telas que usam o AuthCard. */
+function InstitutionalFooter() {
+  return (
+    <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-xs text-muted-foreground">
+      <a
+        href="https://mais351monitor.com.br/privacidade.html"
+        target="_blank"
+        rel="noreferrer"
+        className={institutionalLinkClass}
+      >
+        Política de Privacidade
+      </a>
+      <a
+        href="https://mais351monitor.com.br/termos.html"
+        target="_blank"
+        rel="noreferrer"
+        className={institutionalLinkClass}
+      >
+        Termos de Uso
+      </a>
+      <a href="mailto:bruna@mais351monitor.com.br" className={institutionalLinkClass}>
+        Suporte
+      </a>
+      <a
+        href="https://mais351monitor.com.br"
+        target="_blank"
+        rel="noreferrer"
+        className={institutionalLinkClass}
+      >
+        mais351monitor.com.br
+      </a>
+    </p>
+  );
 }
 
 /**
@@ -14,7 +54,7 @@ interface AuthCardProps {
  * no desktop, painel de marca à esquerda (pulso + frase do site) e formulário à
  * direita; no mobile, logo acima do cartão. Só composição - nenhuma lógica.
  */
-export function AuthCard({ title, description, children, footer }: AuthCardProps) {
+export function AuthCard({ title, description, children, footer, brandPanelExtra }: AuthCardProps) {
   return (
     <div className="flex min-h-screen bg-background">
       {/* Painel de marca (desktop): o pulso do logo vivo + o lema do site. */}
@@ -50,6 +90,7 @@ export function AuthCard({ title, description, children, footer }: AuthCardProps
           <p className="mt-3 text-sm text-muted-foreground">
             Monitoramento transparente de produtividade, com LGPD por design.
           </p>
+          {brandPanelExtra}
         </div>
       </div>
 
@@ -72,6 +113,10 @@ export function AuthCard({ title, description, children, footer }: AuthCardProps
           {footer !== undefined && (
             <div className="text-center text-sm text-muted-foreground">{footer}</div>
           )}
+          {/* Kit de confiança: rodapé institucional fora do card, discreto.
+              Sem CNPJ: o número não consta em site/privacidade.html nem em
+              site/termos.html - nada é inventado aqui. */}
+          <InstitutionalFooter />
         </div>
       </div>
     </div>
