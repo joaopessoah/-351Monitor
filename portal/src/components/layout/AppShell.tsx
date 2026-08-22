@@ -33,6 +33,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { PendenciasBell } from "./PendenciasBell";
 import { ShellSkeleton } from "./ShellSkeleton";
 import { FormError } from "@/components/FormError";
 import { genericErrorMessage } from "@/lib/messages";
@@ -215,31 +216,42 @@ export function AppShell() {
               {timezoneBadge(me.organization.timezone)}
             </span>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="gap-2">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                  {initials(me.user.display_name)}
-                </span>
-                <span className="hidden max-w-[12rem] truncate text-sm sm:inline">{me.user.display_name}</span>
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64">
-              <DropdownMenuLabel>
-                <div className="space-y-0.5">
-                  <p className="truncate text-sm font-medium">{me.user.display_name}</p>
-                  <p className="truncate text-xs font-normal text-muted-foreground">{me.user.email}</p>
-                  <p className="text-xs font-normal text-muted-foreground">{roleLabels[me.user.role]}</p>
-                </div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => void handleSignOut()}>
-                <LogOut className="h-4 w-4" />
-                Sair
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex items-center gap-1">
+            {/* Sino de pendências: consolida o que espera ação, das mesmas
+                queries que as telas de origem já fazem. */}
+            <PendenciasBell />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                    {initials(me.user.display_name)}
+                  </span>
+                  <span className="hidden max-w-[12rem] truncate text-sm sm:inline">
+                    {me.user.display_name}
+                  </span>
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuLabel>
+                  <div className="space-y-0.5">
+                    <p className="truncate text-sm font-medium">{me.user.display_name}</p>
+                    <p className="truncate text-xs font-normal text-muted-foreground">
+                      {me.user.email}
+                    </p>
+                    <p className="text-xs font-normal text-muted-foreground">
+                      {roleLabels[me.user.role]}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => void handleSignOut()}>
+                  <LogOut className="h-4 w-4" />
+                  Sair
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </header>
         <main className="flex-1 p-6">
           <Outlet />

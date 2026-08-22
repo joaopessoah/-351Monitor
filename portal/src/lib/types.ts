@@ -98,6 +98,26 @@ export interface MeResponse {
   };
 }
 
+/**
+ * Resposta de `GET /me/email-prefs` e body de `PATCH /me/email-prefs`
+ * (PATCH parcial: campos ausentes não mudam). São e-mails da PESSOA logada,
+ * não da organização.
+ *
+ * weekly_digest: resumo semanal da equipe.
+ * fleet_alerts: avisos de dispositivos com problema (exclusivo do plano Pro).
+ * jornada_weekly: relatório semanal de jornada.
+ *
+ * Cuidado de vocabulário: "alertas" no portal são estes e-mails; as pendências
+ * do sino do topo NUNCA se chamam alertas.
+ */
+export interface EmailPrefs {
+  weekly_digest: boolean;
+  fleet_alerts: boolean;
+  jornada_weekly: boolean;
+}
+
+export type EmailPrefsPatchRequest = Partial<EmailPrefs>;
+
 /** Resposta de `GET /auth/invite/{token}` (público; 404 inexistente, 410 expirado/usado). */
 export interface InvitationInfo {
   email: string;
@@ -764,7 +784,8 @@ export type UserStatus = "invited" | "active" | "disabled";
 /**
  * Item de `GET /users` (PolicyAdminPlus). Shape completo do backend
  * (UserContracts.cs): a tela de Usuários consome tudo; a auditoria usa só
- * id/nome/e-mail para o filtro por ator.
+ * id/nome/e-mail para o filtro por ator e o sino de pendências lê o status
+ * para achar convite parado.
  */
 export interface UserListItem {
   id: string;
@@ -906,6 +927,10 @@ export interface OrganizationResponse {
   contato_dpo: string | null;
   /** Data de vigência da política (yyyy-MM-dd) - null quando não definida. */
   data_vigencia: string | null;
+  /** Meta semanal de horas ativas da EQUIPE - null sem meta (ver MeResponse). */
+  goal_weekly_active_hours: number | null;
+  /** Meta de % do tempo em apps relacionados ao trabalho - null sem meta. */
+  goal_work_related_pct: number | null;
 }
 
 /**
@@ -924,6 +949,10 @@ export interface OrganizationPatchRequest {
    * relatório de jornada (Seção 8.5).
    */
   business_hours?: BusinessHours | null;
+  /** Meta semanal de horas ativas da EQUIPE: 1 a 10000; null remove a meta. */
+  goal_weekly_active_hours?: number | null;
+  /** Meta de % do tempo em apps relacionados ao trabalho: 1 a 100; null remove. */
+  goal_work_related_pct?: number | null;
 }
 
 /** Janela de coleta do agente (jsonb canônico da Seção 5.5). */
