@@ -29,13 +29,19 @@ public class DashboardController(
     public const int TopAppsMaxLimit = 50;
 
     /// <summary>
-    /// GET /api/v1/dashboard/presence (Seção 7.4): tabela "Equipe agora" a partir de
+    /// GET /api/v1/dashboard/presence[?tag] (Seção 7.4): tabela "Equipe agora" a partir de
     /// device_current_state. Estado exibido (presence_state) segue a regra N6: `state` se o
     /// último contato ≤ 180 s; senão "Sem comunicação" (no_data) — a menos que o último evento
     /// tenha sido desligamento limpo (off_clean), que continua "Desligada".
+    ///
+    /// F5 — ?tag: filtro de VISUALIZAÇÃO por etiqueta de device ("me mostra só o comercial",
+    /// a primeira pergunta do gestor com mais de 30 máquinas). NÃO é escopo de permissão, e
+    /// portanto não conflita com o papel Manager-por-equipe adiado para a v1.1: qualquer papel
+    /// continua vendo tudo, só escolhe o recorte exibido. Etiqueta inexistente devolve lista
+    /// vazia (tag não é recurso com dono, logo não há 404 a dar).
     /// </summary>
     [HttpGet("presence")]
-    public async Task<IActionResult> Presence(CancellationToken ct)
+    public async Task<IActionResult> Presence([FromQuery(Name = "tag")] string? tag, CancellationToken ct)
     {
         var tenantId = Auth.CurrentUser.TenantId(User);
         var now = clock.GetUtcNow();
@@ -51,9 +57,10 @@ public class DashboardController(
             FROM device_current_state s
             JOIN devices d ON d.id = s.device_id AND d.tenant_id = s.tenant_id
             WHERE s.tenant_id = @TenantId AND d.status <> 'archived'
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
             ORDER BY COALESCE(d.display_name, d.hostname)
             """,
-            new { TenantId = tenantId }, cancellationToken: ct));
+            new { TenantId = tenantId, Tag = NormalizeTag(tag) }, cancellationToken: ct));
 
         var items = rows.Select(r => new PresenceItemResponse(
                 r.DeviceId, r.DeviceName, r.Hostname, r.State,
@@ -88,6 +95,7 @@ public class DashboardController(
         [FromQuery(Name = "to")] string? to,
         [FromQuery(Name = "device_id")] Guid? deviceId,
         [FromQuery(Name = "device_user_id")] Guid? deviceUserId,
+        [FromQuery(Name = "tag")] string? tag,
         CancellationToken ct)
     {
         var invalid = ValidateRange(from, to);
@@ -137,10 +145,15 @@ public class DashboardController(
               AND s.summary_date BETWEEN @From::date AND @To::date
               AND (@DeviceId::uuid IS NULL OR s.device_id = @DeviceId)
               AND (@DeviceUserId::uuid IS NULL OR s.device_user_id = @DeviceUserId)
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
             GROUP BY GROUPING SETS ((s.summary_date), ())
             ORDER BY s.summary_date NULLS LAST
             """,
-            new { TenantId = tenantId, From = from, To = to, DeviceId = deviceId, DeviceUserId = deviceUserId },
+            new
+            {
+                TenantId = tenantId, From = from, To = to,
+                DeviceId = deviceId, DeviceUserId = deviceUserId, Tag = NormalizeTag(tag),
+            },
             cancellationToken: ct))).ToList();
 
         // a linha () do GROUPING SETS (date NULL) existe SEMPRE, mesmo sem dia algum
@@ -184,6 +197,7 @@ public class DashboardController(
         [FromQuery(Name = "from")] string? from,
         [FromQuery(Name = "to")] string? to,
         [FromQuery(Name = "limit")] int? limit,
+        [FromQuery(Name = "tag")] string? tag,
         CancellationToken ct)
     {
         var invalid = ValidateRange(from, to);
@@ -210,12 +224,13 @@ public class DashboardController(
             WHERE u.tenant_id = @TenantId
               AND d.status <> 'archived'
               AND u.summary_date BETWEEN @From::date AND @To::date
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
             GROUP BY u.app_id, a.process_name, a.display_name, tac.custom_display_name,
                      c.id, c.name, c.classification, c.color
             ORDER BY seconds_active DESC, a.process_name
             LIMIT @Limit
             """,
-            new { TenantId = tenantId, From = from, To = to, Limit = effectiveLimit },
+            new { TenantId = tenantId, From = from, To = to, Limit = effectiveLimit, Tag = NormalizeTag(tag) },
             cancellationToken: ct))).ToList();
 
         var totalSecondsActive = await connection.ExecuteScalarAsync<long>(new CommandDefinition(
@@ -226,8 +241,9 @@ public class DashboardController(
             WHERE u.tenant_id = @TenantId
               AND d.status <> 'archived'
               AND u.summary_date BETWEEN @From::date AND @To::date
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
             """,
-            new { TenantId = tenantId, From = from, To = to }, cancellationToken: ct));
+            new { TenantId = tenantId, From = from, To = to, Tag = NormalizeTag(tag) }, cancellationToken: ct));
 
         var items = rows.Select(r => new DashboardTopAppResponse(
                 r.AppId, r.ProcessName, r.DisplayName, r.CustomDisplayName,
@@ -241,6 +257,15 @@ public class DashboardController(
     }
 
     // ------------------------------------------------------------ helpers
+
+    /// <summary>
+    /// Etiqueta de equipe do filtro de visualização (F5): vazio/espaços equivalem a "sem
+    /// filtro" (null), para o portal poder mandar o parâmetro sempre. As tags são gravadas
+    /// já normalizadas pelo PATCH /devices, então aqui basta o trim.
+    /// </summary>
+    private static string? NormalizeTag(string? tag) =>
+        string.IsNullOrWhiteSpace(tag) ? null : tag.Trim();
+
     /// <summary>
     /// from/to no fuso do tenant, inclusivos, formato yyyy-MM-dd; from ≤ to e janela
     /// de no máximo 92 dias — fora disso, 400 ProblemDetails.
