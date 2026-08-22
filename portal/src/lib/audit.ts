@@ -4,8 +4,8 @@
 // AuditActions do backend (AuditLogEntry.cs): login, invite_accept,
 // update_user_role, revoke_key, revoke_device, view_report, update_category,
 // export_csv, update_device, publish_agent_release, rollback_agent_release,
-// dsr_export, dsr_delete, view_timeline (F4.7), password_reset, mfa_reset e
-// mfa_recovery_codes (F5). Ações desconhecidas caem num
+// dsr_export, dsr_delete, view_timeline (F4.7), password_reset, mfa_reset,
+// mfa_recovery_codes e update_device_user (F5). Ações desconhecidas caem num
 // rótulo neutro derivado do próprio verbo — a tela nunca quebra com um verbo novo.
 // Vocabulário NEUTRO, sem travessão.
 // =============================================================================
@@ -31,6 +31,7 @@ export const auditActionLabels: Record<string, string> = {
   mfa_recovery_codes: "Gerou códigos de recuperação de MFA",
   update_privacy_config: "Alterou configuração de privacidade",
   collection_window_choice: "Escolheu a janela de coleta",
+  update_device_user: "Alterou nome de pessoa",
 };
 
 /**
@@ -46,6 +47,7 @@ export const AUDIT_ACTION_FILTER_OPTIONS: { value: string; label: string }[] = [
   "dsr_delete",
   "update_category",
   "update_device",
+  "update_device_user",
   "update_privacy_config",
   "collection_window_choice",
   "revoke_device",

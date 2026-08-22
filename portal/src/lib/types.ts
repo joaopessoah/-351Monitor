@@ -612,9 +612,9 @@ export interface ExportsResponse {
 // =============================================================================
 
 /**
- * Titular candidato a DSR: derivado do GET /reports/usage?group_by=device_user
- * (não há endpoint de listagem dedicado - o portal reusa essa fonte). UUID zero
- * = lane-máquina (sem usuário Windows): NÃO é um titular e fica fora da busca.
+ * Titular candidato a DSR, derivado de `GET /device-users` (listagem dedicada).
+ * UUID zero = lane-máquina (sem usuário Windows): NÃO é um titular e o backend
+ * já a mantém fora da listagem.
  */
 export interface DsrSubject {
   device_user_id: string;
@@ -624,6 +624,46 @@ export interface DsrSubject {
   windows_user: string | null;
   /** Nome de exibição JÁ resolvido pelo backend (nunca reimplementar no cliente). */
   display_name: string;
+}
+
+// =============================================================================
+// Contratos dos TITULARES (device_users): GET /device-users?device_id&q&page&
+// page_size e GET /device-users/{id} (Viewer+), PATCH /device-users/{id}
+// (Admin/Owner, trilha update_device_user com de→para).
+//
+// O titular é o par (dispositivo, usuário do Windows) - NÃO um usuário do
+// portal. O modelo é POR DISPOSITIVO: a mesma pessoa em duas máquinas tem dois
+// registros, com ids diferentes. Nenhuma tela pode prometer que um registro
+// atravessa dispositivos.
+// =============================================================================
+
+/** Item de `GET /device-users` e resposta de `GET/PATCH /device-users/{id}`. */
+export interface DeviceUserItem {
+  id: string;
+  device_id: string;
+  /** COALESCE(display_name, hostname) do dispositivo, resolvido pelo backend. */
+  device_name: string;
+  windows_username: string;
+  /** Nome amigável definido no portal - null enquanto ninguém renomeou. */
+  display_name: string | null;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+/**
+ * Body de `PATCH /device-users/{id}` (Admin/Owner). display_name null (ou vazio)
+ * limpa o apelido: as telas voltam a exibir o windows_username. O backend audita
+ * como update_device_user com o de→para.
+ */
+export interface DeviceUserPatchRequest {
+  display_name: string | null;
+}
+
+/** Nome exibido de um titular: apelido quando houver, senão o usuário do Windows. */
+export function deviceUserLabel(item: DeviceUserItem): string {
+  return item.display_name !== null && item.display_name.length > 0
+    ? item.display_name
+    : item.windows_username;
 }
 
 /**

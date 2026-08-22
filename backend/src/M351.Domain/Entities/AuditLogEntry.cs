@@ -100,6 +100,14 @@ public static class AuditActions
     /// decisão precisa ser evidenciável por si só. detail = collection_window escolhida.
     /// </summary>
     public const string CollectionWindowChoice = "collection_window_choice";
+
+    /// <summary>
+    /// PATCH /device-users/{id} (Seção 7.4 linha 801): edição do display_name do TITULAR (o
+    /// nome amigável que substitui o usuário do Windows nas telas), detail com o de→para.
+    /// Renomear uma pessoa muda como ela aparece em todo relatório, então a mudança precisa
+    /// de trilha — mesmo padrão verbo_alvo do update_device.
+    /// </summary>
+    public const string UpdateDeviceUser = "update_device_user";
 }
 
 /// <summary>Tabela audit_log — append-only, particionada por mês, retenção 24 meses (N13).</summary>

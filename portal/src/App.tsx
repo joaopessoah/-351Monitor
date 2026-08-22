@@ -10,6 +10,7 @@ import { VisaoGeralPage } from "@/pages/VisaoGeralPage";
 import { LinhaDoTempoPage } from "@/pages/LinhaDoTempoPage";
 import { AppsPage } from "@/pages/AppsPage";
 import { DispositivosPage } from "@/pages/DispositivosPage";
+import { PessoaPage } from "@/pages/PessoaPage";
 import { RelatoriosHubPage } from "@/pages/relatorios/RelatoriosHubPage";
 import { JornadaPage } from "@/pages/relatorios/JornadaPage";
 import { UsoPage } from "@/pages/relatorios/UsoPage";
@@ -48,6 +49,10 @@ export function App() {
             <Route path="exportacoes" element={<ExportacoesPage />} />
           </Route>
           <Route path="/dispositivos" element={<DispositivosPage />} />
+          {/* Visão individual do titular (device_user). Sem rota de índice: as
+              pessoas são alcançadas pelos relatórios e pela busca do DSR - o
+              portal não publica uma lista de pessoas navegável por si só. */}
+          <Route path="/pessoas/:id" element={<PessoaPage />} />
           <Route path="/configuracoes" element={<ConfiguracoesLayout />}>
             <Route index element={<Navigate to="/configuracoes/usuarios" replace />} />
             <Route path="usuarios" element={<UsuariosPage />} />
