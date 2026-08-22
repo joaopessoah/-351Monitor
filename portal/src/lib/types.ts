@@ -959,3 +959,48 @@ export interface AgentConfigPatchRequest {
   ignored_processes?: string[];
   collection_window?: CollectionWindow;
 }
+
+// =============================================================================
+// Contratos da cobrança: GET /billing/billable-devices?month=YYYY-MM (papel
+// OWNER). Extrato mensal dos dispositivos que contam para o mês, insumo do
+// billing manual. O portal exibe CONTAGEM e EVIDÊNCIA e jamais valor em reais:
+// preço é decisão comercial fora do sistema.
+// =============================================================================
+
+/**
+ * Primeira regra de cobrança que casou (events > enrolled > keep_alive):
+ * eventos recebidos no mês, registro (enroll) no mês, ou último contato no mês
+ * (lote vazio de keep-alive, que só atualiza o last_seen_at).
+ */
+export type BillableEvidence = "events" | "enrolled" | "keep_alive";
+
+export interface BillableDeviceItem {
+  device_id: string;
+  display_name: string | null;
+  hostname: string;
+  /** Status ATUAL do device - archived nunca é cobrável; revoked que usou, conta. */
+  status: string;
+  /** Instante do registro (enroll) do device. */
+  enrolled_at: string;
+  last_seen_at: string | null;
+  /** Um BillableEvidence; tipado como texto para tolerar regra nova no backend. */
+  evidence: string;
+}
+
+/**
+ * Resposta de `GET /billing/billable-devices?month=`. frozen=true significa mês
+ * fechado e CONGELADO (o snapshot não muda mais, seguro para anexar à fatura);
+ * frozen=false é o mês corrente ao vivo, cujo número ainda pode mudar até o
+ * fechamento. criteria é a regra aplicada, em texto legível montado pelo
+ * backend.
+ */
+export interface BillableDevicesResponse {
+  /** Mês pedido, no formato YYYY-MM. */
+  month: string;
+  device_count: number;
+  criteria: string;
+  items: BillableDeviceItem[];
+  frozen: boolean;
+  /** Instante do congelamento - null enquanto o mês não fechou. */
+  frozen_at: string | null;
+}

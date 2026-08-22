@@ -146,9 +146,11 @@ export function AppShell() {
   return (
     <div className="flex min-h-screen">
       {/* Sidebar fixa - só a partir de md; abaixo disso a navegação é o drawer. */}
+      {/* no-print: navegação e topbar ficam fora do papel, para que telas
+          imprimíveis (ex.: extrato de cobrança) rendam folha limpa. */}
       <aside
         className={cn(
-          "hidden shrink-0 flex-col border-r bg-card transition-[width] duration-150 md:flex",
+          "no-print hidden shrink-0 flex-col border-r bg-card transition-[width] duration-150 md:flex",
           collapsed ? "w-16" : "w-60",
         )}
       >
@@ -197,7 +199,7 @@ export function AppShell() {
 
       {/* Conteúdo */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between gap-4 border-b bg-card px-6">
+        <header className="no-print flex h-14 items-center justify-between gap-4 border-b bg-card px-6">
           <div className="flex min-w-0 items-center gap-3">
             <Button
               variant="ghost"
