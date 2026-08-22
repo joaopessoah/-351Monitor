@@ -32,10 +32,12 @@ import type {
   PresenceResponse,
   PresenceState,
 } from "@/lib/types";
+import { useUrlState } from "@/lib/useUrlState";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TAG_CODEC, TeamTagSelect, tagParam, useTeamTags } from "@/components/filters/TeamTagSelect";
 import { OnboardingChecklist } from "@/components/dashboard/OnboardingChecklist";
 import { WeeklyChartsRow } from "@/components/dashboard/WeeklyChartsRow";
 import {
@@ -66,15 +68,29 @@ const noDataHatch: CSSProperties = {
     "repeating-linear-gradient(45deg, #dc2626 0px, #dc2626 2px, #fecaca 2px, #fecaca 4px)",
 };
 
-/** Dashboard de presença "agora" (F2, Seção 8.4): cards de contagem + tabela Equipe agora. */
+/**
+ * Dashboard de presença "agora" (F2, Seção 8.4): cards de contagem + tabela
+ * Equipe agora.
+ *
+ * O seletor de equipe (?tag=, F5) recorta presença, meta da semana, atividade
+ * fora do horário e os gráficos da semana - uma equipe de cada vez, nunca duas
+ * lado a lado. Fica FORA do recorte, de propósito, a faixa de saúde da frota,
+ * que fala da frota INTEIRA por definição (agentes sem comunicação, relógio
+ * dessincronizado, versão desatualizada) e é a porta de entrada de um problema
+ * operacional que não pertence a nenhuma equipe.
+ */
 export function VisaoGeralPage() {
   const navigate = useNavigate();
   const [noDataFilter, setNoDataFilter] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
+  // Recorte de equipe na URL (?tag=): o link reproduz o recorte visível.
+  const [tag, setTag] = useUrlState(TAG_CODEC);
+  const { tags } = useTeamTags();
+
   const presenceQuery = useQuery({
-    queryKey: ["dashboard", "presence"],
-    queryFn: () => api<PresenceResponse>("/dashboard/presence"),
+    queryKey: ["dashboard", "presence", tag],
+    queryFn: () => api<PresenceResponse>(`/dashboard/presence?tag=${encodeURIComponent(tag ?? "")}`),
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
     placeholderData: (prev) => prev,
@@ -114,10 +130,10 @@ export function VisaoGeralPage() {
    * do seu próprio arquivo, sem acoplamento de props).
    */
   const weekSummaryQuery = useQuery({
-    queryKey: ["dashboard", "summary", weekFrom, weekTo],
+    queryKey: ["dashboard", "summary", weekFrom, weekTo, tag],
     queryFn: () =>
       api<DashboardSummaryResponse>(
-        `/dashboard/summary?from=${weekFrom ?? ""}&to=${weekTo ?? ""}`,
+        `/dashboard/summary?from=${weekFrom ?? ""}&to=${weekTo ?? ""}${tagParam(tag)}`,
       ),
     enabled: weekFrom !== null && goalHours !== null,
     refetchInterval: 60_000,
@@ -135,6 +151,7 @@ export function VisaoGeralPage() {
     from: weekFrom ?? "",
     to: weekTo ?? "",
     deviceIdsKey: "",
+    tag,
     page: 1,
     includeDevices: false,
     pageSize: 1,
@@ -201,11 +218,14 @@ export function VisaoGeralPage() {
           Presença da equipe agora, atualizada a cada minuto.
         </p>
       </div>
-      {data !== undefined && (
-        <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs tabular-nums text-secondary-foreground">
-          Atualizado {formatRelative(data.server_time, new Date(nowMs).toISOString())}
-        </span>
-      )}
+      <div className="flex flex-wrap items-center gap-3">
+        <TeamTagSelect tags={tags} value={tag} onChange={setTag} />
+        {data !== undefined && (
+          <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs tabular-nums text-secondary-foreground">
+            Atualizado {formatRelative(data.server_time, new Date(nowMs).toISOString())}
+          </span>
+        )}
+      </div>
     </div>
   );
 
@@ -247,6 +267,33 @@ export function VisaoGeralPage() {
             <p className="text-sm text-muted-foreground">{genericErrorMessage(presenceQuery.error)}</p>
             <Button variant="outline" onClick={() => void presenceQuery.refetch()}>
               Tentar novamente
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // Recorte de equipe sem nenhum dispositivo: a organização TEM dispositivos, só
+  // não nesta etiqueta - mandar criar chave de instalação aqui seria enganoso.
+  if (data.items.length === 0 && tag !== null) {
+    return (
+      <div className="space-y-6">
+        {header}
+        <Card>
+          <div className="flex flex-col items-center gap-4 px-6 py-14 text-center">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+              <MonitorSmartphone className="h-7 w-7 text-muted-foreground" aria-hidden />
+            </span>
+            <div className="space-y-1">
+              <p className="text-base font-medium">Nenhum dispositivo nesta equipe.</p>
+              <p className="text-sm text-muted-foreground">
+                Nenhum dispositivo ativo carrega a etiqueta “{tag}”. As etiquetas são editadas em
+                Dispositivos.
+              </p>
+            </div>
+            <Button variant="outline" onClick={() => setTag(null)}>
+              Ver todas as equipes
             </Button>
           </div>
         </Card>
@@ -432,7 +479,7 @@ export function VisaoGeralPage() {
       <OnboardingChecklist />
 
       {/* Linha 3 - gráficos da semana (F3.2, Seção 8.4). */}
-      <WeeklyChartsRow />
+      <WeeklyChartsRow tag={tag} />
     </div>
   );
 }

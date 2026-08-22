@@ -6,7 +6,9 @@
 // ORGANIZAÇÃO; seletor "Semana atual | Semana anterior" compartilhado pelos
 // dois cards. Cada card tem toggle "Ver dados" para a tabela acessível com os
 // MESMOS números (o gráfico fica oculto e aria-hidden enquanto a tabela está
-// visível). Polling de 60s SÓ quando a semana exibida inclui hoje.
+// visível). Polling de 60s SÓ quando a semana exibida inclui hoje. O recorte de
+// equipe da Visão Geral (?tag=) desce como prop e entra nas três consultas: os
+// gráficos falam da MESMA equipe que os cards acima.
 // =============================================================================
 
 import { useMemo, useState } from "react";
@@ -28,6 +30,7 @@ import type {
   TopAppsResponse,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { tagParam } from "@/components/filters/TeamTagSelect";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -121,7 +124,7 @@ interface DayRow {
 }
 
 /** Linha 3 da Visão Geral: os dois cards de gráficos da semana, lado a lado. */
-export function WeeklyChartsRow() {
+export function WeeklyChartsRow({ tag = null }: { tag?: string | null }) {
   const [week, setWeek] = useState<WeekChoice>("current");
 
   const meQuery = useQuery({
@@ -139,10 +142,10 @@ export function WeeklyChartsRow() {
     range !== null && todayStr !== null && range.from <= todayStr && todayStr <= range.to;
 
   const summaryQuery = useQuery({
-    queryKey: ["dashboard", "summary", range?.from, range?.to],
+    queryKey: ["dashboard", "summary", range?.from, range?.to, tag],
     queryFn: () =>
       api<DashboardSummaryResponse>(
-        `/dashboard/summary?from=${range?.from ?? ""}&to=${range?.to ?? ""}`,
+        `/dashboard/summary?from=${range?.from ?? ""}&to=${range?.to ?? ""}${tagParam(tag)}`,
       ),
     enabled: range !== null,
     // Polling de 60s APENAS quando a semana exibida inclui o dia de hoje.
@@ -156,20 +159,20 @@ export function WeeklyChartsRow() {
   // imutável (sempre no passado): mesma queryKey do summary, sem polling.
   const prevRange = useComparisonRange(range);
   const prevSummaryQuery = useQuery({
-    queryKey: ["dashboard", "summary", prevRange?.from, prevRange?.to],
+    queryKey: ["dashboard", "summary", prevRange?.from, prevRange?.to, tag],
     queryFn: () =>
       api<DashboardSummaryResponse>(
-        `/dashboard/summary?from=${prevRange?.from ?? ""}&to=${prevRange?.to ?? ""}`,
+        `/dashboard/summary?from=${prevRange?.from ?? ""}&to=${prevRange?.to ?? ""}${tagParam(tag)}`,
       ),
     enabled: prevRange !== null,
     placeholderData: (prev) => prev,
   });
 
   const topAppsQuery = useQuery({
-    queryKey: ["dashboard", "top-apps", range?.from, range?.to],
+    queryKey: ["dashboard", "top-apps", range?.from, range?.to, tag],
     queryFn: () =>
       api<TopAppsResponse>(
-        `/dashboard/top-apps?from=${range?.from ?? ""}&to=${range?.to ?? ""}&limit=10`,
+        `/dashboard/top-apps?from=${range?.from ?? ""}&to=${range?.to ?? ""}&limit=10${tagParam(tag)}`,
       ),
     enabled: range !== null,
     refetchInterval: includesToday ? 60_000 : false,
