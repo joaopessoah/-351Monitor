@@ -64,6 +64,20 @@ public class EnrollmentService(
         var device = await db.Devices.FirstOrDefaultAsync(d => d.MachineFingerprint == fingerprint, ct);
         if (device is not null)
         {
+            // Detecção barata de CLONE de golden image sem sysprep (F5): mesmo fingerprint
+            // (MachineGuid + serial de BIOS idênticos) chegando com hostname DIFERENTE é o
+            // sintoma clássico, o re-enroll fundiria máquinas distintas num só device e os
+            // dados ficariam incompreensíveis. Não bloqueia (pode ser rename legítimo), mas
+            // deixa rastro para o suporte investigar.
+            if (!string.Equals(device.Hostname, request.Hostname.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                logger.LogWarning(
+                    "Possível clone de golden image: fingerprint {Fingerprint} re-enrollado com hostname "
+                    + "{NovoHostname} (antes {HostnameAntigo}), device {DeviceId} do tenant {TenantId}",
+                    fingerprint[..Math.Min(12, fingerprint.Length)], request.Hostname.Trim(),
+                    device.Hostname, device.Id, device.TenantId);
+            }
+
             // re-enroll idempotente (Seção 5.7): revoga o token antigo (hash substituído),
             // emite novo, preserva o device e seu histórico
             device.TokenHash = tokenHash;
@@ -73,6 +87,7 @@ public class EnrollmentService(
             device.EnrollmentKeyId = key.Id;
             device.Status = "active";
             device.ConfigVersion = config.ConfigVersion;
+            device.TransparencyToken ??= Uuid7.NewUuid7(); // devices antigos ganham no re-enroll
         }
         else
         {
@@ -96,6 +111,7 @@ public class EnrollmentService(
                 EnrollmentKeyId = key.Id,
                 TokenHash = tokenHash,
                 ConfigVersion = config.ConfigVersion,
+                TransparencyToken = Uuid7.NewUuid7(),
             };
             db.Devices.Add(device);
             key.UseCount++;

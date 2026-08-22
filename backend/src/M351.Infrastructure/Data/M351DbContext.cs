@@ -53,6 +53,9 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
             e.Property(x => x.OnboardingChecklistDismissedAt).HasColumnName("onboarding_checklist_dismissed_at");
             // F5 — idempotência do digest semanal
             e.Property(x => x.LastWeeklyDigestAt).HasColumnName("last_weekly_digest_at");
+            // F5 — metas semanais AGREGADAS da organização (nunca por pessoa)
+            e.Property(x => x.GoalWeeklyActiveHours).HasColumnName("goal_weekly_active_hours");
+            e.Property(x => x.GoalWorkRelatedPct).HasColumnName("goal_work_related_pct");
 
             // a organização É o tenant: visível apenas para o próprio tenant autenticado
             e.HasQueryFilter(x => _tenant.TenantId != null && x.Id == _tenant.TenantId.Value);
@@ -205,6 +208,9 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
             e.Property(x => x.NoticeAckedAt).HasColumnName("notice_acked_at");
             e.Property(x => x.LastTamperAt).HasColumnName("last_tamper_at");
             e.Property(x => x.LastTamperReason).HasColumnName("last_tamper_reason").HasColumnType("text");
+            // F5 — página pública do funcionário por device
+            e.Property(x => x.TransparencyToken).HasColumnName("transparency_token");
+            e.HasIndex(x => x.TransparencyToken).IsUnique();
             e.HasOne<EnrollmentKey>().WithMany().HasForeignKey(x => x.EnrollmentKeyId);
             e.HasIndex(x => new { x.TenantId, x.MachineFingerprint }).IsUnique();
             e.HasIndex(x => new { x.TenantId, x.LastSeenAt }).HasDatabaseName("ix_devices_tenant_lastseen");
@@ -240,6 +246,9 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
             e.Property(x => x.MaskedPatterns).HasColumnName("masked_patterns").HasColumnType("text[]");
             e.Property(x => x.IgnoredProcesses).HasColumnName("ignored_processes").HasColumnType("text[]");
             e.Property(x => x.CollectionWindow).HasColumnName("collection_window").HasColumnType("jsonb");
+            // F5 — aviso de ciência gerenciado pelo tenant (viaja na config do ack)
+            e.Property(x => x.NoticeText).HasColumnName("notice_text").HasColumnType("text");
+            e.Property(x => x.NoticeVersion).HasColumnName("notice_version");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
 
             e.HasQueryFilter(x => _tenant.TenantId != null && x.TenantId == _tenant.TenantId.Value);
