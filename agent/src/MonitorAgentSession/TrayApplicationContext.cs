@@ -6,6 +6,7 @@ using M351.Agent.Core.Contracts;
 using M351.Agent.Core.Diagnostics;
 using M351.Agent.Core.Events;
 using M351.Agent.Core.Logging;
+using M351.Agent.Core.Privacy;
 using M351.Agent.Core.Win32;
 using Microsoft.Win32;
 
@@ -18,8 +19,6 @@ namespace MonitorAgentSession;
 /// </summary>
 public sealed class TrayApplicationContext : ApplicationContext
 {
-    public const int NoticeVersion = 1; // versão do aviso NOTICE_ACK (Seção 6.5)
-
     private readonly int _sessionId;
     private readonly ILogSink _log;
     private readonly IDisposable _logDisposable;
@@ -37,6 +36,9 @@ public sealed class TrayApplicationContext : ApplicationContext
     private StatusForm? _statusForm;
     private bool _locked;
     private bool _collectorsStarted;
+
+    /// <summary>Evita duas janelas de aviso simultâneas quando a config chega enquanto o modal está aberto.</summary>
+    private volatile bool _noticeShowing;
 
     public TrayApplicationContext(int sessionId)
     {
@@ -121,6 +123,11 @@ public sealed class TrayApplicationContext : ApplicationContext
         else
         {
             _engine?.ApplyConfig(_config);
+
+            // Config nova pode trazer notice_version maior (o tenant reescreveu o aviso no portal):
+            // o MaybeShowNotice compara com a versão confirmada localmente e reexibe sozinho.
+            // Mesmo Task.Run do primeiro caso: o modal NUNCA pode bloquear o read-loop do pipe.
+            _ = Task.Run(MaybeShowNotice);
         }
     }
 
@@ -144,35 +151,55 @@ public sealed class TrayApplicationContext : ApplicationContext
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "M351", "MonitorAgent", "notice_ack.txt");
 
-    private void MaybeShowNotice()
+    /// <summary>Versão confirmada localmente (null se nunca confirmada ou flag ilegível).</summary>
+    private int? ReadAcknowledgedNoticeVersion()
     {
         try
         {
             if (File.Exists(NoticeFlagPath) &&
-                int.TryParse(File.ReadAllText(NoticeFlagPath).Trim(), out var acked) &&
-                acked >= NoticeVersion)
+                int.TryParse(File.ReadAllText(NoticeFlagPath).Trim(), out var acked))
             {
-                return; // já confirmou esta versão do aviso — não reexibir a cada logon
+                return acked;
             }
         }
-        catch (Exception) { /* sem flag legível: exibe */ }
+        catch (Exception) { /* sem flag legível: trata como nunca confirmado (exibe) */ }
+        return null;
+    }
 
-        var shownAt = DateTimeOffset.UtcNow;
-        using var notice = new NoticeForm(() => ShowStatusWindow());
-        notice.ShowDialog();
+    /// <summary>
+    /// Exibe o aviso quando a versão vigente da CONFIG DO TENANT (notice_version) é maior que a
+    /// confirmada localmente: bump no portal reexibe o aviso na frota e gera novo NOTICE_ACK.
+    /// O texto do corpo vem da config (notice_text); o enquadramento legal é fixo no agente.
+    /// </summary>
+    private void MaybeShowNotice()
+    {
+        var currentVersion = _config.NoticeVersion;
+        if (!NoticeGate.ShouldShow(ReadAcknowledgedNoticeVersion(), currentVersion)) return;
+        if (_noticeShowing) return; // já há um aviso na tela (config nova chegou no meio)
 
-        if (notice.Acknowledged && _factory is not null)
+        _noticeShowing = true;
+        try
         {
+            var shownAt = DateTimeOffset.UtcNow;
+            using var notice = new NoticeForm(() => ShowStatusWindow(), _config.NoticeText);
+            notice.ShowDialog();
+
+            if (!notice.Acknowledged || _factory is null) return;
+
             _sink.Emit(_factory.Create(EventTypes.NoticeAck,
-                new NoticeAckData { NoticeVersion = NoticeVersion, ShownAt = Iso.Format(shownAt) },
+                new NoticeAckData { NoticeVersion = currentVersion, ShownAt = Iso.Format(shownAt) },
                 _identity.SessionId, _identity.WindowsSid, _identity.WindowsUser));
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(NoticeFlagPath)!);
-                File.WriteAllText(NoticeFlagPath, NoticeVersion.ToString());
+                File.WriteAllText(NoticeFlagPath, currentVersion.ToString());
             }
             catch (Exception) { /* reexibirá no próximo logon */ }
-            _log.Info("NOTICE_ACK emitido (evidência de ciência — não é consentimento).");
+            _log.Info($"NOTICE_ACK v{currentVersion} emitido (evidência de ciência — não é consentimento).");
+        }
+        finally
+        {
+            _noticeShowing = false;
         }
     }
 

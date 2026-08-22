@@ -543,7 +543,8 @@ public sealed class IngestService(
         var config = await connection.QuerySingleOrDefaultAsync<TenantAgentConfig>(new CommandDefinition(
             """
             SELECT tenant_id, config_version, heartbeat_sec, active_window_poll_sec, idle_threshold_sec,
-                   window_title_policy, masked_patterns, ignored_processes, collection_window
+                   window_title_policy, masked_patterns, ignored_processes, collection_window,
+                   notice_text, notice_version
             FROM tenant_agent_configs
             WHERE tenant_id = @TenantId
             """,

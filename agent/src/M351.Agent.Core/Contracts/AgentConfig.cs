@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace M351.Agent.Core.Contracts;
 
 /// <summary>
-/// Objeto `config` do ack/enroll — Seção 5.5 do spec. 8 campos, sempre todos presentes.
+/// Objeto `config` do ack/enroll — Seção 5.5 do spec. 10 campos, sempre todos presentes.
 /// </summary>
 public sealed class AgentConfig
 {
@@ -18,6 +18,19 @@ public sealed class AgentConfig
     [JsonPropertyName("ignored_processes")] public List<string> IgnoredProcesses { get; set; } = [];
     [JsonPropertyName("collection_window")] public CollectionWindow CollectionWindow { get; set; } = new();
     [JsonPropertyName("transparency_url")] public string? TransparencyUrl { get; set; }
+
+    /// <summary>
+    /// F5 — corpo do aviso de ciência definido pelo TENANT; null/vazio = texto padrão embutido no
+    /// agente (NoticeTextComposer.DefaultBody). Os trechos fixos que protegem a base legal são
+    /// SEMPRE concatenados pelo agente, jamais editáveis pelo tenant.
+    /// </summary>
+    [JsonPropertyName("notice_text")] public string? NoticeText { get; set; }
+
+    /// <summary>
+    /// F5 — versão do aviso. O helper guarda localmente a versão confirmada; versão maior que a
+    /// confirmada re-exibe o aviso e gera novo NOTICE_ACK.
+    /// </summary>
+    [JsonPropertyName("notice_version")] public int NoticeVersion { get; set; } = 1;
 
     /// <summary>Config de fábrica usada antes do primeiro enroll (sem config do servidor).</summary>
     public static AgentConfig FactoryDefault() => new()
@@ -37,7 +50,9 @@ public sealed class AgentConfig
             "logonui.exe", "lockapp.exe", "consent.exe"
         ],
         CollectionWindow = new CollectionWindow { Mode = CollectionWindowModes.Always },
-        TransparencyUrl = null
+        TransparencyUrl = null,
+        NoticeText = null, // aviso padrão do agente até o tenant definir o dele
+        NoticeVersion = 1
     };
 }
 

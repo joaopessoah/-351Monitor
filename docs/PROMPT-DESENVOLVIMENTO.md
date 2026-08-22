@@ -305,7 +305,9 @@ Notas do lote: `device_id` NÃO vai no body — o servidor o resolve do device t
     "masked_patterns": ["(?i)senha", "(?i)\\bbanco\\b", "\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}"],
     "ignored_processes": ["keepass.exe", "1password.exe", "bitwarden.exe", "logonui.exe", "lockapp.exe", "consent.exe"],
     "collection_window": { "mode": "ALWAYS", "days": null, "start": null, "end": null },
-    "transparency_url": "https://app.exemplo.com.br/transparencia/acme"
+    "transparency_url": "https://app.exemplo.com.br/transparencia/acme",
+    "notice_text": null,
+    "notice_version": 1
   },
   "commands": [
     { "id": "01976f2c-0000-7aaa-b111-00000000c0de", "type": "UNENROLL", "payload": {} }
@@ -317,7 +319,8 @@ Aritmética do exemplo (fórmula da Seção 5.6): 5 recebidos = 3 aceitos + 1 du
 
 Regras do ack:
 - `config` só vem quando o `config_version` enviado pelo agente está desatualizado; caso contrário `config: null`. **A config é entregue EXCLUSIVAMENTE por este canal** (sem endpoint de policy, sem assinatura de config no MVP — TLS + device token bastam). Ao aplicar, o agente emite `POLICY_APPLIED { config_version }`.
-- Objeto `config` completo (8 campos, sempre todos presentes): `heartbeat_sec`, `active_window_poll_sec`, `idle_threshold_sec`, `window_title_policy` (`FULL` | `MASKED_PATTERNS` | `APP_ONLY`), `masked_patterns[]`, `ignored_processes[]`, `collection_window` (`{mode: ALWAYS | BUSINESS_HOURS, days, start, end}`), `transparency_url`.
+- Objeto `config` completo (10 campos, sempre todos presentes): `heartbeat_sec`, `active_window_poll_sec`, `idle_threshold_sec`, `window_title_policy` (`FULL` | `MASKED_PATTERNS` | `APP_ONLY`), `masked_patterns[]`, `ignored_processes[]`, `collection_window` (`{mode: ALWAYS | BUSINESS_HOURS, days, start, end}`), `transparency_url`, `notice_text`, `notice_version`.
+- `notice_text` (F5) é o CORPO do aviso de ciência definido pelo tenant; `null` = o agente usa o texto padrão embutido nele. O enquadramento jurídico ("isto registra a sua ciência, não é um pedido de consentimento" + como ver a coleta em tempo real) é **fixo no agente e sempre concatenado** — o tenant não consegue publicar um aviso que transforme o `NOTICE_ACK` em consentimento. `notice_version` versiona o aviso: bump reexibe na frota (o helper compara com a versão confirmada localmente) e gera novo `NOTICE_ACK`.
 - `commands` no MVP contém **apenas `UNENROLL`** (`ROTATE_TOKEN`, `UPDATE_AGENT`, `PAUSE` são v1.1 — não implementar handlers). Ao receber `UNENROLL`: o agente **para a coleta e DESCARTA a fila local** (revogação definitiva). Sem endpoint de ack de comando: o servidor marca a entrega ao incluir no ack; o comando é idempotente se reentregue.
 - Erros HTTP: `401` token inválido/revogado (tratado como transitório: o agente **mantém a fila** e tenta re-enroll a cada **1 h** com a enrollment key persistida); `413` payload grande demais; `422` body sintaticamente malformado (JSON inválido) ou lote com > 500 eventos (reason `batch_too_large`) — únicos casos de rejeição do lote inteiro; `429`/`503` com `Retry-After` (agente respeita).
 
@@ -352,7 +355,7 @@ Resposta `201`:
   "device_id": "01976f00-aaaa-7bbb-8ccc-dddddddddddd",
   "device_token": "dt_Jh3K...256-bits-base64url...",
   "config_version": 5,
-  "config": { "...": "objeto config completo, mesmos 8 campos da Seção 5.5" }
+  "config": { "...": "objeto config completo, mesmos 10 campos da Seção 5.5" }
 }
 ```
 
@@ -452,7 +455,7 @@ Aplicado **antes de persistir na fila SQLite** — dado mascarado nunca toca o d
 
 - `NotifyIcon` **sempre visível**, tooltip "Monitoramento corporativo ativo — {NomeDaEmpresa}". **Sem opção "Sair"** no menu; sem flag de ocultação (a opção não existe no código).
 - Menu: **"O que está sendo coletado agora"** (janela em tempo real: app ativo, título capturado — ou mascarado/null —, estado ativo/idle, último envio, `config_version` aplicada, device_id) · **"Política de monitoramento"** (abre `transparency_url` da config) · **"Status da conexão"** · **"Sobre"** (versão, device_id).
-- **NOTICE_ACK (gate LGPD):** no primeiro logon de cada usuário Windows após a instalação, o helper exibe aviso (toast + janela): *"Esta máquina é monitorada por {Empresa} — clique para ver o que é coletado"*, com link para a janela de transparência e botão **"Entendi"**. O clique emite `NOTICE_ACK{notice_version, shown_at}` — evidência de ciência para a controladora (NÃO é consentimento; é ciência). Persistir localmente que o usuário já confirmou (não reexibir a cada logon); reexibir se `notice_version` mudar.
+- **NOTICE_ACK (gate LGPD):** no primeiro logon de cada usuário Windows após a instalação, o helper exibe aviso (toast + janela): *"Esta máquina é monitorada por {Empresa} — clique para ver o que é coletado"*, com link para a janela de transparência e botão **"Entendi"**. O clique emite `NOTICE_ACK{notice_version, shown_at}` — evidência de ciência para a controladora (NÃO é consentimento; é ciência). Persistir localmente que o usuário já confirmou (não reexibir a cada logon); reexibir se `notice_version` mudar. O CORPO do aviso pode ser gerenciado pelo tenant (`notice_text` da config — Seção 5.5); o enquadramento jurídico é **fixo no agente e sempre concatenado**, e `notice_version`/`notice_text` chegam ao helper pelo mesmo caminho do `transparency_url` (config entregue pelo ack e repassada no pipe).
 - `MonitorAgentSession.exe --diag` gera ZIP de suporte (logs + config sanitizada + contadores), sem UI.
 - Item **"Enviar diagnóstico ao suporte"** no menu do tray (F5): pede confirmação declarando o que vai e o que NÃO vai no pacote (só logs redigidos; sem título de janela, usuário ou conteúdo), e o **serviço** — não o helper — empacota o MESMO ZIP do `--diag` e faz o `POST /api/v1/agent/diagnostics` com o device token. Resultado (sucesso/falha) volta ao tray como balão.
 
