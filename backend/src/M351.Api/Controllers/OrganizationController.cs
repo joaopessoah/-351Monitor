@@ -6,6 +6,7 @@ using M351.Api.Auth;
 using M351.Api.Contracts;
 using M351.Api.Services;
 using M351.Domain.Entities;
+using M351.Domain.Privacy;
 using M351.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -193,6 +194,13 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
     /// mudança dá bump transacional de config_version (propaga no próximo ack de cada
     /// device) e grava a trilha de→para; mudar collection_window também registra a ação
     /// collection_window_choice reservada pela spec (linha 726) — quem decide é a controladora.
+    ///
+    /// notice_text (corpo do aviso de ciência, Seções 6.5/9.4) entra por aqui com a mesma
+    /// disciplina, mais a validação do NoticeTextPolicy: tamanho que cabe na janela do aviso
+    /// já contando o enquadramento fixo, nada de HTML ou marcação, e nada que imite pedido de
+    /// consentimento. Mudar o texto sobe junto notice_version, que é o que reexibe o aviso na
+    /// frota. O enquadramento fixo continua sendo concatenado pelo AGENTE e este campo não o
+    /// desativa.
     /// </summary>
     [HttpPatch("agent-config")]
     [Authorize(Policy = AuthConstants.PolicyOwnerOnly)]
@@ -324,10 +332,37 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
             if (error is not null) return error;
         }
 
-        if (!hasIdle && !hasPolicy && !hasPatterns && !hasIgnored && !hasWindow)
+        // ----- notice_text: corpo do aviso de ciência escrito pela controladora -----
+        // ausente = não muda; null (ou só espaço) = volta ao corpo padrão embutido no agente.
+        // O enquadramento fixo ("registra a sua ciência, não é pedido de consentimento") é
+        // concatenado NO AGENTE e não passa por aqui: este campo não consegue removê-lo.
+        var hasNotice = body.TryGetProperty("notice_text", out var noticeEl);
+        string? notice = null;
+        if (hasNotice && noticeEl.ValueKind != JsonValueKind.Null)
+        {
+            if (noticeEl.ValueKind != JsonValueKind.String)
+            {
+                return ProblemResponse(StatusCodes.Status400BadRequest,
+                    "notice_text deve ser um texto ou null (null volta ao aviso padrão do agente).");
+            }
+
+            var candidato = NoticeTextPolicy.Normalize(noticeEl.GetString()!);
+            if (candidato.Length > 0)
+            {
+                var recusa = NoticeTextPolicy.Validate(candidato);
+                if (recusa is not null)
+                {
+                    return ProblemResponse(StatusCodes.Status400BadRequest, recusa.Message, code: recusa.Code);
+                }
+
+                notice = candidato;
+            }
+        }
+
+        if (!hasIdle && !hasPolicy && !hasPatterns && !hasIgnored && !hasWindow && !hasNotice)
         {
             return ProblemResponse(StatusCodes.Status400BadRequest,
-                "Nenhum campo editável informado (idle_threshold_sec, window_title_policy, masked_patterns, ignored_processes, collection_window).");
+                "Nenhum campo editável informado (idle_threshold_sec, window_title_policy, masked_patterns, ignored_processes, collection_window, notice_text).");
         }
 
         var tenantId = CurrentUser.TenantId(User);
@@ -372,6 +407,18 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
             windowChanged = true;
         }
 
+        if (hasNotice && config.NoticeText != notice)
+        {
+            changes["notice_text"] = new { from = config.NoticeText, to = notice };
+            config.NoticeText = notice;
+
+            // sobe também a versão do aviso: é o bump de notice_version que faz o NoticeForm
+            // reaparecer na frota e gerar um NOTICE_ACK novo. Um aviso reescrito que ninguém
+            // volta a ver não informa ninguém, e ficaria só como texto no banco.
+            changes["notice_version"] = new { from = config.NoticeVersion, to = config.NoticeVersion + 1 };
+            config.NoticeVersion++;
+        }
+
         if (changes.Count > 0)
         {
             // bump transacional: a frota recebe a config nova no próximo ack de cada device
@@ -406,6 +453,11 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
         config.MaskedPatterns,
         config.IgnoredProcesses,
         AgentConfigService.ParseCollectionWindow(config.CollectionWindow),
+        config.NoticeText,
+        config.NoticeVersion,
+        NoticeTextPolicy.DefaultBody,
+        NoticeTextPolicy.FixedFraming,
+        NoticeTextPolicy.MaxBodyLength,
         config.UpdatedAt);
 
     private ObjectResult? ParseCollectionWindow(JsonElement el, out string? canonicalJson)

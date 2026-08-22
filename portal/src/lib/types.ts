@@ -1253,6 +1253,16 @@ export interface AgentConfigResponse {
   masked_patterns: string[];
   ignored_processes: string[];
   collection_window: CollectionWindow;
+  /** Corpo do aviso de ciência escrito pela controladora; null = corpo padrão do agente. */
+  notice_text: string | null;
+  /** Sobe a cada mudança do aviso: é o que reexibe o aviso em toda a frota. */
+  notice_version: number;
+  /** Read-only: corpo padrão exibido quando notice_text é null. */
+  notice_default_body: string;
+  /** Read-only: enquadramento fixo concatenado PELO AGENTE, não editável pelo tenant. */
+  notice_fixed_framing: string;
+  /** Read-only: limite do corpo do tenant, já descontado o enquadramento fixo. */
+  notice_max_length: number;
   updated_at: string;
 }
 
@@ -1263,6 +1273,8 @@ export interface AgentConfigPatchRequest {
   masked_patterns?: string[];
   ignored_processes?: string[];
   collection_window?: CollectionWindow;
+  /** null volta ao corpo padrão do agente; o enquadramento fixo nunca é afetado. */
+  notice_text?: string | null;
 }
 
 // =============================================================================

@@ -84,7 +84,7 @@ Três níveis estão previstos no protocolo (Seção 9.2):
 > **A política de coleta é editável pela CONTROLADORA (F5).** O portal (Configurações,
 > Privacidade) e o endpoint `PATCH /organization/agent-config` permitem ao **Owner** alternar
 > entre `MASKED_PATTERNS` e `APP_ONLY`, editar a lista de mascaramento, os processos ignorados,
-> o limiar de ociosidade e a janela de coleta. Toda mudança dá bump de `config_version`
+> o limiar de ociosidade, a janela de coleta e o texto do aviso de ciência (item 6). Toda mudança dá bump de `config_version`
 > (propaga à frota no próximo ack), grava trilha de auditoria com o de→para e, no caso da
 > janela de coleta, também a ação própria `collection_window_choice`. **`FULL` continua fora do
 > portal**: exige decisão consciente registrada no DPA e é aplicada pela operadora. O
@@ -184,6 +184,16 @@ Tudo (export e exclusão) é registrado na auditoria na mesma transação da ope
 - É a evidência que a **controladora** apresenta em eventual disputa trabalhista de que o
   funcionário teve ciência do monitoramento. **Ciência, não consentimento** (ver item 1) - o texto
   do aviso deve deixar isso explícito e é responsabilidade da controladora aprovar esse texto.
+- **O texto é editável pela controladora (F5).** Em Configurações, Coleta, o **Owner** escreve o
+  corpo do aviso na linguagem da empresa (`notice_text` no `PATCH /organization/agent-config`), com
+  preview do texto final na própria tela. Salvar sobe `notice_version`, o que **reexibe o aviso em
+  toda a frota** no próximo contato de cada agente e gera um `NOTICE_ACK` novo.
+- **O fecho do aviso é fixo e não editável.** O enquadramento "este aviso registra a sua ciência,
+  não é um pedido de consentimento" mais o caminho para ver a coleta em tempo real são
+  concatenados **pelo agente**, e nenhuma configuração do tenant os remove ou trunca. Por isso o
+  servidor recusa, ao salvar: texto que não caiba na janela do aviso já contando esse fecho, HTML
+  ou qualquer marcação (a janela exibe texto simples), e texto que imite pedido de consentimento,
+  autorização ou aceite.
 
 ---
 
