@@ -3,6 +3,18 @@ import { ApiError } from "./api";
 // Mensagens de erro pt-BR — sempre genéricas, sem vazar detalhes técnicos.
 
 export const GENERIC_ERROR = "Não foi possível concluir a operação. Tente novamente.";
+
+/**
+ * Disclaimer da Portaria 671/MTE (DoD 11.3), VERBATIM. Obrigatório em toda tela
+ * que mostre tempos de uma pessoa por dia: o relatório de Jornada
+ * (pages/relatorios/JornadaPage.tsx, onde o texto está inline no banner) e a
+ * visão individual da pessoa. O mesmo texto é a última linha de todo CSV de
+ * jornada (backend ExportService.JornadaDisclaimer) - os três precisam bater
+ * palavra por palavra.
+ */
+export const JORNADA_DISCLAIMER =
+  "Relatório gerencial de uso da estação de trabalho. Não constitui registro eletrônico de " +
+  "ponto (Portaria 671/MTE) e não substitui o controle de jornada do art. 74 da CLT.";
 export const NETWORK_ERROR =
   "Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.";
 export const LOCKOUT_ERROR =

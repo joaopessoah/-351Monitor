@@ -13,12 +13,14 @@
 // - device/device_user trazem Ativo/Ocioso/Bloqueado/Ligada + os baldes de
 //   classificação (vocabulário FIXO - jamais produtivo/improdutivo).
 // - Coluna Pessoa renderiza display_name JÁ resolvido pelo backend (lane
-//   máquina/DSR inclusos) - nunca reimplementar a regra no cliente.
+//   máquina/DSR inclusos) - nunca reimplementar a regra no cliente - e linka
+//   para a visão individual (/pessoas/{device_user_id}), exceto na lane-máquina.
 // - Exportar CSV (admin E viewer): POST /exports {kind:"usage_csv"} com o
 //   group_by corrente; acompanhamento em /relatorios/exportacoes.
 // =============================================================================
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { api } from "@/lib/api";
@@ -53,6 +55,9 @@ import { DeltaBadge, useComparisonRange } from "@/components/dashboard/compariso
 
 /** page_size máximo do contrato - mais linhas sob a ordenação client-side. */
 const PAGE_SIZE = 100;
+
+/** UUID zero = lane-máquina (sem usuário Windows): não é pessoa, não tem página. */
+const MACHINE_LANE = "00000000-0000-0000-0000-000000000000";
 
 type GroupBy = "app" | "category" | "device" | "device_user";
 
@@ -626,7 +631,20 @@ export function UsoPage() {
                         {user !== null && (
                           // display_name resolvido pelo backend: nome amigável de
                           // device_users, lane máquina e titular removido (DSR) inclusos.
-                          <td className="max-w-[12rem] truncate px-3 py-2">{user.display_name}</td>
+                          // Vira link para a visão individual, exceto na lane-máquina
+                          // (UUID zero é sintética - não existe pessoa para abrir).
+                          <td className="max-w-[12rem] truncate px-3 py-2">
+                            {user.device_user_id === MACHINE_LANE ? (
+                              user.display_name
+                            ) : (
+                              <Link
+                                to={`/pessoas/${user.device_user_id}`}
+                                className="underline decoration-dotted underline-offset-4 hover:text-primary"
+                              >
+                                {user.display_name}
+                              </Link>
+                            )}
+                          </td>
                         )}
                         <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
                           {formatDuration(item.seconds_active)}

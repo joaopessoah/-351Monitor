@@ -6,10 +6,13 @@
 // recibo com contagens).
 //
 // O TITULAR é um device_user (NÃO um usuário do portal): as rotas usam
-// {deviceUserId}. Como não há endpoint de listagem dedicado, o portal encontra
-// os titulares pela MESMA fonte das lanes/relatórios:
-// GET /reports/usage?group_by=device_user (janela ampla de 92 dias). A
-// lane-máquina (UUID zero) NÃO é titular e fica fora da busca.
+// {deviceUserId}. Os titulares vêm do endpoint DEDICADO GET /device-users, com
+// busca server-side (?q= em usuário do Windows e apelido) - a lane-máquina
+// (UUID zero) já sai de lá excluída. Isso substitui o contorno anterior, que os
+// descobria pelo GET /reports/usage?group_by=device_user e por isso só
+// encontrava quem tivesse atividade AGREGADA nos últimos 92 dias: o titular
+// silencioso, mas ainda dentro da retenção, ficava invisível justamente na tela
+// que atende ao pedido dele.
 //
 // Gating de papel (espelho do backend):
 //  - EXPORT: admin + owner (PolicyAdminPlus);
@@ -40,19 +43,18 @@ import {
   UserRound,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { addDays, localDateOf } from "@/lib/format";
 import { genericErrorMessage } from "@/lib/messages";
 import { isAdmin, isOwner } from "@/lib/roles";
+import { deviceUserLabel } from "@/lib/types";
 import type {
   DeviceItem,
+  DeviceUserItem,
   DsrDeleteResponse,
   DsrReceipt,
   DsrSubject,
   ExportCreateResponse,
   MeResponse,
   PagedResponse,
-  UsageDeviceUserItem,
-  UsageReportResponse,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -69,11 +71,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 
-/** UUID zero = lane-máquina (sem usuário Windows): não é titular - fora da busca. */
-const MACHINE_LANE = "00000000-0000-0000-0000-000000000000";
-
-/** Janela ampla para DESCOBRIR titulares (o pacote em si é o acervo inteiro). */
-const SUBJECT_LOOKBACK_DAYS = 92;
+/** Teto da página da busca de titulares (page_size máximo do contrato). */
 const SUBJECT_PAGE_SIZE = 100;
 
 type Scope = "subjects" | "devices";
@@ -252,55 +250,35 @@ function SearchBox({
 // -----------------------------------------------------------------------------
 
 function SubjectsPanel({ canExport, canDelete }: { canExport: boolean; canDelete: boolean }) {
-  const meQuery = useQuery({
-    queryKey: ["me"],
-    queryFn: () => api<MeResponse>("/me"),
-    staleTime: 5 * 60 * 1000,
-  });
-  const timezone = meQuery.data?.organization.timezone ?? null;
-
   const [search, setSearch] = useState("");
-  const q = useDebounced(search.trim(), 300).toLocaleLowerCase("pt-BR");
+  // Busca SERVER-SIDE: o termo vai no ?q= (ILIKE em usuário do Windows e apelido).
+  const q = useDebounced(search.trim(), 300);
 
   // Ação aberta (export ou exclusão) sobre um titular.
   const [action, setAction] = useState<{ kind: "export" | "delete"; subject: DsrSubject } | null>(null);
 
-  const range = useMemo(() => {
-    if (timezone === null) return null;
-    const today = localDateOf(new Date(), timezone);
-    return { from: addDays(today, -(SUBJECT_LOOKBACK_DAYS - 1)), to: today };
-  }, [timezone]);
-
   const subjectsQuery = useQuery({
-    queryKey: ["dsr", "subjects", { from: range?.from, to: range?.to }],
+    queryKey: ["device-users", { q, page_size: SUBJECT_PAGE_SIZE }],
     queryFn: () =>
-      api<UsageReportResponse<UsageDeviceUserItem>>(
-        `/reports/usage?from=${range?.from ?? ""}&to=${range?.to ?? ""}&group_by=device_user&page=1&page_size=${SUBJECT_PAGE_SIZE}`,
+      api<PagedResponse<DeviceUserItem>>(
+        `/device-users?page_size=${SUBJECT_PAGE_SIZE}${q.length > 0 ? `&q=${encodeURIComponent(q)}` : ""}`,
       ),
-    enabled: range !== null,
     staleTime: 60_000,
   });
 
-  // Titulares = device_users reais (lane-máquina fora). Mesma chave dos relatórios.
-  const subjects = useMemo<DsrSubject[]>(() => {
-    const items = subjectsQuery.data?.items ?? [];
-    return items
-      .filter((i) => i.device_user_id !== MACHINE_LANE)
-      .map((i) => ({
-        device_user_id: i.device_user_id,
+  // O endpoint já exclui a lane-máquina e resolve o nome do dispositivo; aqui só
+  // adaptamos ao shape usado pelos diálogos de DSR.
+  const subjects = useMemo<DsrSubject[]>(
+    () =>
+      (subjectsQuery.data?.items ?? []).map((i) => ({
+        device_user_id: i.id,
         device_id: i.device_id,
         device_name: i.device_name,
-        windows_user: i.windows_user,
-        display_name: i.display_name,
-      }));
-  }, [subjectsQuery.data]);
-
-  const filtered = useMemo(() => {
-    if (q.length === 0) return subjects;
-    return subjects.filter((s) =>
-      `${s.display_name} ${s.windows_user ?? ""} ${s.device_name}`.toLocaleLowerCase("pt-BR").includes(q),
-    );
-  }, [subjects, q]);
+        windows_user: i.windows_username,
+        display_name: deviceUserLabel(i),
+      })),
+    [subjectsQuery.data],
+  );
 
   const total = subjectsQuery.data?.total ?? 0;
   const capped = total > SUBJECT_PAGE_SIZE;
@@ -310,20 +288,21 @@ function SubjectsPanel({ canExport, canDelete }: { canExport: boolean; canDelete
       <SearchBox
         value={search}
         onChange={setSearch}
-        placeholder="Buscar por nome, usuário do Windows ou dispositivo"
+        placeholder="Buscar por nome ou usuário do Windows"
         label="Buscar titular"
       />
 
-      {/* Aviso honesto de alcance: a descoberta de titulares vem da atividade agregada dos
-          últimos 92 dias (GET /reports/usage). Um titular sem atividade nesse período não
-          aparece aqui, mesmo dentro da retenção — o caminho é o painel por dispositivo. */}
+      {/* Alcance da lista: TODOS os titulares registrados do tenant, inclusive quem
+          não tem atividade recente (o direito do titular não expira com o uso).
+          A busca é por pessoa; para varrer um aparelho inteiro, use o painel por
+          dispositivo. */}
       <p className="text-xs text-muted-foreground">
-        A lista cobre titulares com atividade nos últimos {SUBJECT_LOOKBACK_DAYS} dias.
+        A lista cobre todos os titulares registrados, inclusive quem está sem atividade recente.
         {capped
-          ? ` Mostrando os ${SUBJECT_PAGE_SIZE} mais ativos; refine a busca para encontrar uma pessoa específica.`
+          ? ` São ${total} no total e a tela mostra os primeiros ${SUBJECT_PAGE_SIZE}; refine a busca para encontrar uma pessoa específica.`
           : ""}{" "}
-        Um titular sem atividade nesse período não aparece — nesse caso, use o painel por
-        dispositivo.
+        Cada linha é uma conta do Windows em um dispositivo: a mesma pessoa em duas máquinas
+        aparece em duas linhas, e a ação vale só para a linha escolhida.
       </p>
 
       <Card>
@@ -331,14 +310,14 @@ function SubjectsPanel({ canExport, canDelete }: { canExport: boolean; canDelete
           <SkeletonRows columns={canDelete || canExport ? 3 : 2} />
         ) : subjectsQuery.isError ? (
           <ErrorState message={genericErrorMessage(subjectsQuery.error)} onRetry={() => void subjectsQuery.refetch()} />
-        ) : filtered.length === 0 ? (
+        ) : subjects.length === 0 ? (
           <EmptyState
             icon={UserRound}
-            title={q.length > 0 ? "Nenhum titular corresponde à busca" : "Nenhum titular com atividade recente"}
+            title={q.length > 0 ? "Nenhum titular corresponde à busca" : "Nenhum titular registrado"}
             description={
               q.length > 0
-                ? "Ajuste os termos da busca. Os titulares aparecem quando há atividade nos últimos 92 dias."
-                : "Os titulares aparecem aqui assim que houver atividade coletada com um usuário do Windows identificado."
+                ? "Ajuste os termos da busca: ela procura pelo nome definido no portal e pelo usuário do Windows."
+                : "Os titulares aparecem aqui assim que houver coleta com um usuário do Windows identificado."
             }
           />
         ) : (
@@ -356,10 +335,15 @@ function SubjectsPanel({ canExport, canDelete }: { canExport: boolean; canDelete
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((s) => (
+                {subjects.map((s) => (
                   <tr key={`${s.device_id}:${s.device_user_id}`} className="border-b transition-colors last:border-b-0 hover:bg-accent/50">
                     <td className="px-6 py-2">
-                      <span className="block max-w-[20rem] truncate font-medium">{s.display_name}</span>
+                      <Link
+                        to={`/pessoas/${s.device_user_id}`}
+                        className="block max-w-[20rem] truncate font-medium underline decoration-dotted underline-offset-4 hover:text-primary"
+                      >
+                        {s.display_name}
+                      </Link>
                       {s.windows_user !== null && (
                         <span className="block max-w-[20rem] truncate text-xs text-muted-foreground">
                           {s.windows_user}

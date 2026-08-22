@@ -10,6 +10,7 @@ import { VisaoGeralPage } from "@/pages/VisaoGeralPage";
 import { LinhaDoTempoPage } from "@/pages/LinhaDoTempoPage";
 import { AppsPage } from "@/pages/AppsPage";
 import { DispositivosPage } from "@/pages/DispositivosPage";
+import { PessoaPage } from "@/pages/PessoaPage";
 import { RelatoriosHubPage } from "@/pages/relatorios/RelatoriosHubPage";
 import { JornadaPage } from "@/pages/relatorios/JornadaPage";
 import { UsoPage } from "@/pages/relatorios/UsoPage";
@@ -22,6 +23,7 @@ import { PrivacidadePage } from "@/pages/configuracoes/PrivacidadePage";
 import { ColetaPage } from "@/pages/configuracoes/ColetaPage";
 import { OrganizacaoPage } from "@/pages/configuracoes/OrganizacaoPage";
 import { AuditoriaPage } from "@/pages/configuracoes/AuditoriaPage";
+import { ConformidadePage } from "@/pages/configuracoes/ConformidadePage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 
 export function App() {
@@ -33,6 +35,10 @@ export function App() {
       <Route path="/recuperar-senha" element={<RecuperarSenhaPage />} />
       <Route path="/redefinir-senha/:token" element={<RedefinirSenhaPage />} />
       <Route path="/transparencia/:slug" element={<TransparenciaPage />} />
+      {/* Mesma página, alcançada pelo token do dispositivo: é o link que o tray
+          do agente abre na máquina do funcionário, e a resposta soma o bloco
+          "Este dispositivo". */}
+      <Route path="/t/:token" element={<TransparenciaPage />} />
 
       {/* Rotas protegidas */}
       <Route element={<RequireAuth />}>
@@ -48,6 +54,10 @@ export function App() {
             <Route path="exportacoes" element={<ExportacoesPage />} />
           </Route>
           <Route path="/dispositivos" element={<DispositivosPage />} />
+          {/* Visão individual do titular (device_user). Sem rota de índice: as
+              pessoas são alcançadas pelos relatórios e pela busca do DSR - o
+              portal não publica uma lista de pessoas navegável por si só. */}
+          <Route path="/pessoas/:id" element={<PessoaPage />} />
           <Route path="/configuracoes" element={<ConfiguracoesLayout />}>
             <Route index element={<Navigate to="/configuracoes/usuarios" replace />} />
             <Route path="usuarios" element={<UsuariosPage />} />
@@ -57,6 +67,7 @@ export function App() {
             <Route path="coleta" element={<ColetaPage />} />
             <Route path="organizacao" element={<OrganizacaoPage />} />
             <Route path="auditoria" element={<AuditoriaPage />} />
+            <Route path="conformidade" element={<ConformidadePage />} />
           </Route>
         </Route>
       </Route>
