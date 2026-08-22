@@ -4,6 +4,7 @@ using M351.Api.Contracts;
 using M351.Domain;
 using M351.Domain.Entities;
 using M351.Infrastructure.Data;
+using M351.Infrastructure.Reports;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -60,7 +61,8 @@ public class MeController(M351DbContext db) : ApiControllerBase
     /// <summary>
     /// Atualização parcial das próprias preferências (campos ausentes não mudam). Sem
     /// auditoria: é preferência de notificação do próprio usuário, não config de privacidade
-    /// nem acesso a dado pessoal de titular.
+    /// nem acesso a dado pessoal de titular. Único gate: jornada_weekly só LIGA no plano Pro
+    /// (403 fora dele), porque relatório agendado é feature paga.
     /// </summary>
     [HttpPatch("email-prefs")]
     public async Task<IActionResult> PatchEmailPrefs([FromBody] JsonElement body, CancellationToken ct)
@@ -80,7 +82,23 @@ public class MeController(M351DbContext db) : ApiControllerBase
 
         if (TryGetBool(body, "weekly_digest", out var digest)) prefs.WeeklyDigest = digest;
         if (TryGetBool(body, "fleet_alerts", out var alerts)) prefs.FleetAlerts = alerts;
-        if (TryGetBool(body, "jornada_weekly", out var jornada)) prefs.JornadaWeekly = jornada;
+
+        if (TryGetBool(body, "jornada_weekly", out var jornada))
+        {
+            // GATE DE PLANO: relatório agendado por e-mail é exclusivo do Pro
+            // (docs/design/05-produto-mvp.md). O gate vive no plano da org, a flag por tenant do
+            // backoffice. LIGAR fora do Pro é 403; DESLIGAR é sempre permitido, para um downgrade
+            // não deixar ninguém preso a uma assinatura que não consegue cancelar.
+            if (jornada && !await db.Organizations.AnyAsync(o => o.Plan == JornadaWeeklyReportService.RequiredPlan, ct))
+            {
+                return ProblemResponse(StatusCodes.Status403Forbidden,
+                    "O relatório de jornada semanal por e-mail é exclusivo do plano Pro.",
+                    detail: "Fale com a gente para habilitar no seu plano.");
+            }
+
+            prefs.JornadaWeekly = jornada;
+        }
+
         prefs.UpdatedAt = DateTimeOffset.UtcNow;
 
         await db.SaveChangesAsync(ct);

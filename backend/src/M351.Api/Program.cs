@@ -188,6 +188,13 @@ if (args.Length > 0 && string.Equals(args[0], "create-enrollment-key", StringCom
     return await CreateEnrollmentKeyCommand.RunAsync(app.Services, args[1..]);
 }
 
+// Backoffice CLI (F5): troca o plano do tenant, a flag que abre as features pagas (alertas de
+// saúde de frota e relatório de jornada semanal por e-mail são exclusivos do Pro)
+if (args.Length > 0 && string.Equals(args[0], "set-org-plan", StringComparison.OrdinalIgnoreCase))
+{
+    return await SetOrgPlanCommand.RunAsync(app.Services, args[1..]);
+}
+
 // Backoffice CLI (F3.6): tenant demo sintético injetado pelo pipeline REAL de intervalização
 if (args.Length > 0 && string.Equals(args[0], "seed-demo-tenant", StringComparison.OrdinalIgnoreCase))
 {

@@ -60,24 +60,47 @@ Confirme na VPS que `EMAIL_PROVIDER=Smtp` e que `SMTP_HOST`, `SMTP_USERNAME`, `S
 `SMTP_FROM_ADDRESS` estão preenchidos. Em dev, `Email__Provider=Dev` grava `.txt` em disco.
 
 Depois de configurar, valide sem esperar segunda-feira: os serviços são invocáveis por teste
-(`WeeklyDigestTests`, `FleetHealthTests`) e o `RunOnceAsync` aceita o instante como parâmetro.
+(`WeeklyDigestTests`, `FleetHealthTests`, `JornadaWeeklyReportTests`) e o `RunOnceAsync` aceita o
+instante como parâmetro.
 
 | Feature | Quando dispara | Quem recebe | Como desligar |
 |---|---|---|---|
 | Resumo semanal | Segunda 08h **no fuso de cada org** | Owner e Admin ativos | Preferência do usuário no portal |
 | Alertas de frota | A cada 15 min, só em horário de trabalho da org | Owner e Admin, **só plano `pro`** | Preferência do usuário no portal |
-| Jornada semanal | Segunda 07h no fuso da org | Quem assinou no portal | Toggle do próprio usuário |
+| Jornada semanal | Segunda 07h no fuso da org | Quem assinou no portal, **só plano `pro`** | Toggle na tela do Relatório de Jornada ou em Configurações |
+
+**Como a jornada semanal funciona por dentro:** o job de 5 em 5 minutos enfileira, na janela das
+07h locais, um export `jornada_csv` da semana fechada no MESMO pipeline assíncrono do botão
+"Exportar CSV", com `requested_by` apontando para o assinante (a trilha `export_csv` continua
+respondendo quem gerou o arquivo). Quando o `ExportService` fecha o arquivo, o ciclo seguinte
+manda o e-mail. O corpo leva **link** para o download autenticado no portal, **nunca anexo**:
+planilha de jornada é dado pessoal da equipe e não circula por e-mail. O disclaimer da Portaria
+671 vai verbatim no corpo. Semana sem nenhum dispositivo ainda gera e-mail, dizendo que não houve
+atividade, para silêncio na segunda nunca ser lido como produto quebrado.
 
 **Calibragem dos alertas** (já embutida, não precisa configurar): no máximo um e-mail por
 organização por ciclo, cooldown de 24 h por dispositivo e tipo, silêncio fora do horário de
 trabalho configurado. Se o cliente reclamar de ruído, o problema é a `business_hours` da org
 estar vazia (aí tudo é "horário de trabalho"), não o alerta.
 
-### Alertas são exclusivos do plano Pro
+### Alertas de frota e jornada semanal são exclusivos do plano Pro
 
-O gate lê `organizations.plan = 'pro'`. Para ativar num tenant, atualize o plano pelo backoffice
-ou direto no banco. Contas em `trial` recebem o digest, mas não os alertas: é a primeira razão
-objetiva de upgrade do produto, use isso na venda.
+O gate lê `organizations.plan = 'pro'` nos dois casos. Para ativar num tenant:
+
+```bash
+docker exec m351-staging-api-1 dotnet M351.Api.dll set-org-plan --org-slug empresa-x --plan pro
+```
+
+O comando aceita `trial`, `essencial` e `pro`, e não mexe no `device_limit` (o limite de
+dispositivos é régua de contrato, decidida caso a caso). Contas em `trial` ou `essencial` recebem
+o digest semanal, mas não os alertas nem o relatório agendado: é a primeira razão objetiva de
+upgrade do produto, use isso na venda.
+
+O gate também vale no portal e na API: fora do Pro o toggle da jornada semanal aparece
+desabilitado com a nota do plano, e o `PATCH /me/email-prefs` responde 403 ao tentar **ligar** a
+assinatura. **Desligar** é sempre permitido, para um downgrade não prender ninguém numa assinatura
+que não consegue cancelar. As assinaturas ficam gravadas e voltam a valer se o plano subir de
+novo.
 
 ---
 

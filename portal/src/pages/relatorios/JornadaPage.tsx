@@ -11,6 +11,9 @@
 //   (consistência absoluta entre telas - DoD 11.3).
 // - Exportar CSV (admin E viewer): POST /exports {kind:"jornada_csv"} -> 202;
 //   acompanhamento em /relatorios/exportacoes. O backend audita view_report.
+// - Assinatura semanal por e-mail (F5, exclusivo do plano Pro): o mesmo export,
+//   enfileirado pelo worker toda segunda 07h no fuso da organização, com o LINK
+//   do download autenticado no corpo do e-mail. Nunca anexo.
 // =============================================================================
 
 import { useEffect, useMemo, useRef } from "react";
@@ -33,6 +36,7 @@ import {
   useReportRange,
 } from "@/components/reports/filters";
 import { ExportCsvBanner, ExportCsvButton, useCsvExport } from "@/components/reports/ExportCsv";
+import { AssinaturaJornadaToggle } from "@/components/reports/AssinaturaJornada";
 
 const PAGE_SIZE = 50;
 
@@ -223,6 +227,10 @@ export function JornadaPage() {
       </Card>
 
       <ExportCsvBanner mutation={exportMutation} />
+
+      {/* Assinatura semanal por e-mail (F5): vizinha do Exportar CSV porque é
+          exatamente o mesmo export, só que agendado. */}
+      <AssinaturaJornadaToggle />
 
       {jornadaQuery.isError && data !== undefined && (
         <div

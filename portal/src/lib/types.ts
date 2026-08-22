@@ -105,7 +105,8 @@ export interface MeResponse {
  *
  * weekly_digest: resumo semanal da equipe.
  * fleet_alerts: avisos de dispositivos com problema (exclusivo do plano Pro).
- * jornada_weekly: relatório semanal de jornada.
+ * jornada_weekly: relatório semanal de jornada (exclusivo do plano Pro; o
+ * PATCH responde 403 ao tentar LIGAR fora dele, desligar é sempre permitido).
  *
  * Cuidado de vocabulário: "alertas" no portal são estes e-mails; as pendências
  * do sino do topo NUNCA se chamam alertas.

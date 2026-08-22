@@ -4,58 +4,26 @@
 // toggle grava sozinho, com PATCH parcial (campos ausentes não mudam), então
 // uma falha em um toggle não desfaz os outros.
 //
-// "Alertas de dispositivos" é exclusivo do plano Pro: fora do Pro o toggle
-// aparece desabilitado com a nota, em vez de deixar a pessoa ligar algo que o
-// backend recusaria.
+// "Alertas de dispositivos" e "Relatório de jornada semanal" são exclusivos do
+// plano Pro: fora do Pro os toggles aparecem desabilitados com a nota, em vez
+// de deixar a pessoa ligar algo que o backend recusaria (o PATCH responde 403
+// ao ligar jornada_weekly fora do Pro).
 //
 // VOCABULÁRIO: aqui "alertas" são estes e-mails. As pendências do sino do topo
 // do portal NUNCA se chamam alertas.
 // =============================================================================
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
-import { genericErrorMessage } from "@/lib/messages";
-import type { EmailPrefs, EmailPrefsPatchRequest, MeResponse } from "@/lib/types";
+import { genericErrorMessage, problemErrorMessage } from "@/lib/messages";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-
-/** Plano que habilita o e-mail de alertas de dispositivos. */
-const PLANO_PRO = "pro";
+import { useEmailPrefs } from "@/components/reports/AssinaturaJornada";
 
 export function PreferenciasEmailCard() {
-  const queryClient = useQueryClient();
-
-  const meQuery = useQuery({
-    queryKey: ["me"],
-    queryFn: () => api<MeResponse>("/me"),
-    staleTime: 5 * 60 * 1000,
-  });
-  const isPro = meQuery.data?.organization.plan === PLANO_PRO;
-
-  // Key própria (não ["me","email-prefs"]): invalidar ["me"] em outro lugar não
-  // deve arrastar estas preferências junto pela regra de prefixo.
-  const prefsQuery = useQuery({
-    queryKey: ["email-prefs"],
-    queryFn: () => api<EmailPrefs>("/me/email-prefs"),
-    staleTime: 60_000,
-  });
-
-  const mutation = useMutation({
-    mutationFn: (body: EmailPrefsPatchRequest) =>
-      api<EmailPrefs>("/me/email-prefs", { method: "PATCH", body }),
-    onSuccess: (updated) => {
-      queryClient.setQueryData(["email-prefs"], updated);
-    },
-  });
-
-  // Qual campo está gravando agora: só ele fica desabilitado durante o PATCH.
-  const savingKey = mutation.isPending
-    ? (Object.keys(mutation.variables ?? {})[0] as keyof EmailPrefs | undefined)
-    : undefined;
-
-  const prefs = prefsQuery.data;
+  // Mesmo hook (e mesma query key) do toggle da tela de Jornada: ligar a
+  // assinatura lá reflete aqui sem refetch, e a regra do plano é uma só.
+  const { prefs, prefsQuery, mutation, isPro, savingKey } = useEmailPrefs();
 
   return (
     <Card>
@@ -106,14 +74,20 @@ export function PreferenciasEmailCard() {
             <PrefToggle
               id="pref-jornada-weekly"
               label="Relatório de jornada semanal"
-              description="Planilha semanal com primeiro e último evento por dispositivo. Não é ponto eletrônico e não substitui registro de jornada."
-              checked={prefs.jornada_weekly}
+              description="Toda segunda, o link para baixar a planilha da semana anterior no portal, com primeiro e último evento por dispositivo. Nunca vai anexo. Não é ponto eletrônico e não substitui registro de jornada."
+              checked={isPro && prefs.jornada_weekly}
               saving={savingKey === "jornada_weekly"}
+              disabled={!isPro}
+              note={
+                !isPro
+                  ? "Exclusivo do plano Pro. Fale com a gente para habilitar no seu plano."
+                  : "Exclusivo do plano Pro."
+              }
               onChange={(next) => mutation.mutate({ jornada_weekly: next })}
             />
             {mutation.isError && (
               <p role="alert" className="text-sm text-destructive">
-                {genericErrorMessage(mutation.error)}
+                {problemErrorMessage(mutation.error)}
               </p>
             )}
           </>
