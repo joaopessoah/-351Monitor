@@ -1,4 +1,7 @@
+using M351.Infrastructure;
 using M351.Infrastructure.Aggregation;
+using M351.Infrastructure.Digest;
+using M351.Infrastructure.Email;
 using M351.Infrastructure.Exports;
 using M351.Infrastructure.Intervalization;
 using M351.Infrastructure.Maintenance;
@@ -64,6 +67,15 @@ builder.Services.AddSingleton<HousekeepingService>(sp => new HousekeepingService
     sp.GetRequiredService<NpgsqlDataSource>(),
     sp.GetRequiredService<ILogger<HousekeepingService>>()));
 
+// E-mail no worker (F5): digest semanal e alertas usam o MESMO seletor Dev/Smtp da API
+// (Email__Provider etc. já plumbados no compose). Portal:BaseUrl monta os links do e-mail.
+builder.Services.AddM351Email(builder.Configuration);
+builder.Services.AddSingleton<WeeklyDigestService>(sp => new WeeklyDigestService(
+    sp.GetRequiredService<NpgsqlDataSource>(),
+    sp.GetRequiredService<IEmailSender>(),
+    builder.Configuration["Portal:BaseUrl"] ?? "http://localhost:5173",
+    sp.GetRequiredService<ILogger<WeeklyDigestService>>()));
+
 // Quartz (Seção 7.6): Intervalization a cada 60 s; DailyAggregation a cada 15 min;
 // ExportWorker a cada 15 s ("contínuo" da spec via polling curto — padrão dos demais jobs);
 // jobs noturnos de retenção/purga (F4.6) em cron no fuso America/Sao_Paulo (tzdata no container):
@@ -120,6 +132,15 @@ builder.Services.AddQuartz(quartz =>
         .ForJob(housekeepingKey)
         .WithIdentity("housekeeping-0300-brt")
         .WithCronSchedule("0 0 3 * * ?", cron => cron.InTimeZone(saoPaulo)));
+
+    // Digest semanal (F5): job HORÁRIO (minuto 5) — o serviço decide, org a org, se a hora
+    // local é segunda 08h; multi-fuso sem um trigger por org.
+    var digestKey = new JobKey("weekly-digest");
+    quartz.AddJob<WeeklyDigestJob>(options => options.WithIdentity(digestKey));
+    quartz.AddTrigger(trigger => trigger
+        .ForJob(digestKey)
+        .WithIdentity("weekly-digest-hourly")
+        .WithCronSchedule("0 5 * ? * *"));
 
     // Dead-man switch (quem monitora o monitor): GET a cada 5 min na URL de
     // DeadMan:WorkerUrl (env DeadMan__WorkerUrl, um check do healthchecks.io).

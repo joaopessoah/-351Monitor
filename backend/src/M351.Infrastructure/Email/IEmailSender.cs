@@ -1,6 +1,7 @@
 namespace M351.Infrastructure.Email;
 
-public record EmailMessage(string To, string Subject, string Body);
+/// <summary>IsHtml: corpo HTML simples (digest semanal); default texto puro (convites, links).</summary>
+public record EmailMessage(string To, string Subject, string Body, bool IsHtml = false);
 
 public interface IEmailSender
 {

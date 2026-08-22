@@ -119,6 +119,15 @@ services:
       # Dead-man switch: check do healthchecks.io pingado a cada 5 min pelo worker
       # (vazio = job nem é registrado; ver DeadManSwitchJob no M351.Worker)
       DeadMan__WorkerUrl: ${HEALTHCHECKS_WORKER_URL:-}
+      # F5 — digest semanal por e-mail: mesmo SMTP e mesma base de links da API
+      Portal__BaseUrl: https://${STAGING_DOMAIN:?defina STAGING_DOMAIN em infra/.env}
+      Email__Provider: ${EMAIL_PROVIDER:-Smtp}
+      Email__DevMailDirectory: /tmp/dev-mail
+      Email__SmtpHost: ${SMTP_HOST:-}
+      Email__SmtpPort: ${SMTP_PORT:-587}
+      Email__SmtpUsername: ${SMTP_USERNAME:-}
+      Email__SmtpPassword: ${SMTP_PASSWORD:-}
+      Email__FromAddress: ${SMTP_FROM_ADDRESS:-nao-responda@351monitor.com.br}
       # F3.5 — CSVs exportados: o worker gera, a API serve o download (MESMO volume)
       Exports__Directory: /var/lib/m351/exports
     volumes:

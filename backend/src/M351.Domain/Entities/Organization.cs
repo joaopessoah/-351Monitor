@@ -31,4 +31,10 @@ public class Organization
     /// onboarding é da organização); null = card visível enquanto houver passo pendente.
     /// </summary>
     public DateTimeOffset? OnboardingChecklistDismissedAt { get; set; }
+
+    /// <summary>
+    /// F5 — última vez que o digest semanal foi enviado para esta org (idempotência do job
+    /// horário: reinício do worker dentro da mesma janela não reenvia).
+    /// </summary>
+    public DateTimeOffset? LastWeeklyDigestAt { get; set; }
 }

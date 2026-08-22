@@ -25,6 +25,7 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
     public DbSet<AuditLogEntry> AuditLog => Set<AuditLogEntry>();
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<MfaRecoveryCode> MfaRecoveryCodes => Set<MfaRecoveryCode>();
+    public DbSet<UserEmailPrefs> UserEmailPrefs => Set<UserEmailPrefs>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -50,6 +51,8 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
             e.Property(x => x.DataVigencia).HasColumnName("data_vigencia").HasColumnType("date");
             // F5 — checklist de primeiros passos (Seção 8.3 passo 4)
             e.Property(x => x.OnboardingChecklistDismissedAt).HasColumnName("onboarding_checklist_dismissed_at");
+            // F5 — idempotência do digest semanal
+            e.Property(x => x.LastWeeklyDigestAt).HasColumnName("last_weekly_digest_at");
 
             // a organização É o tenant: visível apenas para o próprio tenant autenticado
             e.HasQueryFilter(x => _tenant.TenantId != null && x.Id == _tenant.TenantId.Value);
@@ -109,6 +112,21 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
             e.Property(x => x.Ip).HasColumnName("ip").HasColumnType("inet");
             e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId);
             e.HasIndex(x => x.TokenHash);
+
+            e.HasQueryFilter(x => _tenant.TenantId != null && x.TenantId == _tenant.TenantId.Value);
+        });
+
+        modelBuilder.Entity<UserEmailPrefs>(e =>
+        {
+            e.ToTable("user_email_prefs");
+            e.HasKey(x => x.UserId);
+            e.Property(x => x.UserId).HasColumnName("user_id").ValueGeneratedNever();
+            e.Property(x => x.TenantId).HasColumnName("tenant_id");
+            e.Property(x => x.WeeklyDigest).HasColumnName("weekly_digest");
+            e.Property(x => x.FleetAlerts).HasColumnName("fleet_alerts");
+            e.Property(x => x.JornadaWeekly).HasColumnName("jornada_weekly");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasOne<User>().WithOne().HasForeignKey<UserEmailPrefs>(x => x.UserId);
 
             e.HasQueryFilter(x => _tenant.TenantId != null && x.TenantId == _tenant.TenantId.Value);
         });
