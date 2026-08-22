@@ -18,8 +18,11 @@ public record EnrollResponse(
     int ConfigVersion,
     AgentConfigDto Config);
 
-// ----- Config canônica (Seção 5.5 — objeto completo, sempre os 10 campos) -----
+// ----- Config canônica (Seção 5.5 — objeto completo, sempre os 11 campos) -----
 
+/// <param name="TransparencyUrl">
+/// Página pública da ORGANIZAÇÃO (/transparencia/{slug}) — link divulgável, sem segredo.
+/// </param>
 /// <param name="NoticeText">
 /// F5 — texto do aviso de ciência gerenciado pelo tenant; null = o agente usa o texto padrão
 /// embutido nele. Os trechos fixos que protegem a base legal ("é registro de ciência, não pedido
@@ -27,6 +30,13 @@ public record EnrollResponse(
 /// </param>
 /// <param name="NoticeVersion">
 /// F5 — versão do aviso: bump re-exibe o aviso na frota e gera novo NOTICE_ACK.
+/// </param>
+/// <param name="DeviceTransparencyUrl">
+/// Página pública DO FUNCIONÁRIO daquela máquina (/t/{token}, devices.transparency_token): a
+/// mesma política da organização MAIS o bloco "Este dispositivo". Null para device sem token
+/// (nunca deveria acontecer depois do backfill, mas o agente precisa saber cair no
+/// transparency_url por slug). A url carrega um SEGREDO de baixo valor: nunca vai para log,
+/// query string de telemetria nem para o payload que o Viewer lê no portal.
 /// </param>
 public record AgentConfigDto(
     int HeartbeatSec,
@@ -38,7 +48,8 @@ public record AgentConfigDto(
     CollectionWindowDto CollectionWindow,
     string TransparencyUrl,
     string? NoticeText,
-    int NoticeVersion);
+    int NoticeVersion,
+    string? DeviceTransparencyUrl);
 
 public record CollectionWindowDto(string Mode, int[]? Days, string? Start, string? End);
 

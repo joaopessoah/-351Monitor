@@ -32,7 +32,7 @@ public class EnrollTests(ApiTestFixture fixture)
         Assert.StartsWith("dt_", root.GetProperty("device_token").GetString());
         Assert.Equal(1, root.GetProperty("config_version").GetInt32());
 
-        // objeto config completo — 10 campos, números canônicos N1/N2/N4 e defaults de fábrica
+        // objeto config completo — 11 campos, números canônicos N1/N2/N4 e defaults de fábrica
         var config = root.GetProperty("config");
         Assert.Equal(60, config.GetProperty("heartbeat_sec").GetInt32());
         Assert.Equal(5, config.GetProperty("active_window_poll_sec").GetInt32());

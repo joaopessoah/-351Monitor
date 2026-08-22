@@ -56,12 +56,12 @@ public class ConfigCommandAckTests(ApiTestFixture fixture)
         Assert.Equal(JsonValueKind.Object, config.ValueKind);
         Assert.Equal(600, config.GetProperty("idle_threshold_sec").GetInt32());
 
-        // objeto completo: os 10 campos sempre presentes (Seção 5.5)
+        // objeto completo: os 11 campos sempre presentes (Seção 5.5)
         foreach (var field in new[]
                  {
                      "heartbeat_sec", "active_window_poll_sec", "idle_threshold_sec", "window_title_policy",
                      "masked_patterns", "ignored_processes", "collection_window", "transparency_url",
-                     "notice_text", "notice_version",
+                     "notice_text", "notice_version", "device_transparency_url",
                  })
         {
             Assert.True(config.TryGetProperty(field, out _), $"config sem o campo {field}");

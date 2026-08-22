@@ -20,6 +20,16 @@ public record DeviceResponse(
 public record PagedResponse<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
 
 /// <summary>
+/// GET /devices/{id}/transparency-link (Admin+): a URL da página pública DAQUELE dispositivo
+/// (/t/{token}), a mesma que o tray do agente abre na máquina do funcionário.
+///
+/// Endpoint próprio, e não um campo do DeviceResponse, por SEGURANÇA: o token é um segredo de
+/// baixo valor mas é um segredo, e o DeviceResponse é lido por Viewer e trafega na listagem
+/// inteira. Aqui ele só sai sob papel Admin+ e um device por vez.
+/// </summary>
+public record DeviceTransparencyLinkResponse(Guid DeviceId, string Url);
+
+/// <summary>
 /// GET /devices/health-summary (F5): contagens de saúde sobre a FROTA INTEIRA (devices
 /// active), com os MESMOS limiares do deviceHealth.ts. within_business_hours diz se o
 /// realce de "sem comunicação há mais de 30 min" está valendo agora no fuso da org.

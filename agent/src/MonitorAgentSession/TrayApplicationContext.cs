@@ -218,10 +218,19 @@ public sealed class TrayApplicationContext : ApplicationContext
         _statusForm.Show();
     }
 
+    /// <summary>
+    /// Abre a página de transparência: a DESTE dispositivo (link por token) quando o servidor a
+    /// entregou na config, caindo na página da organização (link por slug) quando não.
+    ///
+    /// O log registra apenas QUAL das duas foi aberta — a url por token carrega um segredo de
+    /// baixo valor e não pode ir para arquivo de log. A caixa de erro mostra o endereço porque ela
+    /// aparece na tela do próprio dono da máquina, que é exatamente quem pode vê-lo.
+    /// </summary>
     private void OpenTransparencyUrl()
     {
-        var url = _config.TransparencyUrl;
-        if (string.IsNullOrEmpty(url))
+        var config = _config;
+        var url = TransparencyLink.Resolve(config);
+        if (url is null)
         {
             MessageBox.Show(
                 "A política de monitoramento ainda não foi configurada pela sua empresa.\n" +
@@ -232,6 +241,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         try
         {
             Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            _log.Info($"Política de monitoramento aberta: {TransparencyLink.DescribeForLog(config)}.");
         }
         catch (Exception)
         {

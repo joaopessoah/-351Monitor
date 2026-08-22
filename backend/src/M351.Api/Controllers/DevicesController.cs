@@ -308,6 +308,37 @@ public class DevicesController(M351DbContext db, AuditWriter audit, NpgsqlDataSo
         return Ok(ToResponse(row, minVersion));
     }
 
+    /// <summary>
+    /// GET /devices/{id}/transparency-link (Admin+): a URL da página pública daquele dispositivo
+    /// (/t/{token}) — a MESMA que o tray do agente abre na máquina do funcionário, para o gestor
+    /// poder enviá-la a quem pedir sem precisar ler o banco.
+    ///
+    /// Fora do DeviceResponse por decisão de segurança: o token é um segredo de baixo valor mas é
+    /// um segredo, e o DeviceResponse é lido por Viewer e vai na listagem inteira. Aqui sai um
+    /// device por vez, só sob Admin+, e a url NUNCA entra em log (nem no audit, que registraria a
+    /// url num detail legível por quem lê a trilha).
+    ///
+    /// Device sem token (só aconteceria com linha anterior ao backfill que nunca re-enrollou)
+    /// responde 404, o mesmo do device inexistente — não há link a oferecer.
+    /// </summary>
+    [HttpGet("{id:guid}/transparency-link")]
+    [Authorize(Policy = AuthConstants.PolicyAdminPlus)]
+    public async Task<IActionResult> TransparencyLink(
+        Guid id, [FromServices] AgentConfigService configService, CancellationToken ct)
+    {
+        var token = await db.Devices
+            .Where(d => d.Id == id)
+            .Select(d => d.TransparencyToken)
+            .FirstOrDefaultAsync(ct);
+
+        if (token is not { } value)
+        {
+            return NotFoundProblem(); // inexistente, de outro tenant OU sem token — nunca 403
+        }
+
+        return Ok(new DeviceTransparencyLinkResponse(id, configService.DeviceTransparencyUrl(value)));
+    }
+
     private const int MaxDisplayNameLength = 200;
     private const int MaxTagLength = 100;
     private const int MaxTags = 50;

@@ -81,9 +81,12 @@ public sealed class IngestService(
         await using var transaction = await connection.BeginTransactionAsync(ct);
 
         // serializa lotes concorrentes do mesmo device (seq_max/projeção consistentes)
-        var before = await connection.QuerySingleAsync<(long SeqMax, DateTime? LastSeenAt, string Status)>(
+        var before = await connection.QuerySingleAsync<(long SeqMax, DateTime? LastSeenAt, string Status, Guid? TransparencyToken)>(
             new CommandDefinition(
-                "SELECT seq_max, last_seen_at, status FROM devices WHERE id = @DeviceId AND tenant_id = @TenantId FOR UPDATE",
+                """
+                SELECT seq_max, last_seen_at, status, transparency_token
+                FROM devices WHERE id = @DeviceId AND tenant_id = @TenantId FOR UPDATE
+                """,
                 new { DeviceId = deviceId, TenantId = tenantId }, transaction, cancellationToken: ct));
 
         // Enforcement do status 'paused' (regra do design 02 recuperada na F5): device pausado
@@ -169,7 +172,9 @@ public sealed class IngestService(
             Rejected: rejected,
             ServerTime: now,
             ConfigVersion: config.ConfigVersion,
-            Config: configOutdated ? configService.Build(config, slug) : null,
+            // a config reentregue carrega a url de transparência DAQUELE device: é o caminho pelo
+            // qual um agente já enrolado (antes do campo existir) passa a receber o token
+            Config: configOutdated ? configService.Build(config, slug, before.TransparencyToken) : null,
             Commands: commands);
     }
 
