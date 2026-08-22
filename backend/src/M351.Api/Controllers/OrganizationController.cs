@@ -135,6 +135,40 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
     }
 
     /// <summary>
+    /// F5 — Seção 8.3 passo 4: o checklist de primeiros passos é dispensável e o estado é da
+    /// ORGANIZAÇÃO (persistido no servidor, não em localStorage). Idempotente. Estado de UI
+    /// puro, sem dado pessoal: deliberadamente fora da trilha de auditoria.
+    /// </summary>
+    [HttpPost("onboarding-checklist/dismiss")]
+    [Authorize(Policy = AuthConstants.PolicyAdminPlus)]
+    public async Task<IActionResult> DismissOnboardingChecklist(CancellationToken ct)
+    {
+        var org = await db.Organizations.FirstAsync(ct);
+        if (org.OnboardingChecklistDismissedAt is null)
+        {
+            org.OnboardingChecklistDismissedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>Reabre o checklist de primeiros passos (link em Configurações).</summary>
+    [HttpDelete("onboarding-checklist/dismiss")]
+    [Authorize(Policy = AuthConstants.PolicyAdminPlus)]
+    public async Task<IActionResult> RestoreOnboardingChecklist(CancellationToken ct)
+    {
+        var org = await db.Organizations.FirstAsync(ct);
+        if (org.OnboardingChecklistDismissedAt is not null)
+        {
+            org.OnboardingChecklistDismissedAt = null;
+            await db.SaveChangesAsync(ct);
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>
     /// Lê um campo de texto opcional do corpo: ausente (hasField=false, não muda); null (define
     /// null, limpa); string (trim + limite de tamanho). Retorna o valor; o erro 400 vai por out.
     /// </summary>

@@ -37,6 +37,8 @@ public class MeController(M351DbContext db) : ApiControllerBase
 
         return Ok(new MeResponse(
             new MeUserResponse(user.Id, user.Email, user.DisplayName, user.Role.ToDbValue()),
-            new MeOrganizationResponse(org.Id, org.Name, org.Slug, org.Timezone, businessHours)));
+            new MeOrganizationResponse(
+                org.Id, org.Name, org.Slug, org.Timezone, businessHours,
+                org.Plan, org.DeviceLimit, org.OnboardingChecklistDismissedAt)));
     }
 }

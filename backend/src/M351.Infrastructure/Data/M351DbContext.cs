@@ -48,6 +48,8 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
             e.Property(x => x.FinalidadeDeclarada).HasColumnName("finalidade_declarada").HasColumnType("text");
             e.Property(x => x.ContatoDpo).HasColumnName("contato_dpo").HasColumnType("text");
             e.Property(x => x.DataVigencia).HasColumnName("data_vigencia").HasColumnType("date");
+            // F5 — checklist de primeiros passos (Seção 8.3 passo 4)
+            e.Property(x => x.OnboardingChecklistDismissedAt).HasColumnName("onboarding_checklist_dismissed_at");
 
             // a organização É o tenant: visível apenas para o próprio tenant autenticado
             e.HasQueryFilter(x => _tenant.TenantId != null && x.Id == _tenant.TenantId.Value);
