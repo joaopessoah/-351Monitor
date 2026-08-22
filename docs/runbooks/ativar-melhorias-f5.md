@@ -142,11 +142,45 @@ migração destrutiva) e falha o job de CI se o `/healthz` não voltar em 60 s.
 
 ## 7. Score de saúde de conta (CS interno)
 
-Preencha `Cs__AlertEmail` com o seu e-mail para receber, toda segunda 09h BRT, a lista de contas
-em risco (sem login há 14 dias, queda de dispositivos ativos, tenant sem eventos há 7 dias), em
-formato importável no CRM interno. Sem a variável, o job não é registrado.
+Preencha `CS_ALERT_EMAIL` em `infra/.env` (chega ao worker como `Cs__AlertEmail`) com o seu
+e-mail. Toda segunda 09h BRT, uma hora depois do resumo semanal dos clientes, o worker apura as
+contas em risco e manda **um** e-mail com a lista e um CSV anexo. Sem a variável, o job não é
+registrado.
 
 Ligue **depois** do início do piloto: antes disso a lista é vazia por definição.
+
+**Por que isso existe:** a cobrança manual é o único sensor de churn hoje e ela avisa em D+20,
+quando a decisão de cancelar já foi tomada. Estes sinais aparecem 30 a 60 dias antes, quando um
+telefonema ainda salva a conta.
+
+| Sinal | Janela | Pontos de risco |
+|---|---|---|
+| Nenhum login de usuário no portal | 14 dias | 30 |
+| Nenhum dispositivo se comunicando | 7 dias | 30 |
+| Queda de mais de 20% nos dispositivos com dados | semana contra semana | 25 |
+| Nenhuma consulta a relatório nem export | 14 dias | 10 |
+| 10 ou mais aplicativos em uso sem categoria | 30 dias | 5 |
+
+O score de saúde é 100 menos a soma dos pontos: até 50 é **crítico**, até 75 é **atenção**.
+Só entram no e-mail as contas com pelo menos um sinal; **semana sem conta em risco não gera
+e-mail nenhum**, porque um "nada a relatar" toda segunda treina qualquer pessoa a ignorar a
+mensagem. A execução fica registrada em `maintenance_runs` com as contagens, então dá para
+conferir que o job rodou mesmo nas semanas silenciosas.
+
+**Carência por idade da conta:** cada regra só vale se a organização for mais velha que a janela
+dela. Sem isso, toda conta recém-criada nasceria crítica. O tenant de `DEMO_SLUG` também fica
+fora da apuração: ele é re-semeado toda semana e seria um falso churn permanente.
+
+**O CSV anexo** já sai no formato do importador do CRM interno (`Importar leads`), colunas
+`empresa;contato;email;whatsapp;estacoes;origem;observacoes;cnpj`, UTF-8 com BOM. Contato e
+e-mail são os do Owner ativo da conta; WhatsApp e CNPJ saem vazios porque o produto não guarda
+esses campos da organização. O score e os sinais vão na coluna de observações. Contas já
+cadastradas no CRM entram marcadas como duplicadas na pré-visualização, não viram lead novo.
+
+**Isto é telemetria interna e não pode vazar para o cliente.** O conteúdo é agregado por
+organização (contagem de dispositivos, datas de último acesso, contagem de ações de leitura),
+nunca dado monitorado de pessoa. O job de propósito **não** aparece no dossiê da Central de
+Conformidade do cliente: a saúde comercial da conta não é assunto dele.
 
 ---
 

@@ -138,6 +138,9 @@ services:
       Email__FromAddress: ${SMTP_FROM_ADDRESS:-nao-responda@351monitor.com.br}
       # F3.5 — CSVs exportados: o worker gera, a API serve o download (MESMO volume)
       Exports__Directory: /var/lib/m351/exports
+      # F5, score de saúde de conta (telemetria INTERNA de CS): destinatário do e-mail
+      # semanal com as contas em risco (vazio = job nem é registrado; ver Program.cs)
+      Cs__AlertEmail: ${CS_ALERT_EMAIL:-}
     volumes:
       - exports_data:/var/lib/m351/exports
     depends_on:
