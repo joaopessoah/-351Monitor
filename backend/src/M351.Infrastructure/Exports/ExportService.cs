@@ -325,7 +325,7 @@ public sealed partial class ExportService(
 
     /// <summary>
     /// CSV de atividade fora do horário de trabalho: MESMO SQL do endpoint
-    /// (ForaDoHorarioReportSql.Rows, sem paginação) — mesmas linhas, mesmos números (11.3).
+    /// (ForaDoHorarioReportSql.Rows, sem paginação), mesmas linhas, mesmos números (11.3).
     /// Uma linha por dispositivo COM atividade fora da janela, ordenada por tempo fora desc.
     ///
     /// Disclaimer da Portaria 671/MTE como ÚLTIMA linha, inclusive em arquivo truncado, pelo
@@ -356,7 +356,7 @@ public sealed partial class ExportService(
             command.Parameters.AddWithValue("BusinessDays", schedule!.IsoDays);
             command.Parameters.AddWithValue("BusinessStart", schedule.Start.ToString("HH\\:mm"));
             command.Parameters.AddWithValue("BusinessEnd", schedule.End.ToString("HH\\:mm"));
-            // mesmo padrão da jornada: LIMIT teto+1 — a linha extra só sinaliza truncated
+            // mesmo padrão da jornada: LIMIT teto+1, a linha extra só sinaliza truncated
             command.Parameters.AddWithValue("RowLimit", maxDataRows + 1);
             await using var reader = await command.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))

@@ -5,7 +5,7 @@ namespace M351.Infrastructure;
 /// <summary>
 /// Horário de trabalho da organização (business_hours, o jsonb da org
 /// {"days":[1..7 ISO],"start":"08:00","end":"18:00"}) em UM lugar só:
-///  - <see cref="TryParse"/> devolve a janela já validada — usada pelo relatório de atividade
+///  - <see cref="TryParse"/> devolve a janela já validada, usada pelo relatório de atividade
 ///    fora do horário de trabalho, que precisa dos dias e dos limites, não só de um sim/não;
 ///  - <see cref="IsWithin"/> responde "está em horário de trabalho AGORA?" no fuso da
 ///    organização, espelho SERVER-SIDE do deviceHealth.ts do portal (F5): decide o realce do

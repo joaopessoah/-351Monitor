@@ -19,16 +19,16 @@ namespace M351.IntegrationTests;
 /// validações 400/404 e o disclaimer da Portaria 671/MTE no arquivo exportado.
 ///
 /// Dados semeados pelo pipeline REAL (ingestão → intervalização), como nos demais testes de
-/// relatório: a fonte AQUI é activity_intervals, nunca os agregados diários — que não têm
+/// relatório: a fonte AQUI é activity_intervals, nunca os agregados diários, que não têm
 /// granularidade horária e por isso não sabem dizer se o tempo caiu dentro ou fora da janela.
 /// </summary>
 [Collection(ApiCollection.Name)]
 public class ForaDoHorarioReportTests(ApiTestFixture fixture)
 {
     private static readonly DateTimeOffset Base =
-        new(DateTime.UtcNow.Date.AddDays(-1), TimeSpan.Zero); // ontem 00:00Z — dentro da janela N9
+        new(DateTime.UtcNow.Date.AddDays(-1), TimeSpan.Zero); // ontem 00:00Z, dentro da janela N9
 
-    /// <summary>Texto VERBATIM do DoD 11.3 — literal de propósito (não referencia a constante do produto).</summary>
+    /// <summary>Texto VERBATIM do DoD 11.3, literal de propósito (não referencia a constante do produto).</summary>
     private const string Disclaimer =
         "Relatório gerencial de uso da estação de trabalho. Não constitui registro eletrônico de "
         + "ponto (Portaria 671/MTE) e não substitui o controle de jornada do art. 74 da CLT.";
@@ -39,7 +39,7 @@ public class ForaDoHorarioReportTests(ApiTestFixture fixture)
 
     /// <summary>
     /// Instante UTC do dia-base. O fuso da org de teste é America/Sao_Paulo (GMT-3), então
-    /// T(9,0) é 06:00 local, T(12,0) é 09:00 local e T(22,0) é 19:00 local — todos no MESMO
+    /// T(9,0) é 06:00 local, T(12,0) é 09:00 local e T(22,0) é 19:00 local, todos no MESMO
     /// dia local, o que mantém as somas por balde legíveis.
     /// </summary>
     private static DateTimeOffset T(int h, int m) => Base.AddHours(h).AddMinutes(m);
@@ -89,7 +89,7 @@ public class ForaDoHorarioReportTests(ApiTestFixture fixture)
         await new IntervalizationService(dataSource).RunOnceAsync();
     }
 
-    /// <summary>Bloco active de N minutos (sempre &lt; 10 min — gap N7 dispara em ≥ 600 s).</summary>
+    /// <summary>Bloco active de N minutos (sempre &lt; 10 min, gap N7 dispara em ≥ 600 s).</summary>
     private static async Task SeedActiveAsync(
         HttpClient client, EnrolledDevice device, string process, DateTimeOffset start, int minutes)
     {
@@ -208,7 +208,7 @@ public class ForaDoHorarioReportTests(ApiTestFixture fixture)
         var (client, tenantId, token, fullKey) = await SetupAsync("ForaSemBh");
         var device = await AgentClient.EnrollAsync(client, fullKey, hostname: "NB-FORA-SEMBH");
 
-        // atividade EXISTE; o que falta é a janela declarada — mesmo assim, nada de número
+        // atividade EXISTE; o que falta é a janela declarada, mesmo assim, nada de número
         await SeedActiveAsync(client, device, "fora-sembh.exe", T(9, 0), 9);
         await RunIntervalizationAsync();
 
@@ -323,7 +323,7 @@ public class ForaDoHorarioReportTests(ApiTestFixture fixture)
         (await GetJsonAsync(client, token,
             "/api/v1/reports/fora-do-horario?from=2026-01-01&to=2026-04-03", HttpStatusCode.BadRequest)).Dispose();
 
-        // device_ids malformado → 400; uuid fora do tenant → 404 (nunca 403 — Princípio 4)
+        // device_ids malformado → 400; uuid fora do tenant → 404 (nunca 403, Princípio 4)
         (await GetJsonAsync(client, token,
             "/api/v1/reports/fora-do-horario?from=2026-06-01&to=2026-06-07&device_ids=nao-e-uuid",
             HttpStatusCode.BadRequest)).Dispose();

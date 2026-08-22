@@ -1,7 +1,7 @@
 namespace M351.Infrastructure.Reports;
 
 /// <summary>
-/// SQL canônico do painel de ATIVIDADE FORA DO HORÁRIO DE TRABALHO — FONTE ÚNICA
+/// SQL canônico do painel de ATIVIDADE FORA DO HORÁRIO DE TRABALHO, FONTE ÚNICA
 /// compartilhada pelo endpoint GET /reports/fora-do-horario (M351.Api), pelo card da Visão
 /// Geral (mesmo endpoint, só os totais) e pelo CSV assíncrono (ExportService): os números do
 /// arquivo são, por construção, os mesmos da tela (DoD 11.3).
@@ -11,7 +11,7 @@ namespace M351.Infrastructure.Reports;
 /// existir, cálculo de hora extra, banco de horas, adicional noturno ou qualquer vocabulário de
 /// controle de ponto (CLT / Portaria 671).
 ///
-/// Fonte: activity_intervals, JAMAIS os agregados diários — daily_device_summaries tem
+/// Fonte: activity_intervals, JAMAIS os agregados diários, daily_device_summaries tem
 /// granularidade de DIA e não sabe dizer se o tempo ativo caiu antes, dentro ou depois da
 /// janela. O worker já divide os intervalos na meia-noite do tenant, então cada intervalo
 /// pertence a UM source_day local e a comparação com a janela é feita em relógio de parede
@@ -19,17 +19,17 @@ namespace M351.Infrastructure.Reports;
 ///
 /// Decisões documentadas (silêncios da spec):
 ///  - só o estado 'active' entra: ocioso/bloqueado fora do horário é máquina ligada, não
-///    pessoa trabalhando — contá-los inflaria o indicador e empurraria para leitura de jornada;
+///    pessoa trabalhando, contá-los inflaria o indicador e empurraria para leitura de jornada;
 ///  - a janela é a business_hours da ORG (BusinessHoursWindow.TryParse). Sem ela configurada o
 ///    endpoint NÃO consulta nada: devolve o estado vazio explicativo (zero seria mentira);
 ///  - três baldes disjuntos e somáveis: antes do início, depois do fim e dia inteiro fora dos
 ///    dias declarados (fim de semana / folga). A soma dos três é o "fora do horário";
 ///  - seconds_active é o tempo ativo TOTAL do mesmo recorte e da MESMA fonte, para que o
 ///    percentual da tela use numerador e denominador consistentes (o relatório de Uso, que sai
-///    dos agregados diários, pode divergir por arredondamento — nunca misturar as duas fontes);
+///    dos agregados diários, pode divergir por arredondamento, nunca misturar as duas fontes);
 ///  - arredondamento: floor da soma em segundos por dispositivo (mesma direção conservadora do
-///    gate 11.3 — jamais arredondar para cima um indicador de equilíbrio);
-///  - devices: por default só não-archived; device_ids EXPLÍCITO inclui archived — mesmo
+///    gate 11.3, jamais arredondar para cima um indicador de equilíbrio);
+///  - devices: por default só não-archived; device_ids EXPLÍCITO inclui archived, mesmo
 ///    recorte do relatório de jornada, reusando o DevicesCte de <see cref="JornadaReportSql"/>.
 /// </summary>
 public static class ForaDoHorarioReportSql
@@ -43,7 +43,7 @@ public static class ForaDoHorarioReportSql
     private const string Partes = $"""
         WITH {JornadaReportSql.DevicesCte},
         blocos AS (
-            -- piso/teto em started_at (chave de particionamento — InitialCreate): source_day
+            -- piso/teto em started_at (chave de particionamento, InitialCreate): source_day
             -- NÃO poda partições; sem isto a CTE varreria TODAS as partições mensais (12
             -- meses, N11). Folga de 48 h pela mesma justificativa do TimelineController
             -- (split na meia-noite local + troca de fuso da org).
@@ -82,7 +82,7 @@ public static class ForaDoHorarioReportSql
     /// <summary>
     /// Uma linha por dispositivo COM atividade fora do horário no período (dispositivos sem
     /// nada fora ficam de fora: a tabela é um recorte de atenção, não um censo da frota),
-    /// ordenada por tempo fora desc. Sem LIMIT/OFFSET — o endpoint pagina, o CSV faz streaming.
+    /// ordenada por tempo fora desc. Sem LIMIT/OFFSET, o endpoint pagina, o CSV faz streaming.
     /// </summary>
     public const string Rows = $"""
         {Partes}
@@ -103,7 +103,7 @@ public static class ForaDoHorarioReportSql
         """;
 
     /// <summary>
-    /// Totais do PERÍODO INTEIRO (independentes da página) — é o que alimenta o card da Visão
+    /// Totais do PERÍODO INTEIRO (independentes da página), é o que alimenta o card da Visão
     /// Geral. devices_with_activity_outside é também o total da paginação das
     /// <see cref="Rows"/>: mesmo predicado (floor ≥ 1 s), calculado na mesma varredura.
     /// </summary>

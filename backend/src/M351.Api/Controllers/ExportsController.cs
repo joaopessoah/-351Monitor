@@ -32,10 +32,10 @@ namespace M351.Api.Controllers;
 ///    403 — Princípio 4: não confirmar a existência). Um Viewer jamais alcança um pacote DSR;
 ///  - params validados com os MESMOS validadores dos endpoints de leitura (régua de datas
 ///    do dashboard, group_by do usage, gate 404 de device_ids cross-tenant); group_by em
-///    jornada_csv/fora_horario_csv → 400 (não se aplica — decisão p/ silêncio da spec);
+///    jornada_csv/fora_horario_csv → 400 (não se aplica, decisão p/ silêncio da spec);
 ///  - fora_horario_csv exige a organização com horário de trabalho configurado e coleta
 ///    contínua: sem janela declarada, ou com collection_window = BUSINESS_HOURS, o pedido vira
-///    409 explicativo (mesma régua dos estados vazios do GET /reports/fora-do-horario — um CSV
+///    409 explicativo (mesma régua dos estados vazios do GET /reports/fora-do-horario, um CSV
 ///    de zeros seria lido como "ninguém trabalha fora do horário", que é falso);
 ///  - GET /exports lista os últimos 30 dias DO TENANT, desc, máx. 100 — trilha "quem gerou,
 ///    quando, com que filtros" (spec linha 949): exports de relatório (CSV) para todos os papéis;
@@ -117,8 +117,8 @@ public class ExportsController(
 
         // fora_horario_csv depende da configuração da ORGANIZAÇÃO, não do pedido: sem janela
         // declarada não existe "fora dela", e com a coleta restrita ao horário de trabalho não
-        // há o que somar fora dele (por design do agente). Os dois casos viram 409 explicativo
-        // — nunca um CSV cheio de zeros, que o gestor leria como "ninguém trabalha fora do
+        // há o que somar fora dele (por design do agente). Os dois casos viram 409 explicativo,
+        // nunca um CSV cheio de zeros, que o gestor leria como "ninguém trabalha fora do
         // horário". É a MESMA régua dos estados vazios do GET /reports/fora-do-horario.
         if (body.Kind == "fora_horario_csv")
         {

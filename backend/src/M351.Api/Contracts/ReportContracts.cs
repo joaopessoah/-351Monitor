@@ -154,7 +154,7 @@ public sealed record ForaDoHorarioItemResponse(
 /// hora extra, banco de horas ou qualquer leitura de controle de ponto.
 ///
 /// status != "ok" traz totals null e items vazio DE PROPÓSITO: sem janela declarada, ou com a
-/// coleta restrita ao próprio horário de trabalho, qualquer número seria enganoso — a tela
+/// coleta restrita ao próprio horário de trabalho, qualquer número seria enganoso, a tela
 /// explica o motivo em vez de exibir zero.
 ///
 /// items só vem preenchido com include_devices=true (ou device_ids); total é o número de

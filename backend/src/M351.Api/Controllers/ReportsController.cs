@@ -205,7 +205,7 @@ public class ReportsController(
     }
 
     /// <summary>
-    /// GET /api/v1/reports/fora-do-horario: painel de ATIVIDADE FORA DO HORÁRIO DE TRABALHO —
+    /// GET /api/v1/reports/fora-do-horario: painel de ATIVIDADE FORA DO HORÁRIO DE TRABALHO,
     /// tempo ATIVO somado fora da business_hours da organização, no fuso do tenant, sobre
     /// activity_intervals (SQL canônico em ForaDoHorarioReportSql, compartilhado com o CSV).
     /// Alimenta o card da Visão Geral (só os totais) e a aba do relatório de Uso (com a lista
@@ -225,8 +225,8 @@ public class ReportsController(
     /// include_devices (default false) governa a lista por dispositivo: sem ele a resposta é um
     /// agregado de EQUIPE (o card da Visão Geral), com ele é um recorte pessoal identificável.
     ///
-    /// Auditoria (DoD 11.3): view_report quando o recorte é pessoal — include_devices=true OU
-    /// device_ids presente — e SÓ quando há número a entregar (status ok). Agregado de equipe
+    /// Auditoria (DoD 11.3): view_report quando o recorte é pessoal, include_devices=true OU
+    /// device_ids presente, e SÓ quando há número a entregar (status ok). Agregado de equipe
     /// não audita, mesma régua condicional do GET /reports/usage.
     /// </summary>
     [HttpGet("fora-do-horario")]
