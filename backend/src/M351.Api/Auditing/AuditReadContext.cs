@@ -19,6 +19,15 @@ namespace M351.Api.Auditing;
 /// O caso CONDICIONAL do dashboard/summary (audita só com filtro individual) e TODAS as mutações
 /// transacionais (update_category, revoke_*, dsr_*, update_device, export_csv) permanecem MANUAIS —
 /// não passam por aqui (ver decisões nos respectivos controllers).
+///
+/// CHAVE DO EXTRATO DE ACESSOS (F5): quando a leitura é recortada por UM titular, o detail
+/// PRECISA levar device_user_id. É por esse campo — não pelo target — que o extrato de acessos
+/// entregue ao titular no pacote DSR ("quem consultou meus dados") seleciona as linhas de
+/// view_report. Hoje isso vale para GET /dashboard/summary?device_user_id= (gravação manual) e
+/// GET /device-users/{id} (por aqui). As demais leituras auditadas são de DISPOSITIVO ou de
+/// EQUIPE: numa máquina compartilhada elas não identificam titular individualmente, então NÃO
+/// entram no extrato — e o relatório entregue diz isso explicitamente em vez de fingir cobertura
+/// total. Nenhuma delas muda de targetType por causa disto (compatibilidade da trilha).
 /// </summary>
 public sealed class AuditReadContext
 {

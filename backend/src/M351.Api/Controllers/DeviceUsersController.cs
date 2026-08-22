@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Dapper;
+using M351.Api.Auditing;
 using M351.Api.Auth;
 using M351.Api.Contracts;
 using M351.Api.Services;
@@ -140,9 +141,17 @@ public class DeviceUsersController(NpgsqlDataSource dataSource) : ApiControllerB
     /// GET /api/v1/device-users/{id} (Viewer+): um titular. Rota ALÉM do mínimo do contrato,
     /// necessária para a página da pessoa carregar o cabeçalho por deep-link (a listagem não
     /// filtra por id, e o PATCH não serve para leitura). Inexistente/outro tenant → 404.
+    ///
+    /// AUDITADA como view_report com device_user_id no detail: abrir a visão de UMA pessoa é
+    /// visualização de dado pessoal identificado (DoD 11.3) e é o registro que identifica O
+    /// TITULAR consultado — a chave do extrato de acessos entregue a ele no pacote DSR. A
+    /// LISTAGEM não é auditada (decisão documentada): é a busca/seletor de nomes, sem recorte
+    /// individual, no mesmo critério de GET /devices e da listagem do catálogo de apps.
     /// </summary>
     [HttpGet("{id:guid}")]
-    public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
+    [AuditRead] // DoD 11.3: leitura por titular — view_report via AuditReadFilter
+    public async Task<IActionResult> GetById(
+        Guid id, [FromServices] AuditReadContext readAudit, CancellationToken ct)
     {
         var tenantId = CurrentUser.TenantId(User);
 
@@ -151,6 +160,15 @@ public class DeviceUsersController(NpgsqlDataSource dataSource) : ApiControllerB
             $"{SelectColumns}\nWHERE du.tenant_id = @TenantId AND du.id = @Id AND du.id <> @MachineLane",
             new { TenantId = tenantId, Id = id, MachineLane }, cancellationToken: ct));
         if (row is null) return NotFoundProblem();
+
+        // targetType "device_user" — MESMA convenção do dashboard/summary filtrado por titular
+        // (não se inventa um tipo novo). O device_user_id vai TAMBÉM no detail: é por ele que o
+        // extrato de acessos do titular seleciona as linhas, e o target sozinho não bastaria
+        // para uma consulta que precisa varrer ações de tipos diferentes.
+        readAudit.Record(tenantId, AuditActions.ViewReport,
+            CurrentUser.UserId(User),
+            targetType: "device_user", targetId: id,
+            detailJson: JsonSerializer.Serialize(new { device_user_id = id, device_id = row.DeviceId }));
 
         return Ok(ToResponse(row));
     }
