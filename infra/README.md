@@ -31,10 +31,37 @@ DNS: aponte `STAGING_DOMAIN` (A record) para o IP da VPS **antes** do primeiro `
 
 | Onde | O quê |
 |---|---|
-| `infra/.env` na VPS (NUNCA commitado; `.gitignore` cobre) | senha do Postgres, `JWT_SIGNING_KEY`, Sentry DSN, hash de admin do Seq |
-| GitHub → Settings → Secrets and variables → Actions | `STAGING_SSH_HOST`, `STAGING_SSH_KEY` (chave privada OpenSSH), `STAGING_SSH_USER` (opcional, default `deploy`) |
+| `infra/.env` na VPS (NUNCA commitado; `.gitignore` cobre) | senha do Postgres, `JWT_SIGNING_KEY`, Sentry DSN, hash de admin do Seq, URLs do healthchecks.io |
+| GitHub → Settings → Secrets and variables → Actions | `STAGING_SSH_HOST`, `STAGING_SSH_KEY` (chave privada OpenSSH), `STAGING_SSH_USER` (opcional, default `deploy`), `GHCR_TOKEN` (opcional, ver "Deploy por imagem") |
 
 Sem os secrets `STAGING_SSH_*`, o job `deploy-staging` do CI faz **skip com aviso** (não falha). Com eles, todo push na `main` deploya automaticamente (build+test → docker → SSH).
+
+## Deploy por imagem (GHCR)
+
+O job `docker` do CI publica as imagens no GHCR a cada push na `main`:
+`ghcr.io/joaopessoah/m351-api` e `ghcr.io/joaopessoah/m351-worker`, com duas tags,
+`sha-<sha>` (imutável, alvo de rollback) e `staging` (móvel).
+
+O `deploy-staging.sh` tem dois modos, controlados por `DEPLOY_BUILD`:
+
+- `DEPLOY_BUILD=1` (**default atual**): comportamento antigo, `git pull` +
+  `up -d --build` na VPS. Continua como default **até o primeiro push de imagem no
+  GHCR ser validado** — sem esse fallback o deploy quebraria com o registry vazio.
+  Depois de validar, troque o default para `0` no script e passe a deployar por imagem.
+- `DEPLOY_BUILD=0`: `compose pull` das imagens do GHCR + `up -d` (sem build na VPS).
+  Requer a VPS logada no GHCR: na primeira vez, exporte `GHCR_TOKEN` (PAT clássico com
+  escopo `read:packages`, ou o próprio `GITHUB_TOKEN` do job passado via secret) e o
+  script faz o `docker login ghcr.io` com o token via stdin; o login fica persistido
+  em `~/.docker/config.json` da VPS e as execuções seguintes dispensam o token.
+
+Em todo deploy, **antes** do `up`, o script roda `infra/scripts/backup.sh` (dump
+pré-deploy que protege o AutoMigrate) e, **depois** do `up`, aplica um health-gate:
+`curl` com retry por até 60 s em `https://<STAGING_DOMAIN>/healthz`; sem 200, o deploy
+falha (exit 1) com a instrução de rollback:
+
+```bash
+IMAGE_TAG=sha-<sha-anterior> DEPLOY_BUILD=0 bash infra/scripts/deploy-staging.sh
+```
 
 ## Backup e restore
 

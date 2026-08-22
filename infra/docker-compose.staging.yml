@@ -44,7 +44,10 @@ services:
       - api
 
   api:
-    image: m351/api:staging
+    # Imagem do GHCR (job docker do ci.yml publica sha-<sha> e staging); IMAGE_TAG
+    # permite fixar/rollback (ex.: IMAGE_TAG=sha-<sha> no deploy). O bloco build fica
+    # MANTIDO para uso local e para o fallback DEPLOY_BUILD=1 do deploy-staging.sh.
+    image: ghcr.io/joaopessoah/m351-api:${IMAGE_TAG:-staging}
     build:
       context: ..                     # raiz do repositório
       dockerfile: infra/docker/api.Dockerfile
@@ -96,7 +99,8 @@ services:
         condition: service_started
 
   worker:
-    image: m351/worker:staging
+    # Mesmo esquema da api: imagem do GHCR com IMAGE_TAG e bloco build mantido
+    image: ghcr.io/joaopessoah/m351-worker:${IMAGE_TAG:-staging}
     build:
       context: ..                     # raiz do repositório
       dockerfile: infra/docker/worker.Dockerfile
