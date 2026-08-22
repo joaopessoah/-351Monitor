@@ -147,7 +147,9 @@ public sealed class IngestService(
         // ack somente APÓS commit (perda pós-ack = 0 — Princípio 6)
         await transaction.CommitAsync(ct);
 
-        IngestMetrics.EventsTotal.Add(valid.Count);
+        // device pausado não conta como ingestão: nada foi persistido, e uma métrica que
+        // contasse esses eventos mentiria sobre o volume real gravado
+        IngestMetrics.EventsTotal.Add(paused ? 0 : valid.Count);
         IngestMetrics.DuplicatesTotal.Add(duplicates);
         foreach (var group in rejected.GroupBy(r => r.Reason))
         {
