@@ -22,6 +22,16 @@ public class ApiTestFixture : WebApplicationFactory<Program>
     public CapturingEmailSender Emails { get; } = new();
 
     /// <summary>
+    /// Sobe o host JÁ NA CONSTRUÇÃO da fixture, de propósito. A WebApplicationFactory cria o
+    /// host preguiçosamente, no primeiro acesso a Services/CreateClient, e é o boot do host que
+    /// aplica as migrations (Database:AutoMigrate). Um teste que fala com o banco direto pela
+    /// connection string, sem passar por Services antes, encontrava o banco VAZIO quando o xUnit
+    /// o escalonava como primeiro da coleção, e falhava com "relation ... does not exist".
+    /// Com o boot antecipado o esquema existe assim que a fixture existe, para todos os testes.
+    /// </summary>
+    public ApiTestFixture() => _ = Services;
+
+    /// <summary>
     /// Diretório de exports descartável por execução (F3.5): a API serve o download daqui e
     /// os testes instanciam ExportService apontando para o MESMO caminho (espelha o volume
     /// compartilhado api+worker do staging).
