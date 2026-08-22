@@ -1,5 +1,6 @@
 using M351.Agent.Core;
 using M351.Agent.Core.Contracts;
+using M351.Agent.Core.Diagnostics;
 using M351.Agent.Core.Events;
 using M351.Agent.Core.Fingerprint;
 using M351.Agent.Core.Logging;
@@ -30,6 +31,12 @@ public sealed class AgentRuntime : IDisposable
     public string DataDirectory { get; }
     public string StartReason { get; }
 
+    /// <summary>Emissor de AGENT_ERROR do lado do serviço (enfileira direto na fila SQLite).</summary>
+    public AgentErrorReporter Errors { get; }
+
+    /// <summary>Envio do pacote de diagnóstico ao suporte (disparado pelo tray, feito pelo serviço).</summary>
+    public DiagnosticsUploader Diagnostics { get; }
+
     private readonly HttpClient _http;
 
     private AgentRuntime(string dataDirectory, ILogSink log, bool updateDetected, string? proxyUrl)
@@ -54,8 +61,25 @@ public sealed class AgentRuntime : IDisposable
         _http = AgentHttpClientFactory.Create(proxyUrl, log);
         Enrollment = new EnrollmentClient(_http, State, new WindowsFingerprintSource(), log, SystemInventory.DescribeOs);
         AckProcessor = new AckProcessor(Queue, State, Factory, log);
-        Sender = new BatchSender(_http, Queue, State, AckProcessor, Enrollment, log);
+        Errors = new AgentErrorReporter(Factory, ev => Queue.Enqueue(ev));
+        Sender = new BatchSender(_http, Queue, State, AckProcessor, Enrollment, log) { ErrorReporter = Errors };
         UpdateClient = new UpdateClient(_http, State, log); // reusa HttpClient + device token
+        Diagnostics = new DiagnosticsUploader(_http, State, log, dataDirectory);
+    }
+
+    /// <summary>
+    /// Completa o HEARTBEAT com a saúde operacional que só o SERVIÇO conhece (Seção 5.3): fila,
+    /// dead_letter, último reason de rejeição, working set e tamanho do queue.db. O helper manda o
+    /// heartbeat sem esses campos (não acessa fila nem ack) e o serviço os injeta aqui, no ponto
+    /// único usado pelo pipe e pelo heartbeat de máquina.
+    /// </summary>
+    public void EnrichHeartbeat(HeartbeatData heartbeat)
+    {
+        heartbeat.QueueDepth = Queue.UnsentCount;
+        heartbeat.DeadLetterCount = Queue.DeadLetterCount;
+        heartbeat.LastRejectCode = AckProcessor.LastRejectCode;
+        heartbeat.WorkingSetMb = Environment.WorkingSet / (1024 * 1024);
+        heartbeat.QueueDbBytes = Queue.DbFileBytes;
     }
 
     /// <summary>

@@ -5,15 +5,27 @@
 // autenticado lê) e grava com PATCH /organization (Owner/Admin); o Viewer vê
 // os valores em modo somente leitura. Inclui o link "Ver página pública" para
 // a /transparencia/{slug}, que reflete exatamente esses campos.
+//
+// Também edita o HORÁRIO DE TRABALHO da org (business_hours, Seção 8.5):
+// checkboxes de seg a dom + início/fim, com sugestão de seg a sex 08:00 às
+// 18:00 quando ainda não definido - a janela alimenta a linha de referência
+// dos gráficos e do relatório de jornada. E, quando o checklist de primeiros
+// passos foi dispensado, o link discreto para reabri-lo (DELETE dismiss).
 // =============================================================================
 
 import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, Info } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { parseHmToMinutes } from "@/lib/format";
 import { genericErrorMessage } from "@/lib/messages";
 import { isAdmin } from "@/lib/roles";
-import type { MeResponse, OrganizationPatchRequest, OrganizationResponse } from "@/lib/types";
+import type {
+  BusinessHours,
+  MeResponse,
+  OrganizationPatchRequest,
+  OrganizationResponse,
+} from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -71,7 +83,11 @@ export function OrganizacaoPage() {
           </CardContent>
         </Card>
       ) : orgQuery.data !== undefined ? (
-        <OrgForm org={orgQuery.data} canEdit={canEdit} />
+        <>
+          <OrgForm org={orgQuery.data} canEdit={canEdit} />
+          <BusinessHoursCard org={orgQuery.data} canEdit={canEdit} />
+          <ReopenChecklistLink me={meQuery.data} />
+        </>
       ) : null}
     </div>
   );
@@ -252,5 +268,245 @@ function OrgForm({ org, canEdit }: { org: OrganizationResponse; canEdit: boolean
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Horário de trabalho (business_hours) - PATCH /organization
+// -----------------------------------------------------------------------------
+
+const WEEKDAYS: { value: number; label: string }[] = [
+  { value: 1, label: "seg" },
+  { value: 2, label: "ter" },
+  { value: 3, label: "qua" },
+  { value: 4, label: "qui" },
+  { value: 5, label: "sex" },
+  { value: 6, label: "sáb" },
+  { value: 7, label: "dom" },
+];
+
+/** Sugestão exibida enquanto a org não definiu (seg a sex, das 08:00 às 18:00). */
+const DEFAULT_BUSINESS_HOURS: BusinessHours = { days: [1, 2, 3, 4, 5], start: "08:00", end: "18:00" };
+
+function BusinessHoursCard({ org, canEdit }: { org: OrganizationResponse; canEdit: boolean }) {
+  const queryClient = useQueryClient();
+  const configured = org.business_hours;
+
+  const [days, setDays] = useState<number[]>(configured?.days ?? DEFAULT_BUSINESS_HOURS.days);
+  const [start, setStart] = useState(configured?.start ?? DEFAULT_BUSINESS_HOURS.start);
+  const [end, setEnd] = useState(configured?.end ?? DEFAULT_BUSINESS_HOURS.end);
+  const [saved, setSaved] = useState(false);
+
+  // Re-sincroniza quando o VALOR salvo muda (deps por valor, não por identidade
+  // do objeto: um refetch sem mudança não pode descartar uma edição em curso).
+  const confDays = configured !== null ? configured.days.join(",") : null;
+  const confStart = configured?.start ?? null;
+  const confEnd = configured?.end ?? null;
+  useEffect(() => {
+    setDays(
+      confDays !== null
+        ? confDays.length > 0
+          ? confDays.split(",").map(Number)
+          : []
+        : DEFAULT_BUSINESS_HOURS.days,
+    );
+    setStart(confStart ?? DEFAULT_BUSINESS_HOURS.start);
+    setEnd(confEnd ?? DEFAULT_BUSINESS_HOURS.end);
+  }, [confDays, confStart, confEnd]);
+
+  const mutation = useMutation({
+    mutationFn: (businessHours: BusinessHours | null) => {
+      const body: OrganizationPatchRequest = { business_hours: businessHours };
+      return api<OrganizationResponse>("/organization", { method: "PATCH", body });
+    },
+    onSuccess: async (updated) => {
+      queryClient.setQueryData(["organization"], updated);
+      // business_hours também sai em GET /me (gráficos, jornada e checklist).
+      await queryClient.invalidateQueries({ queryKey: ["me"] });
+      setSaved(true);
+    },
+  });
+
+  const startMin = parseHmToMinutes(start);
+  const endMin = parseHmToMinutes(end);
+  const valid = days.length > 0 && startMin !== null && endMin !== null && startMin < endMin;
+
+  const draft: BusinessHours = { days: [...days].sort((a, b) => a - b), start, end };
+  const dirty =
+    configured === null ||
+    draft.days.join(",") !== configured.days.join(",") ||
+    draft.start !== configured.start ||
+    draft.end !== configured.end;
+
+  function toggleDay(value: number): void {
+    setDays((prev) => (prev.includes(value) ? prev.filter((d) => d !== value) : [...prev, value]));
+    setSaved(false);
+  }
+
+  function handleSubmit(e: React.FormEvent): void {
+    e.preventDefault();
+    if (!canEdit || !valid || !dirty || mutation.isPending) return;
+    mutation.mutate(draft);
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Horário de trabalho</CardTitle>
+        <CardDescription>
+          A janela de horário de trabalho alimenta a linha de referência dos gráficos da Visão
+          Geral e do relatório de jornada.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!canEdit && (
+          <p className="mb-4 text-sm text-muted-foreground">
+            Somente Administradores e Proprietários editam o horário de trabalho.
+          </p>
+        )}
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <fieldset className="space-y-1.5">
+            <legend className="text-sm font-medium leading-none">Dias da semana</legend>
+            <div className="flex flex-wrap gap-x-4 gap-y-2 pt-2">
+              {WEEKDAYS.map((day) => (
+                <label
+                  key={day.value}
+                  className={cn(
+                    "flex items-center gap-1.5 text-sm",
+                    canEdit ? "cursor-pointer" : "cursor-not-allowed opacity-60",
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={days.includes(day.value)}
+                    disabled={!canEdit}
+                    onChange={() => toggleDay(day.value)}
+                    className="h-4 w-4 accent-primary disabled:cursor-not-allowed"
+                  />
+                  {day.label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="bh-start">Início</Label>
+              <Input
+                id="bh-start"
+                type="time"
+                value={start}
+                disabled={!canEdit}
+                onChange={(e) => {
+                  setStart(e.target.value);
+                  setSaved(false);
+                }}
+                className="w-32"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="bh-end">Fim</Label>
+              <Input
+                id="bh-end"
+                type="time"
+                value={end}
+                disabled={!canEdit}
+                onChange={(e) => {
+                  setEnd(e.target.value);
+                  setSaved(false);
+                }}
+                className="w-32"
+              />
+            </div>
+          </div>
+
+          {configured === null && (
+            <p className="text-xs text-muted-foreground">
+              Nenhum horário definido ainda. Sugestão: segunda a sexta, das 08:00 às 18:00.
+            </p>
+          )}
+          {!valid && (
+            <p role="alert" className="text-sm text-destructive">
+              Selecione ao menos um dia e um intervalo com início antes do fim.
+            </p>
+          )}
+          {mutation.isError && (
+            <p role="alert" className="text-sm text-destructive">
+              {genericErrorMessage(mutation.error)}
+            </p>
+          )}
+
+          {canEdit && (
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" disabled={!valid || !dirty || mutation.isPending}>
+                {mutation.isPending ? "Salvando..." : "Salvar horário"}
+              </Button>
+              {configured !== null && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={mutation.isPending}
+                  onClick={() => {
+                    setSaved(false);
+                    mutation.mutate(null);
+                  }}
+                >
+                  Limpar horário
+                </Button>
+              )}
+              {saved && !dirty && <span className="text-sm text-viz-produtivo">Horário salvo.</span>}
+            </div>
+          )}
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Reabrir o checklist de primeiros passos - DELETE
+// /organization/onboarding-checklist/dismiss (o card volta à Visão Geral)
+// -----------------------------------------------------------------------------
+
+function ReopenChecklistLink({ me }: { me: MeResponse | undefined }) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: () => api<void>("/organization/onboarding-checklist/dismiss", { method: "DELETE" }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["me"] });
+    },
+  });
+
+  // Só faz sentido quando o checklist FOI dispensado; a rota é AdminPlus.
+  if (
+    me === undefined ||
+    !isAdmin(me) ||
+    me.organization.onboarding_checklist_dismissed_at === null
+  ) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        onClick={() => mutation.mutate()}
+        disabled={mutation.isPending}
+        className={cn(
+          "text-sm text-muted-foreground underline underline-offset-4 transition-colors",
+          "hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "disabled:cursor-not-allowed disabled:opacity-50",
+        )}
+      >
+        {mutation.isPending
+          ? "Reabrindo o checklist..."
+          : "Reabrir o checklist de primeiros passos"}
+      </button>
+      {mutation.isError && (
+        <p role="alert" className="text-sm text-destructive">
+          {genericErrorMessage(mutation.error)}
+        </p>
+      )}
+    </div>
   );
 }

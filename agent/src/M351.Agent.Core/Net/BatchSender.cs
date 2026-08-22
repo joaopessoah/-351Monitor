@@ -38,6 +38,13 @@ public sealed class BatchSender
     public DateTimeOffset? LastSuccessfulSendAt { get; private set; }
 
     /// <summary>
+    /// Telemetria de falha (F5): a exceção inesperada do ciclo de envio deixa de ser só uma linha
+    /// de log na máquina e vira AGENT_ERROR (limitado a 1/hora por tipo). Opcional para não mexer
+    /// na construção dos testes.
+    /// </summary>
+    public Diagnostics.AgentErrorReporter? ErrorReporter { get; init; }
+
+    /// <summary>
     /// Estado da conexao com o servidor, propagado ao helper (Secao 6.4 l.445). NaoEnrolado ate o
     /// primeiro envio; SemRede em falha de transporte comum; ErroCertificado quando o handshake TLS
     /// falha (cadeia invalida / possivel MITM); Ok apos HTTP recebido do servidor.
@@ -70,6 +77,7 @@ public sealed class BatchSender
             catch (Exception ex)
             {
                 _log.Error("Falha inesperada no ciclo de envio (continua).", ex);
+                ErrorReporter?.Report(ex);
             }
 
             try { await Task.Delay(TimeSpan.FromSeconds(1), ct); }

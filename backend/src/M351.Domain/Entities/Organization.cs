@@ -24,4 +24,29 @@ public class Organization
 
     /// <summary>Data de vigência da política declarada — null até preenchida.</summary>
     public DateOnly? DataVigencia { get; set; }
+
+    /// <summary>
+    /// F5 — checklist de primeiros passos dispensado pelo gestor (Seção 8.3 passo 4: card
+    /// dispensável na Visão Geral). Estado de UI da ORG (não por usuário, deliberado: o
+    /// onboarding é da organização); null = card visível enquanto houver passo pendente.
+    /// </summary>
+    public DateTimeOffset? OnboardingChecklistDismissedAt { get; set; }
+
+    /// <summary>
+    /// F5 — última vez que o digest semanal foi enviado para esta org (idempotência do job
+    /// horário: reinício do worker dentro da mesma janela não reenvia).
+    /// </summary>
+    public DateTimeOffset? LastWeeklyDigestAt { get; set; }
+
+    /// <summary>
+    /// F5 — meta semanal AGREGADA de horas ativas da equipe (nunca por pessoa, sem ranking).
+    /// null = sem meta. Exibida como barra de progresso na Visão Geral e markLine no gráfico.
+    /// </summary>
+    public int? GoalWeeklyActiveHours { get; set; }
+
+    /// <summary>
+    /// F5 — meta de percentual do tempo em apps relacionados ao trabalho (0 a 100, agregado
+    /// da organização). null = sem meta.
+    /// </summary>
+    public int? GoalWorkRelatedPct { get; set; }
 }

@@ -15,16 +15,30 @@
 
 name: m351-staging
 
+# Higiene de disco: rotação dos logs json-file em TODOS os serviços (sem isto os
+# logs dos containers crescem sem limite e enchem o disco da VPS). Âncora YAML
+# reutilizada em cada serviço via "logging: *default-logging".
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp" # HTTP/3
     environment:
       STAGING_DOMAIN: ${STAGING_DOMAIN:?defina STAGING_DOMAIN em infra/.env}
+      # F5 — demo pública: segundo hostname servido pelo MESMO upstream (o isolamento
+      # é o multi-tenant; o DNS de demo.* deve apontar para esta VPS). Default
+      # demo.localhost = inerte quando não configurado.
+      DEMO_DOMAIN: ${DEMO_DOMAIN:-demo.localhost}
       ACME_EMAIL: ${ACME_EMAIL:?defina ACME_EMAIL em infra/.env}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
@@ -34,11 +48,17 @@ services:
       - api
 
   api:
-    image: m351/api:staging
+    # Imagem do GHCR (job docker do ci.yml publica sha-<sha> e staging); IMAGE_TAG
+    # permite fixar/rollback (ex.: IMAGE_TAG=sha-<sha> no deploy). O bloco build fica
+    # MANTIDO para uso local e para o fallback DEPLOY_BUILD=1 do deploy-staging.sh.
+    image: ghcr.io/joaopessoah/m351-api:${IMAGE_TAG:-staging}
     build:
       context: ..                     # raiz do repositório
       dockerfile: infra/docker/api.Dockerfile
     restart: unless-stopped
+    logging: *default-logging
+    # Teto de memória: numa VPS única, um vazamento na api não pode sufocar o postgres
+    mem_limit: 768m
     environment:
       ASPNETCORE_ENVIRONMENT: Staging
       ASPNETCORE_URLS: http://+:8080
@@ -63,14 +83,19 @@ services:
       # Serilog → Seq (sink configurado por env; índice 0 = Console no appsettings)
       Serilog__WriteTo__1__Name: Seq
       Serilog__WriteTo__1__Args__serverUrl: http://seq:5341
-      # Sem efeito até o SDK do Sentry ser adicionado ao backend (fase futura)
+      # Sentry ativo quando o DSN está preenchido (vazio = desativado; ver Program.cs)
       Sentry__Dsn: ${SENTRY_DSN:-}
       # F3.5 — CSVs exportados: o worker gera, a API serve o download (MESMO volume)
       Exports__Directory: /var/lib/m351/exports
+      # F4.2 — MSIs do canal de auto-update do agente: o CLI publish-agent-release
+      # copia para cá e o GET /api/v1/agent/releases/{file} serve por streaming
+      # (seção "Releases", chave "Directory" do appsettings — ReleaseOptions.cs)
+      Releases__Directory: /var/lib/m351/releases
     expose:
       - "8080"
     volumes:
       - exports_data:/var/lib/m351/exports
+      - releases_data:/var/lib/m351/releases
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,19 +103,39 @@ services:
         condition: service_started
 
   worker:
-    image: m351/worker:staging
+    # Mesmo esquema da api: imagem do GHCR com IMAGE_TAG e bloco build mantido
+    image: ghcr.io/joaopessoah/m351-worker:${IMAGE_TAG:-staging}
     build:
       context: ..                     # raiz do repositório
       dockerfile: infra/docker/worker.Dockerfile
     restart: unless-stopped
+    logging: *default-logging
+    # Teto de memória: numa VPS única, um vazamento no worker não pode sufocar o postgres
+    mem_limit: 768m
     environment:
       DOTNET_ENVIRONMENT: Staging
       ConnectionStrings__Default: Host=postgres;Port=5432;Database=${POSTGRES_DB:-m351_staging};Username=${POSTGRES_USER:-m351};Password=${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD em infra/.env}
       # Serilog → Seq (sink configurado por env; índice 0 = Console no appsettings)
       Serilog__WriteTo__1__Name: Seq
       Serilog__WriteTo__1__Args__serverUrl: http://seq:5341
-      # Sem efeito até o SDK do Sentry ser adicionado ao backend (fase futura)
+      # Sentry ativo quando o DSN está preenchido (vazio = desativado; ver Program.cs)
       Sentry__Dsn: ${SENTRY_DSN:-}
+      # Dead-man switch: check do healthchecks.io pingado a cada 5 min pelo worker
+      # (vazio = job nem é registrado; ver DeadManSwitchJob no M351.Worker)
+      DeadMan__WorkerUrl: ${HEALTHCHECKS_WORKER_URL:-}
+      # F5 — demo pública permanente: keep-alive 60 s + reseed semanal do tenant demo
+      # (vazio = jobs nem são registrados). A senha do viewer fica ESTÁVEL entre reseeds.
+      Demo__Slug: ${DEMO_SLUG:-}
+      Demo__ViewerPassword: ${DEMO_VIEWER_PASSWORD:-}
+      # F5 — digest semanal por e-mail: mesmo SMTP e mesma base de links da API
+      Portal__BaseUrl: https://${STAGING_DOMAIN:?defina STAGING_DOMAIN em infra/.env}
+      Email__Provider: ${EMAIL_PROVIDER:-Smtp}
+      Email__DevMailDirectory: /tmp/dev-mail
+      Email__SmtpHost: ${SMTP_HOST:-}
+      Email__SmtpPort: ${SMTP_PORT:-587}
+      Email__SmtpUsername: ${SMTP_USERNAME:-}
+      Email__SmtpPassword: ${SMTP_PASSWORD:-}
+      Email__FromAddress: ${SMTP_FROM_ADDRESS:-nao-responda@351monitor.com.br}
       # F3.5 — CSVs exportados: o worker gera, a API serve o download (MESMO volume)
       Exports__Directory: /var/lib/m351/exports
     volumes:
@@ -107,6 +152,9 @@ services:
     # colateral de deploy. (Versão exige SEQ_FIRSTRUN_ADMINPASSWORDHASH definido.)
     image: datalust/seq@sha256:868a12e93ec0b8c993767a7dd4cd6c8ebc441511c79e4cfac66c911f62d4db65
     restart: unless-stopped
+    logging: *default-logging
+    # O Seq é guloso de RAM por padrão; 1g basta para o volume de logs do staging
+    mem_limit: 1g
     environment:
       ACCEPT_EULA: "Y"
       # Gere com: echo 'SuaSenha' | docker run --rm -i datalust/seq config hash
@@ -121,6 +169,9 @@ services:
   postgres:
     image: postgres:16
     restart: unless-stopped
+    logging: *default-logging
+    # SEM mem_limit de propósito: o banco é o serviço que não pode ser morto pelo
+    # OOM killer do cgroup; o teto dos demais serviços protege a RAM dele
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-m351_staging}
       POSTGRES_USER: ${POSTGRES_USER:-m351}
@@ -144,3 +195,6 @@ volumes:
   # CSVs de export (F3.5): compartilhado entre api (download) e worker (geração);
   # arquivos expiram em 7 dias — o sweep do ExportService remove do disco
   exports_data:
+  # MSIs do auto-update do agente (F4.2): persistem entre deploys, só a api monta
+  # (publicação via CLI publish-agent-release — ver docs/runbooks/publicar-release-agente.md)
+  releases_data:

@@ -15,6 +15,10 @@ const baseTabs = [
   { to: "/configuracoes/organizacao", label: "Organização" },
 ] as const;
 
+// Política de coleta (F5, §8.7): GET é AdminPlus (Viewer nem vê a aba);
+// a edição em si é OwnerOnly, gated dentro da página.
+const coletaTab = { to: "/configuracoes/coleta", label: "Política de coleta" } as const;
+
 // Auditoria fica restrita a Owner/Admin (PolicyAdminPlus): o Viewer NÃO vê a aba
 // nem a rota. A página em si também se protege (gate defensivo), mas a aba só
 // aparece quando o papel permite — assim o Viewer nunca tropeça no link.
@@ -27,7 +31,7 @@ export function ConfiguracoesLayout() {
     queryFn: () => api<MeResponse>("/me"),
     staleTime: 5 * 60 * 1000,
   });
-  const tabs = isAdmin(meQuery.data) ? [...baseTabs, auditTab] : baseTabs;
+  const tabs = isAdmin(meQuery.data) ? [...baseTabs, coletaTab, auditTab] : [...baseTabs];
 
   return (
     <div className="space-y-6">

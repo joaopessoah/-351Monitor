@@ -1,4 +1,9 @@
+using M351.Infrastructure;
 using M351.Infrastructure.Aggregation;
+using M351.Infrastructure.Alerts;
+using M351.Infrastructure.Billing;
+using M351.Infrastructure.Digest;
+using M351.Infrastructure.Email;
 using M351.Infrastructure.Exports;
 using M351.Infrastructure.Intervalization;
 using M351.Infrastructure.Maintenance;
@@ -9,8 +14,29 @@ using Serilog;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddSerilog(loggerConfiguration =>
-    loggerConfiguration.ReadFrom.Configuration(builder.Configuration));
+// Sentry via logging (quem monitora o monitor): ativo SOMENTE quando Sentry:Dsn está
+// preenchida (env Sentry__Dsn, plumbada no docker-compose.staging.yml). writeToProviders:
+// o AddSerilog troca a ILoggerFactory pela do Serilog, que por padrão IGNORA os providers
+// MEL registrados; com writeToProviders=true o Serilog repassa os eventos ao
+// SentryLoggerProvider (erros dos jobs chegam ao Sentry, e o Init do SDK captura também
+// exceções não tratadas do processo).
+var sentryDsn = builder.Configuration["Sentry:Dsn"];
+var sentryEnabled = !string.IsNullOrWhiteSpace(sentryDsn);
+
+builder.Services.AddSerilog(
+    loggerConfiguration => loggerConfiguration.ReadFrom.Configuration(builder.Configuration),
+    writeToProviders: sentryEnabled);
+
+if (sentryEnabled)
+{
+    builder.Logging.AddSentry(options =>
+    {
+        options.Dsn = sentryDsn;
+        options.Environment = builder.Environment.EnvironmentName;
+        options.MinimumBreadcrumbLevel = LogLevel.Information;
+        options.MinimumEventLevel = LogLevel.Error;
+    });
+}
 
 // NpgsqlDataSource singleton (mesmo padrão da API); a infra injeta ConnectionStrings__Default
 var connectionString = builder.Configuration.GetConnectionString("Default")
@@ -42,6 +68,32 @@ builder.Services.AddSingleton<RetentionPurgeService>(sp => new RetentionPurgeSer
 builder.Services.AddSingleton<HousekeepingService>(sp => new HousekeepingService(
     sp.GetRequiredService<NpgsqlDataSource>(),
     sp.GetRequiredService<ILogger<HousekeepingService>>()));
+
+// E-mail no worker (F5): digest semanal e alertas usam o MESMO seletor Dev/Smtp da API
+// (Email__Provider etc. já plumbados no compose). Portal:BaseUrl monta os links do e-mail.
+builder.Services.AddM351Email(builder.Configuration);
+
+// Demo pública (F5): o reseed semanal usa o DemoSeeder, que precisa do hasher de senha
+builder.Services.Configure<M351.Infrastructure.Security.PasswordHashingOptions>(
+    builder.Configuration.GetSection(M351.Infrastructure.Security.PasswordHashingOptions.SectionName));
+builder.Services.AddSingleton<M351.Infrastructure.Security.IPasswordHasher,
+    M351.Infrastructure.Security.Argon2PasswordHasher>();
+builder.Services.AddSingleton<WeeklyDigestService>(sp => new WeeklyDigestService(
+    sp.GetRequiredService<NpgsqlDataSource>(),
+    sp.GetRequiredService<IEmailSender>(),
+    builder.Configuration["Portal:BaseUrl"] ?? "http://localhost:5173",
+    sp.GetRequiredService<ILogger<WeeklyDigestService>>()));
+
+// Alertas de saúde de frota (F5, exclusivos do plano Pro) e congelamento mensal do
+// sinal de cobrança (fecha o caveat de subfaturamento do BillingController)
+builder.Services.AddSingleton<FleetAlertService>(sp => new FleetAlertService(
+    sp.GetRequiredService<NpgsqlDataSource>(),
+    sp.GetRequiredService<IEmailSender>(),
+    builder.Configuration["Portal:BaseUrl"] ?? "http://localhost:5173",
+    sp.GetRequiredService<ILogger<FleetAlertService>>()));
+builder.Services.AddSingleton<BillingSnapshotService>(sp => new BillingSnapshotService(
+    sp.GetRequiredService<NpgsqlDataSource>(),
+    sp.GetRequiredService<ILogger<BillingSnapshotService>>()));
 
 // Quartz (Seção 7.6): Intervalization a cada 60 s; DailyAggregation a cada 15 min;
 // ExportWorker a cada 15 s ("contínuo" da spec via polling curto — padrão dos demais jobs);
@@ -99,6 +151,69 @@ builder.Services.AddQuartz(quartz =>
         .ForJob(housekeepingKey)
         .WithIdentity("housekeeping-0300-brt")
         .WithCronSchedule("0 0 3 * * ?", cron => cron.InTimeZone(saoPaulo)));
+
+    // Digest semanal (F5): job HORÁRIO (minuto 5) — o serviço decide, org a org, se a hora
+    // local é segunda 08h; multi-fuso sem um trigger por org.
+    var digestKey = new JobKey("weekly-digest");
+    quartz.AddJob<WeeklyDigestJob>(options => options.WithIdentity(digestKey));
+    quartz.AddTrigger(trigger => trigger
+        .ForJob(digestKey)
+        .WithIdentity("weekly-digest-hourly")
+        .WithCronSchedule("0 5 * ? * *"));
+
+    // Alertas de saúde de frota (F5): a cada 15 min; o serviço aplica quiet hours pelo
+    // horário de trabalho da org, cooldown de 24 h por device+tipo e gate do plano Pro.
+    var fleetAlertKey = new JobKey("fleet-alert");
+    quartz.AddJob<FleetAlertJob>(options => options.WithIdentity(fleetAlertKey));
+    quartz.AddTrigger(trigger => trigger
+        .ForJob(fleetAlertKey)
+        .WithIdentity("fleet-alert-15min")
+        .StartNow()
+        .WithSimpleSchedule(schedule => schedule.WithIntervalInMinutes(15).RepeatForever()));
+
+    // Congelamento do sinal de cobrança (F5): diário 04:00 BRT, idempotente (congela os
+    // meses fechados ainda sem snapshot, no fuso de cada tenant).
+    var billingSnapshotKey = new JobKey("billing-snapshot");
+    quartz.AddJob<BillingSnapshotJob>(options => options.WithIdentity(billingSnapshotKey));
+    quartz.AddTrigger(trigger => trigger
+        .ForJob(billingSnapshotKey)
+        .WithIdentity("billing-snapshot-0400-brt")
+        .WithCronSchedule("0 0 4 * * ?", cron => cron.InTimeZone(saoPaulo)));
+
+    // Demo pública permanente (F5): keep-alive 60 s + reseed semanal (domingo 04:30 BRT,
+    // apaga e re-semeia o tenant demo, limpando o audit_log dos acessos públicos).
+    // Sem Demo:Slug configurado (env Demo__Slug) os jobs NEM SÃO REGISTRADOS.
+    if (!string.IsNullOrWhiteSpace(builder.Configuration["Demo:Slug"]))
+    {
+        var demoKeepAliveKey = new JobKey("demo-keep-alive");
+        quartz.AddJob<DemoKeepAliveJob>(options => options.WithIdentity(demoKeepAliveKey));
+        quartz.AddTrigger(trigger => trigger
+            .ForJob(demoKeepAliveKey)
+            .WithIdentity("demo-keep-alive-60s")
+            .StartNow()
+            .WithSimpleSchedule(schedule => schedule.WithIntervalInSeconds(60).RepeatForever()));
+
+        var demoReseedKey = new JobKey("demo-reseed");
+        quartz.AddJob<DemoReseedJob>(options => options.WithIdentity(demoReseedKey));
+        quartz.AddTrigger(trigger => trigger
+            .ForJob(demoReseedKey)
+            .WithIdentity("demo-reseed-domingo-0430-brt")
+            .WithCronSchedule("0 30 4 ? * SUN", cron => cron.InTimeZone(saoPaulo)));
+    }
+
+    // Dead-man switch (quem monitora o monitor): GET a cada 5 min na URL de
+    // DeadMan:WorkerUrl (env DeadMan__WorkerUrl, um check do healthchecks.io).
+    // Sem URL configurada o job NEM É REGISTRADO, dev local fica limpo.
+    if (!string.IsNullOrWhiteSpace(builder.Configuration["DeadMan:WorkerUrl"]))
+    {
+        var deadManKey = new JobKey("dead-man-switch");
+        quartz.AddJob<DeadManSwitchJob>(options => options.WithIdentity(deadManKey));
+        quartz.AddTrigger(trigger => trigger
+            .ForJob(deadManKey)
+            .WithIdentity("dead-man-switch-5min")
+            .StartNow()
+            .WithSimpleSchedule(schedule => schedule.WithIntervalInMinutes(5).RepeatForever()));
+    }
 });
 builder.Services.AddQuartzHostedService(options => options.WaitForJobsToComplete = true);
 

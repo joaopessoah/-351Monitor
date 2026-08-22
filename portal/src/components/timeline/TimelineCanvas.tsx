@@ -9,7 +9,7 @@
 // =============================================================================
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { TimelineInterval } from "@/lib/types";
 import { BRAND } from "@/lib/brandTheme";
 import { formatDuration, formatHm, stateLabels } from "@/lib/format";
@@ -324,6 +324,14 @@ export function TimelineCanvas({
     reportHover(iv);
   }
 
+  // Toque (melhoria mobile): o tap segue o MESMO caminho do onMouseMove - tap
+  // num intervalo abre o tooltip; um segundo tap fora (sem intervalo/fora das
+  // faixas) fecha. Mouse continua no onMouseMove; nada de gestos complexos.
+  function handlePointerDown(e: ReactPointerEvent<HTMLCanvasElement>): void {
+    if (e.pointerType !== "touch") return;
+    handleMouseMove(e);
+  }
+
   return (
     <div ref={wrapRef} className="relative">
       {/* A informação acessível fica no fallback tabular (sr-only na página). */}
@@ -334,6 +342,7 @@ export function TimelineCanvas({
         style={{ height: TIMELINE_CANVAS_HEIGHT }}
         onMouseMove={handleMouseMove}
         onMouseLeave={clearHover}
+        onPointerDown={handlePointerDown}
       />
       {tooltip !== null && (
         <div

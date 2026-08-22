@@ -5,11 +5,13 @@
 // (controles h-9) e mesmo comportamento em todas as telas.
 // =============================================================================
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronDown, MonitorSmartphone } from "lucide-react";
 import { api } from "@/lib/api";
 import { addDays, localDateOf } from "@/lib/format";
+import { useUrlState } from "@/lib/useUrlState";
+import type { UrlStateCodec } from "@/lib/useUrlState";
 import type { DeviceItem, PagedResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -35,13 +37,24 @@ export interface DateRange {
   to: string;
 }
 
+// Preset do período na URL (?period=30) validado contra PERIOD_PRESETS -
+// ausente/inválido = 7 dias (o default some da URL).
+const PERIOD_CODEC: UrlStateCodec<number> = {
+  parse: (params) => {
+    const raw = Number(params.get("period"));
+    return (PERIOD_PRESETS as readonly number[]).includes(raw) ? raw : 7;
+  },
+  serialize: (days) => ({ period: days !== 7 ? String(days) : null }),
+};
+
 /**
  * Período por preset (default 7 dias) ancorado em "hoje" no FUSO DO TENANT -
- * range null enquanto o fuso (GET /me) não chegou.
+ * range null enquanto o fuso (GET /me) não chegou. O preset vive na URL
+ * (?period=, replace sem histórico): o link reproduz o período visível.
  */
 export function useReportRange(timezone: string | null) {
   const todayStr = timezone !== null ? localDateOf(new Date(), timezone) : null;
-  const [preset, setPreset] = useState<number>(7);
+  const [preset, setPreset] = useUrlState(PERIOD_CODEC);
   const range = useMemo<DateRange | null>(() => {
     if (todayStr === null) return null;
     return { from: addDays(todayStr, -(preset - 1)), to: todayStr };

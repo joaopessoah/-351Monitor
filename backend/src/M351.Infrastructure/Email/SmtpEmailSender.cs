@@ -28,7 +28,7 @@ public class SmtpEmailSender(IOptions<EmailOptions> options, ILogger<SmtpEmailSe
             From = new MailAddress(_options.FromAddress, _options.FromName),
             Subject = message.Subject,
             Body = message.Body,
-            IsBodyHtml = false,
+            IsBodyHtml = message.IsHtml,
         };
         mail.To.Add(message.To);
 

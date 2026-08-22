@@ -56,15 +56,70 @@ public class ConfigCommandAckTests(ApiTestFixture fixture)
         Assert.Equal(JsonValueKind.Object, config.ValueKind);
         Assert.Equal(600, config.GetProperty("idle_threshold_sec").GetInt32());
 
-        // objeto completo: os 8 campos sempre presentes (Seção 5.5)
+        // objeto completo: os 10 campos sempre presentes (Seção 5.5)
         foreach (var field in new[]
                  {
                      "heartbeat_sec", "active_window_poll_sec", "idle_threshold_sec", "window_title_policy",
                      "masked_patterns", "ignored_processes", "collection_window", "transparency_url",
+                     "notice_text", "notice_version",
                  })
         {
             Assert.True(config.TryGetProperty(field, out _), $"config sem o campo {field}");
         }
+    }
+
+    /// <summary>
+    /// F5 — aviso de ciência gerenciado pelo tenant: notice_text e notice_version viajam na config
+    /// do ack (único canal de config, Seção 5.5). notice_text null significa "texto padrão do
+    /// agente"; o bump da versão é o que reexibe o aviso na frota.
+    /// </summary>
+    [Fact]
+    public async Task ConfigDoAck_CarregaNoticeTextENoticeVersionDoTenant()
+    {
+        var (client, device, tenantId, _) = await SetupAsync("Org Aviso Tenant");
+
+        // default de fábrica: sem texto do tenant e versão 1
+        var comDefault = await AgentClient.SendBatchAsync(client, device.DeviceToken, [], configVersion: 0);
+        using (var ack = await AgentClient.ReadAckAsync(comDefault))
+        {
+            var config = ack.RootElement.GetProperty("config");
+            Assert.Equal(JsonValueKind.Null, config.GetProperty("notice_text").ValueKind);
+            Assert.Equal(1, config.GetProperty("notice_version").GetInt32());
+        }
+
+        // a controladora reescreve o aviso e sobe a versão (tela de privacidade do portal)
+        await TestDb.ExecuteAsync(Cs,
+            """
+            UPDATE tenant_agent_configs
+            SET config_version = config_version + 1, notice_text = @texto, notice_version = 3
+            WHERE tenant_id = @t
+            """,
+            ("t", tenantId), ("texto", "A ACME monitora os notebooks corporativos no horário de trabalho."));
+
+        var response = await AgentClient.SendBatchAsync(client, device.DeviceToken, [], configVersion: device.ConfigVersion);
+        using var ack2 = await AgentClient.ReadAckAsync(response);
+        var novaConfig = ack2.RootElement.GetProperty("config");
+
+        Assert.Equal("A ACME monitora os notebooks corporativos no horário de trabalho.",
+            novaConfig.GetProperty("notice_text").GetString());
+        Assert.Equal(3, novaConfig.GetProperty("notice_version").GetInt32());
+    }
+
+    /// <summary>notice_text em branco no banco chega como null (o agente cai no texto padrão dele).</summary>
+    [Fact]
+    public async Task ConfigDoAck_NoticeTextEmBranco_ChegaComoNull()
+    {
+        var (client, device, tenantId, _) = await SetupAsync("Org Aviso Em Branco");
+
+        await TestDb.ExecuteAsync(Cs,
+            "UPDATE tenant_agent_configs SET config_version = config_version + 1, notice_text = '   ' WHERE tenant_id = @t",
+            ("t", tenantId));
+
+        var response = await AgentClient.SendBatchAsync(client, device.DeviceToken, [], configVersion: device.ConfigVersion);
+        using var ack = await AgentClient.ReadAckAsync(response);
+
+        Assert.Equal(JsonValueKind.Null,
+            ack.RootElement.GetProperty("config").GetProperty("notice_text").ValueKind);
     }
 
     [Fact]

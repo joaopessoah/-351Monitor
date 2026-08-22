@@ -172,7 +172,10 @@ public class TimelineController(
     /// </summary>
     [HttpGet("team")]
     [AuditRead] // DoD 11.3: leitura de dado pessoal de VÁRIAS pessoas — view_timeline (target team) via filter
-    public async Task<IActionResult> Team([FromQuery(Name = "date")] string? date, CancellationToken ct)
+    public async Task<IActionResult> Team(
+        [FromQuery(Name = "date")] string? date,
+        [FromQuery(Name = "tag")] string? tag,
+        CancellationToken ct)
     {
         if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", out var day))
             return ProblemResponse(StatusCodes.Status400BadRequest, "Parâmetro date é obrigatório no formato yyyy-MM-dd.");
@@ -198,9 +201,18 @@ public class TimelineController(
             SELECT d.id, COALESCE(d.display_name, d.hostname) AS device_name, d.tz_offset_min
             FROM devices d
             WHERE d.tenant_id = @TenantId AND d.status <> 'archived'
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
             ORDER BY lower(COALESCE(d.display_name, d.hostname)), d.id
             """,
-            new { TenantId = tenantId }, cancellationToken: ct))).ToList();
+            new
+            {
+                TenantId = tenantId,
+                // F5 — ?tag: filtro de VISUALIZAÇÃO por etiqueta de equipe (não é escopo de
+                // permissão; o papel Manager-por-equipe segue adiado para a v1.1). Filtrar
+                // aqui também alivia o cap de ~3.000 intervalos: com o recorte, as lanes da
+                // equipe pedida raramente são truncadas.
+                Tag = string.IsNullOrWhiteSpace(tag) ? null : tag.Trim(),
+            }, cancellationToken: ct))).ToList();
         var deviceIds = devices.Select(d => d.Id).ToArray();
 
         // mesmo limite inferior do modo device (partition pruning) — aqui é VITAL: a query
@@ -419,6 +431,12 @@ public class TimelineController(
     }
 
     /// <summary>ETag do modo equipe: data + lanes (nome incluso — renomear device invalida o cache).</summary>
+    /// <summary>
+    /// ETag derivado do CONTEÚDO (as lanes), não dos parâmetros da requisição: por isso o
+    /// filtro ?tag da F5 não precisa entrar no hash — recortes diferentes produzem lanes
+    /// diferentes e portanto ETags diferentes. Se duas tags devolverem exatamente as mesmas
+    /// lanes, o ETag igual está correto: o corpo É igual.
+    /// </summary>
     private static string ComputeTeamETag(TeamTimelineResponse response)
     {
         var builder = new StringBuilder();

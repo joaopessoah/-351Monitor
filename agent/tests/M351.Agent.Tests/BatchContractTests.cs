@@ -101,12 +101,81 @@ public class BatchContractTests
     }
 
     [Fact]
-    public void Os_17_tipos_canonicos_estao_definidos_sem_APPS_SNAPSHOT()
+    public void Os_18_tipos_canonicos_estao_definidos_sem_APPS_SNAPSHOT()
     {
-        Assert.Equal(17, EventTypes.All.Count);
+        Assert.Equal(18, EventTypes.All.Count);
         Assert.DoesNotContain("APPS_SNAPSHOT", EventTypes.All); // cortado do MVP
         Assert.Contains("ACTIVE_WINDOW_CHANGED", EventTypes.All);
         Assert.Contains("POLICY_APPLIED", EventTypes.All);
+        Assert.Contains("AGENT_ERROR", EventTypes.All); // 18º tipo (F5)
+        Assert.Equal(EventTypes.All.Count, EventTypes.All.Distinct().Count());
+    }
+
+    [Fact]
+    public void AGENT_ERROR_serializa_error_type_stack_hash_e_count_e_nada_mais()
+    {
+        var factory = TestEvents.Factory();
+        var ev = factory.Create(EventTypes.AgentError, new AgentErrorData
+        {
+            ErrorType = "System.IO.IOException",
+            StackHash = "0123456789abcdef",
+            Count = 3
+        });
+
+        var json = JsonSerializer.Serialize(ev, AgentJsonContext.Default.AgentEvent);
+        using var doc = JsonDocument.Parse(json);
+        var data = doc.RootElement.GetProperty("data");
+
+        var keys = data.EnumerateObject().Select(p => p.Name).OrderBy(x => x).ToList();
+        Assert.Equal(new[] { "count", "error_type", "stack_hash" }, keys);
+        Assert.Equal("System.IO.IOException", data.GetProperty("error_type").GetString());
+        Assert.Equal(3, data.GetProperty("count").GetInt64());
+        // contrato de privacidade: não existe campo de mensagem no payload
+        Assert.False(data.TryGetProperty("message", out _));
+    }
+
+    [Fact]
+    public void HEARTBEAT_serializa_os_campos_de_saude_operacional_da_secao_5_3()
+    {
+        var factory = TestEvents.Factory();
+        var ev = factory.Create(EventTypes.Heartbeat, new HeartbeatData
+        {
+            State = "active",
+            ForegroundProcess = "excel.exe",
+            IdleMs = 0,
+            QueueDepth = 7,
+            DeadLetterCount = 2,
+            LastRejectCode = "timestamp_too_old",
+            WorkingSetMb = 42,
+            QueueDbBytes = 1_234_567
+        }, 1);
+
+        var json = JsonSerializer.Serialize(ev, AgentJsonContext.Default.AgentEvent);
+        using var doc = JsonDocument.Parse(json);
+        var data = doc.RootElement.GetProperty("data");
+
+        var keys = data.EnumerateObject().Select(p => p.Name).OrderBy(x => x).ToList();
+        Assert.Equal(
+            new[]
+            {
+                "dead_letter_count", "foreground_process", "idle_ms", "last_reject_code",
+                "queue_db_bytes", "queue_depth", "state", "working_set_mb"
+            },
+            keys);
+        Assert.Equal(7, data.GetProperty("queue_depth").GetInt64());
+        Assert.Equal(2, data.GetProperty("dead_letter_count").GetInt64());
+        Assert.Equal("timestamp_too_old", data.GetProperty("last_reject_code").GetString());
+        Assert.Equal(42, data.GetProperty("working_set_mb").GetInt64());
+        Assert.Equal(1_234_567, data.GetProperty("queue_db_bytes").GetInt64());
+    }
+
+    [Fact]
+    public void Reasons_do_EVENTS_DROPPED_sao_lista_fechada_com_pipe_overflow()
+    {
+        Assert.Equal(new[] { "retention_cap", "rate_limit", "pipe_overflow" }, DropReasons.All);
+        Assert.True(DropReasons.IsKnown("pipe_overflow"));
+        Assert.False(DropReasons.IsKnown("motivo_inventado"));
+        Assert.False(DropReasons.IsKnown(null));
     }
 
     [Fact]

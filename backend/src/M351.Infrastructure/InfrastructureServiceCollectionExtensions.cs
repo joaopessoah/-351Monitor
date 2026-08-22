@@ -14,7 +14,6 @@ public static class InfrastructureServiceCollectionExtensions
     {
         services.Configure<PasswordHashingOptions>(configuration.GetSection(PasswordHashingOptions.SectionName));
         services.Configure<MfaOptions>(configuration.GetSection(MfaOptions.SectionName));
-        services.Configure<EmailOptions>(configuration.GetSection(EmailOptions.SectionName));
 
         services.AddScoped<TenantContext>();
         services.AddScoped<TenantSaveChangesInterceptor>();
@@ -28,6 +27,19 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<IPasswordHasher, Argon2PasswordHasher>();
         services.AddSingleton<IMfaService, MfaService>();
 
+        services.AddM351Email(configuration);
+
+        return services;
+    }
+
+    /// <summary>
+    /// Só o envio de e-mail (Dev grava .txt em disco; Smtp real via env): usado pela API
+    /// dentro do AddM351Infrastructure e pelo WORKER isoladamente (digest semanal e alertas,
+    /// F5) — o worker não usa EF e não precisa do resto.
+    /// </summary>
+    public static IServiceCollection AddM351Email(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<EmailOptions>(configuration.GetSection(EmailOptions.SectionName));
         services.AddSingleton<DevFileEmailSender>();
         services.AddSingleton<SmtpEmailSender>();
         services.AddSingleton<IEmailSender>(provider =>

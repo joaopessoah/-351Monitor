@@ -3,8 +3,10 @@ using System.Security.Principal;
 using M351.Agent.Core;
 using M351.Agent.Core.Collectors;
 using M351.Agent.Core.Contracts;
+using M351.Agent.Core.Diagnostics;
 using M351.Agent.Core.Events;
 using M351.Agent.Core.Logging;
+using M351.Agent.Core.Privacy;
 using M351.Agent.Core.Win32;
 using Microsoft.Win32;
 
@@ -17,8 +19,6 @@ namespace MonitorAgentSession;
 /// </summary>
 public sealed class TrayApplicationContext : ApplicationContext
 {
-    public const int NoticeVersion = 1; // versão do aviso NOTICE_ACK (Seção 6.5)
-
     private readonly int _sessionId;
     private readonly ILogSink _log;
     private readonly IDisposable _logDisposable;
@@ -36,6 +36,9 @@ public sealed class TrayApplicationContext : ApplicationContext
     private StatusForm? _statusForm;
     private bool _locked;
     private bool _collectorsStarted;
+
+    /// <summary>Evita duas janelas de aviso simultâneas quando a config chega enquanto o modal está aberto.</summary>
+    private volatile bool _noticeShowing;
 
     public TrayApplicationContext(int sessionId)
     {
@@ -56,6 +59,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         _pipe = new PipeClient(sessionId, _log);
         _sink = new PipeEventSink(_pipe);
         _pipe.ConfigReceived += OnConfigReceived;
+        _pipe.DiagnosticsResult += OnDiagnosticsResult;
 
         SystemEvents.SessionSwitch += OnSessionSwitch;
 
@@ -77,6 +81,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add("O que está sendo coletado agora", null, (_, _) => ShowStatusWindow());
         menu.Items.Add("Política de monitoramento", null, (_, _) => OpenTransparencyUrl());
         menu.Items.Add("Status da conexão", null, (_, _) => ShowConnectionStatus());
+        menu.Items.Add("Enviar diagnóstico ao suporte", null, (_, _) => SendDiagnosticsToSupport());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Sobre", null, (_, _) => ShowAbout());
         // SEM item "Sair" — por arquitetura (Seção 6.5)
@@ -94,6 +99,8 @@ public sealed class TrayApplicationContext : ApplicationContext
         {
             _collectorsStarted = true;
             _factory = new EventFactory(message.BootId);
+            // AGENT_ERROR do helper sai pelo pipe (o helper não toca a fila) — máx. 1/hora por tipo
+            var errors = new AgentErrorReporter(_factory, ev => _sink.Emit(ev));
             _engine = new SessionCollectorEngine(
                 new Win32ForegroundWindowQuery(),
                 new Win32IdleTimeQuery(),
@@ -102,8 +109,9 @@ public sealed class TrayApplicationContext : ApplicationContext
                 _identity,
                 () => _config,
                 () => _locked,
-                queueDepth: null, // o serviço injeta o queue_depth real no HEARTBEAT
-                _log);
+                queueDepth: null, // o serviço injeta a saúde operacional no HEARTBEAT
+                _log,
+                errors);
             _ = _engine.RunAsync(_cts.Token);
             _log.Info("Coletores de sessão iniciados (janela ativa, ociosidade, heartbeat).");
 
@@ -115,6 +123,11 @@ public sealed class TrayApplicationContext : ApplicationContext
         else
         {
             _engine?.ApplyConfig(_config);
+
+            // Config nova pode trazer notice_version maior (o tenant reescreveu o aviso no portal):
+            // o MaybeShowNotice compara com a versão confirmada localmente e reexibe sozinho.
+            // Mesmo Task.Run do primeiro caso: o modal NUNCA pode bloquear o read-loop do pipe.
+            _ = Task.Run(MaybeShowNotice);
         }
     }
 
@@ -138,35 +151,55 @@ public sealed class TrayApplicationContext : ApplicationContext
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "M351", "MonitorAgent", "notice_ack.txt");
 
-    private void MaybeShowNotice()
+    /// <summary>Versão confirmada localmente (null se nunca confirmada ou flag ilegível).</summary>
+    private int? ReadAcknowledgedNoticeVersion()
     {
         try
         {
             if (File.Exists(NoticeFlagPath) &&
-                int.TryParse(File.ReadAllText(NoticeFlagPath).Trim(), out var acked) &&
-                acked >= NoticeVersion)
+                int.TryParse(File.ReadAllText(NoticeFlagPath).Trim(), out var acked))
             {
-                return; // já confirmou esta versão do aviso — não reexibir a cada logon
+                return acked;
             }
         }
-        catch (Exception) { /* sem flag legível: exibe */ }
+        catch (Exception) { /* sem flag legível: trata como nunca confirmado (exibe) */ }
+        return null;
+    }
 
-        var shownAt = DateTimeOffset.UtcNow;
-        using var notice = new NoticeForm(() => ShowStatusWindow());
-        notice.ShowDialog();
+    /// <summary>
+    /// Exibe o aviso quando a versão vigente da CONFIG DO TENANT (notice_version) é maior que a
+    /// confirmada localmente: bump no portal reexibe o aviso na frota e gera novo NOTICE_ACK.
+    /// O texto do corpo vem da config (notice_text); o enquadramento legal é fixo no agente.
+    /// </summary>
+    private void MaybeShowNotice()
+    {
+        var currentVersion = _config.NoticeVersion;
+        if (!NoticeGate.ShouldShow(ReadAcknowledgedNoticeVersion(), currentVersion)) return;
+        if (_noticeShowing) return; // já há um aviso na tela (config nova chegou no meio)
 
-        if (notice.Acknowledged && _factory is not null)
+        _noticeShowing = true;
+        try
         {
+            var shownAt = DateTimeOffset.UtcNow;
+            using var notice = new NoticeForm(() => ShowStatusWindow(), _config.NoticeText);
+            notice.ShowDialog();
+
+            if (!notice.Acknowledged || _factory is null) return;
+
             _sink.Emit(_factory.Create(EventTypes.NoticeAck,
-                new NoticeAckData { NoticeVersion = NoticeVersion, ShownAt = Iso.Format(shownAt) },
+                new NoticeAckData { NoticeVersion = currentVersion, ShownAt = Iso.Format(shownAt) },
                 _identity.SessionId, _identity.WindowsSid, _identity.WindowsUser));
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(NoticeFlagPath)!);
-                File.WriteAllText(NoticeFlagPath, NoticeVersion.ToString());
+                File.WriteAllText(NoticeFlagPath, currentVersion.ToString());
             }
             catch (Exception) { /* reexibirá no próximo logon */ }
-            _log.Info("NOTICE_ACK emitido (evidência de ciência — não é consentimento).");
+            _log.Info($"NOTICE_ACK v{currentVersion} emitido (evidência de ciência — não é consentimento).");
+        }
+        finally
+        {
+            _noticeShowing = false;
         }
     }
 
@@ -222,6 +255,59 @@ public sealed class TrayApplicationContext : ApplicationContext
         MessageBox.Show(
             $"Canal local: {pipeState}\nServidor: {serverState}\nÚltimo envio ao servidor: {lastSent}",
             "Status da conexão", MessageBoxButtons.OK, icon);
+    }
+
+    /// <summary>
+    /// Envio do pacote de diagnóstico ao suporte (F5). O usuário precisa saber EXATAMENTE o que
+    /// sai da máquina dele antes de confirmar: só logs técnicos do agente, já redigidos (sem
+    /// título de janela, sem nome de usuário, sem conteúdo do que ele digita ou vê). Quem empacota
+    /// e envia é o SERVIÇO — o helper apenas pede pelo pipe e mostra o resultado.
+    /// </summary>
+    private void SendDiagnosticsToSupport()
+    {
+        var confirm = MessageBox.Show(
+            "Enviar um pacote de diagnóstico ao suporte da sua empresa?\n\n" +
+            "O que É enviado: logs técnicos do agente já redigidos (horários, erros de conexão, " +
+            "versão do agente, nome da máquina).\n" +
+            "O que NÃO é enviado: títulos de janela, nomes de usuário, endereços de arquivos, " +
+            "senhas ou qualquer conteúdo do que você digita, vê ou envia.\n\n" +
+            "O envio é manual e só acontece se você confirmar agora.",
+            "Enviar diagnóstico ao suporte", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+        if (confirm != DialogResult.Yes) return;
+
+        _pipe.Send(new PipeMessage { Kind = PipeMessage.KindDiagnosticsRequest });
+        ShowBalloon("Diagnóstico", "Gerando e enviando o pacote de diagnóstico ao suporte…");
+        _log.Info("Envio de diagnóstico solicitado pelo usuário no tray (confirmado).");
+    }
+
+    private void OnDiagnosticsResult(bool ok)
+    {
+        if (ok)
+        {
+            ShowBalloon("Diagnóstico enviado", "O pacote chegou ao suporte da sua empresa.");
+            _log.Info("Diagnóstico enviado ao suporte com sucesso.");
+        }
+        else
+        {
+            ShowBalloon("Diagnóstico não enviado",
+                "Não foi possível enviar agora. Tente novamente mais tarde ou fale com o suporte.");
+            _log.Warn("Envio de diagnóstico ao suporte falhou (reportado no tray).");
+        }
+    }
+
+    private void ShowBalloon(string title, string text)
+    {
+        try
+        {
+            _trayIcon.BalloonTipTitle = title;
+            _trayIcon.BalloonTipText = text;
+            _trayIcon.BalloonTipIcon = ToolTipIcon.Info;
+            _trayIcon.ShowBalloonTip(5_000);
+        }
+        catch (Exception ex)
+        {
+            _log.Warn($"Falha ao exibir o balão do tray: {ex.Message}");
+        }
     }
 
     private void ShowAbout()

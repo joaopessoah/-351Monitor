@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.IO.Compression;
 using M351.Agent.Core.Logging;
 
 namespace MonitorAgentSession;
@@ -51,16 +50,10 @@ internal static class Program
                 Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "M351", "MonitorAgent");
             var target = Path.Combine(Path.GetTempPath(), $"monitoragent-diag-{DateTime.Now:yyyyMMdd-HHmmss}.zip");
 
-            using var zip = ZipFile.Open(target, ZipArchiveMode.Create);
-            DiagnosticsLogPackager.AddScrubbedLogs(zip, Path.Combine(programData, "logs"));
-
-            var info = zip.CreateEntry("info.txt");
-            using (var writer = new StreamWriter(info.Open()))
-            {
-                writer.WriteLine($"versao_agente: {M351.Agent.Core.AgentVersionInfo.Current}");
-                writer.WriteLine($"gerado_em: {DateTime.Now:O}");
-                writer.WriteLine($"maquina: {Environment.MachineName}");
-            }
+            // MESMO pacote que o tray envia ao suporte (DiagnosticsUploader): o usuário pode
+            // inspecionar localmente exatamente o que sai da máquina dele.
+            DiagnosticsLogPackager.CreateSupportZip(
+                Path.Combine(programData, "logs"), target, M351.Agent.Core.AgentVersionInfo.Current);
 
             Console.WriteLine(target);
             return 0;

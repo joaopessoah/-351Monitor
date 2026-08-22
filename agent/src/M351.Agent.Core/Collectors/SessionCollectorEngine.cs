@@ -27,6 +27,12 @@ public sealed class SessionCollectorEngine
     private readonly Func<long>? _queueDepth;
     private readonly ILogSink _log;
 
+    /// <summary>
+    /// Telemetria de falha da COLETA (F5): amostra perdida por exceção vira AGENT_ERROR (máx.
+    /// 1/hora por tipo) em vez de morrer no log da máquina. Opcional (modo console/testes).
+    /// </summary>
+    private readonly Diagnostics.AgentErrorReporter? _errors;
+
     public ActiveWindowTracker WindowTracker { get; }
     public IdleTracker IdleTracker { get; }
 
@@ -41,8 +47,10 @@ public sealed class SessionCollectorEngine
         Func<AgentConfig> getConfig,
         Func<bool> isLocked,
         Func<long>? queueDepth,
-        ILogSink log)
+        ILogSink log,
+        Diagnostics.AgentErrorReporter? errors = null)
     {
+        _errors = errors;
         _foreground = foreground;
         _idleQuery = idleQuery;
         _sink = sink;
@@ -121,6 +129,7 @@ public sealed class SessionCollectorEngine
             catch (Exception ex)
             {
                 _log.Error("Falha no loop de janela ativa (amostra ignorada).", ex);
+                _errors?.Report(ex, _identity.SessionId);
             }
 
             await DelaySeconds(_getConfig().ActiveWindowPollSec, ct);
@@ -156,6 +165,7 @@ public sealed class SessionCollectorEngine
             catch (Exception ex)
             {
                 _log.Error("Falha no loop de ociosidade (amostra ignorada).", ex);
+                _errors?.Report(ex, _identity.SessionId);
             }
 
             await DelaySeconds(5, ct); // verificação a cada 5 s (Seção 6.2)
@@ -179,6 +189,7 @@ public sealed class SessionCollectorEngine
             catch (Exception ex)
             {
                 _log.Error("Falha ao emitir HEARTBEAT.", ex);
+                _errors?.Report(ex, _identity.SessionId);
             }
 
             await DelaySeconds(_getConfig().HeartbeatSec, ct);

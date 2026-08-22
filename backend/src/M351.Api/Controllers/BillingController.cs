@@ -80,6 +80,41 @@ public class BillingController(NpgsqlDataSource dataSource, TimeProvider clock) 
                 "month não pode ser um mês futuro no fuso do tenant.");
         }
 
+        // F5 — mês CONGELADO (device_billing_months, preenchida pelo job diário de
+        // congelamento): passa a ser a fonte da verdade para meses fechados, o que elimina o
+        // efeito retroativo descrito acima. O mês corrente segue calculado ao vivo.
+        var frozen = (await connection.QueryAsync<FrozenRow>(new CommandDefinition(
+            """
+            SELECT device_id, hostname, display_name, had_events, was_enrolled, keep_alive, frozen_at
+            FROM device_billing_months
+            WHERE tenant_id = @TenantId AND month = @Month
+            ORDER BY lower(COALESCE(display_name, hostname)), device_id
+            """,
+            new { TenantId = tenantId, Month = monthStart }, cancellationToken: ct))).ToList();
+
+        if (frozen.Count > 0)
+        {
+            var frozenItems = frozen.Select(row => new BillableDeviceResponse(
+                row.DeviceId, row.DisplayName, row.Hostname,
+                Status: "frozen",
+                EnrolledAt: Uuid7.TimestampOf(row.DeviceId),
+                LastSeenAt: null,
+                Evidence: row.HadEvents ? EvidenceEvents
+                    : row.WasEnrolled ? EvidenceEnrolled
+                    : EvidenceKeepAlive)).ToList();
+
+            var frozenCriteria =
+                $"Mês {monthText} FECHADO e congelado em {frozen[0].FrozenAt:dd/MM/yyyy HH:mm} (UTC). " +
+                "A contagem reflete o estado no fechamento do mês no fuso do tenant " +
+                $"({timezone}) e não muda mais: arquivar ou renomear um dispositivo depois disso " +
+                "não altera este extrato. Cobrável: dispositivo não arquivado com pelo menos 1 lote " +
+                "no mês (eventos recebidos, registro no mês ou último contato no mês).";
+
+            return Ok(new BillableDevicesResponse(
+                monthText, frozenItems.Count, frozenCriteria, frozenItems,
+                Frozen: true, FrozenAt: frozen[0].FrozenAt));
+        }
+
         // janela [início, fim) do mês LOCAL do tenant, em instantes UTC — é essa conversão
         // que faz o evento de 23:30 local do dia 31 (já dia 1 seguinte em UTC) contar no mês certo
         var fromUtc = LocalMidnightUtc(monthStart, tz);
@@ -143,4 +178,14 @@ public class BillingController(NpgsqlDataSource dataSource, TimeProvider clock) 
         string Status,
         DateTimeOffset? LastSeenAt,
         bool HasEvents);
+
+    /// <summary>Linha congelada de device_billing_months (F5): o estado no fechamento do mês.</summary>
+    private sealed record FrozenRow(
+        Guid DeviceId,
+        string Hostname,
+        string? DisplayName,
+        bool HadEvents,
+        bool WasEnrolled,
+        bool KeepAlive,
+        DateTimeOffset FrozenAt);
 }

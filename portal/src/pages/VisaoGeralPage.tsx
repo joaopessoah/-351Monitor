@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { OnboardingChecklist } from "@/components/dashboard/OnboardingChecklist";
 import { WeeklyChartsRow } from "@/components/dashboard/WeeklyChartsRow";
 
 /** Tooltip pedagógico do estado Ocioso (Seção 8.4) - sempre presente via title. */
@@ -178,6 +179,7 @@ export function VisaoGeralPage() {
             </Link>
           </div>
         </Card>
+        <OnboardingChecklist />
         <WeeklyChartsRow />
       </div>
     );
@@ -303,6 +305,10 @@ export function VisaoGeralPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Checklist de primeiros passos (funil de ativação) - admin/owner,
+          some após o dismiss. Acima dos gráficos, abaixo da presença. */}
+      <OnboardingChecklist />
 
       {/* Linha 3 - gráficos da semana (F3.2, Seção 8.4). */}
       <WeeklyChartsRow />

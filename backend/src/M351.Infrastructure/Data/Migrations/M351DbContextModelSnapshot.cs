@@ -151,6 +151,10 @@ namespace M351.Infrastructure.Data.Migrations
                         .HasColumnType("bytea")
                         .HasColumnName("token_hash");
 
+                    b.Property<Guid?>("TransparencyToken")
+                        .HasColumnType("uuid")
+                        .HasColumnName("transparency_token");
+
                     b.Property<string>("TzIana")
                         .HasColumnType("text")
                         .HasColumnName("tz_iana");
@@ -162,6 +166,9 @@ namespace M351.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("EnrollmentKeyId");
+
+                    b.HasIndex("TransparencyToken")
+                        .IsUnique();
 
                     b.HasIndex("TenantId", "LastSeenAt")
                         .HasDatabaseName("ix_devices_tenant_lastseen");
@@ -298,6 +305,40 @@ namespace M351.Infrastructure.Data.Migrations
                     b.ToTable("invitations", (string)null);
                 });
 
+            modelBuilder.Entity("M351.Domain.Entities.MfaRecoveryCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<byte[]>("CodeHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("code_hash");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("used_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("mfa_recovery_codes", (string)null);
+                });
+
             modelBuilder.Entity("M351.Domain.Entities.Organization", b =>
                 {
                     b.Property<Guid>("Id")
@@ -328,10 +369,26 @@ namespace M351.Infrastructure.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("finalidade_declarada");
 
+                    b.Property<int?>("GoalWeeklyActiveHours")
+                        .HasColumnType("integer")
+                        .HasColumnName("goal_weekly_active_hours");
+
+                    b.Property<int?>("GoalWorkRelatedPct")
+                        .HasColumnType("integer")
+                        .HasColumnName("goal_work_related_pct");
+
+                    b.Property<DateTimeOffset?>("LastWeeklyDigestAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_weekly_digest_at");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("name");
+
+                    b.Property<DateTimeOffset?>("OnboardingChecklistDismissedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("onboarding_checklist_dismissed_at");
 
                     b.Property<string>("Plan")
                         .IsRequired()
@@ -359,6 +416,42 @@ namespace M351.Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("organizations", (string)null);
+                });
+
+            modelBuilder.Entity("M351.Domain.Entities.PasswordResetToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("token_hash");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("used_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("password_reset_tokens", (string)null);
                 });
 
             modelBuilder.Entity("M351.Domain.Entities.RefreshToken", b =>
@@ -442,6 +535,14 @@ namespace M351.Infrastructure.Data.Migrations
                         .HasColumnType("text[]")
                         .HasColumnName("masked_patterns");
 
+                    b.Property<string>("NoticeText")
+                        .HasColumnType("text")
+                        .HasColumnName("notice_text");
+
+                    b.Property<int>("NoticeVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("notice_version");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
@@ -518,6 +619,37 @@ namespace M351.Infrastructure.Data.Migrations
                     b.ToTable("users", (string)null);
                 });
 
+            modelBuilder.Entity("M351.Domain.Entities.UserEmailPrefs", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<bool>("FleetAlerts")
+                        .HasColumnType("boolean")
+                        .HasColumnName("fleet_alerts");
+
+                    b.Property<bool>("JornadaWeekly")
+                        .HasColumnType("boolean")
+                        .HasColumnName("jornada_weekly");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<bool>("WeeklyDigest")
+                        .HasColumnType("boolean")
+                        .HasColumnName("weekly_digest");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("user_email_prefs", (string)null);
+                });
+
             modelBuilder.Entity("M351.Domain.Entities.Device", b =>
                 {
                     b.HasOne("M351.Domain.Entities.EnrollmentKey", null)
@@ -532,6 +664,24 @@ namespace M351.Infrastructure.Data.Migrations
                         .HasForeignKey("InvitedBy");
                 });
 
+            modelBuilder.Entity("M351.Domain.Entities.MfaRecoveryCode", b =>
+                {
+                    b.HasOne("M351.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("M351.Domain.Entities.PasswordResetToken", b =>
+                {
+                    b.HasOne("M351.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("M351.Domain.Entities.RefreshToken", b =>
                 {
                     b.HasOne("M351.Domain.Entities.User", "User")
@@ -541,6 +691,15 @@ namespace M351.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("M351.Domain.Entities.UserEmailPrefs", b =>
+                {
+                    b.HasOne("M351.Domain.Entities.User", null)
+                        .WithOne()
+                        .HasForeignKey("M351.Domain.Entities.UserEmailPrefs", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

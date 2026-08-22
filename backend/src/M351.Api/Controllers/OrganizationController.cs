@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using M351.Api.Agent;
 using M351.Api.Auth;
 using M351.Api.Contracts;
 using M351.Api.Services;
@@ -39,7 +41,8 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
 
         return Ok(new OrganizationResponse(
             org.Name, org.Slug, org.Timezone, ParseBusinessHours(org.BusinessHours),
-            org.FinalidadeDeclarada, org.ContatoDpo, org.DataVigencia));
+            org.FinalidadeDeclarada, org.ContatoDpo, org.DataVigencia,
+            org.GoalWeeklyActiveHours, org.GoalWorkRelatedPct));
     }
 
     [HttpPatch]
@@ -88,10 +91,33 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
             businessHours = businessHoursEl.GetRawText();
         }
 
+        // ----- metas semanais AGREGADAS da org (F5): ausente = não muda; null = remove -----
+        // Nunca por pessoa e nunca comparando pessoas: o default sugerido pelo portal é a
+        // média das últimas semanas da PRÓPRIA org (sem benchmark entre clientes).
+        var goalHours = ParseOptionalInt(body, "goal_weekly_active_hours", 1, 10_000,
+            out var hasGoalHours, out var goalHoursError);
+        if (goalHoursError is not null) return goalHoursError;
+
+        var goalPct = ParseOptionalInt(body, "goal_work_related_pct", 1, 100,
+            out var hasGoalPct, out var goalPctError);
+        if (goalPctError is not null) return goalPctError;
+
         var org = await db.Organizations.FirstAsync(ct);
 
         // aplica somente o que mudou e registra o de→para por campo (detail do audit)
         var changes = new Dictionary<string, object?>();
+        if (hasGoalHours && org.GoalWeeklyActiveHours != goalHours)
+        {
+            changes["goal_weekly_active_hours"] = new { from = org.GoalWeeklyActiveHours, to = goalHours };
+            org.GoalWeeklyActiveHours = goalHours;
+        }
+
+        if (hasGoalPct && org.GoalWorkRelatedPct != goalPct)
+        {
+            changes["goal_work_related_pct"] = new { from = org.GoalWorkRelatedPct, to = goalPct };
+            org.GoalWorkRelatedPct = goalPct;
+        }
+
         if (hasFinalidade && org.FinalidadeDeclarada != finalidade)
         {
             changes["finalidade_declarada"] = new { from = org.FinalidadeDeclarada, to = finalidade };
@@ -131,7 +157,360 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
 
         return Ok(new OrganizationResponse(
             org.Name, org.Slug, org.Timezone, ParseBusinessHours(org.BusinessHours),
-            org.FinalidadeDeclarada, org.ContatoDpo, org.DataVigencia));
+            org.FinalidadeDeclarada, org.ContatoDpo, org.DataVigencia,
+            org.GoalWeeklyActiveHours, org.GoalWorkRelatedPct));
+    }
+
+    // =====================================================================================
+    // F5 — config de coleta do agente OPERÁVEL (spec §7.4 linha 809 e §8.7): até aqui,
+    // tenant_agent_configs só nascia no enroll com defaults de fábrica e config_version
+    // jamais era bumpado em produção — o principal diferencial declarado (política de
+    // privacidade configurável e transparente) não era operável pelo cliente. A mudança
+    // viaja para a frota exclusivamente no ack do batch (decisão: sem endpoint de policy),
+    // caminho já validado E2E no aceite da F1 (POLICY_APPLIED).
+    // =====================================================================================
+
+    private const int MaxMaskedPatterns = 50;
+    private const int MaxPatternLength = 200;
+    private const int MaxIgnoredProcesses = 100;
+    private const int MaxProcessNameLength = 100;
+
+    /// <summary>Config de coleta vigente (defaults de fábrica se o tenant ainda não tem linha).</summary>
+    [HttpGet("agent-config")]
+    [Authorize(Policy = AuthConstants.PolicyAdminPlus)]
+    public async Task<IActionResult> GetAgentConfig(CancellationToken ct)
+    {
+        var config = await db.TenantAgentConfigs.FirstOrDefaultAsync(ct)
+            ?? new TenantAgentConfig { TenantId = CurrentUser.TenantId(User) };
+
+        return Ok(ToAgentConfigResponse(config));
+    }
+
+    /// <summary>
+    /// Edição PARCIAL da config de coleta — OwnerOnly: mudar a política de coleta é decisão
+    /// da CONTROLADORA (kit LGPD itens 3/8). FULL não é aceito por aqui: exige decisão
+    /// consciente registrada em DPA e é aplicado via backoffice (kit LGPD item 3). Toda
+    /// mudança dá bump transacional de config_version (propaga no próximo ack de cada
+    /// device) e grava a trilha de→para; mudar collection_window também registra a ação
+    /// collection_window_choice reservada pela spec (linha 726) — quem decide é a controladora.
+    /// </summary>
+    [HttpPatch("agent-config")]
+    [Authorize(Policy = AuthConstants.PolicyOwnerOnly)]
+    public async Task<IActionResult> PatchAgentConfig([FromBody] JsonElement body, CancellationToken ct)
+    {
+        if (body.ValueKind != JsonValueKind.Object)
+        {
+            return ProblemResponse(StatusCodes.Status400BadRequest, "Corpo inválido: envie um objeto JSON.");
+        }
+
+        // ----- idle_threshold_sec: faixa do protocolo 60–1800 s (N4) -----
+        var hasIdle = body.TryGetProperty("idle_threshold_sec", out var idleEl);
+        var idle = 0;
+        if (hasIdle)
+        {
+            if (idleEl.ValueKind != JsonValueKind.Number || !idleEl.TryGetInt32(out idle) || idle is < 60 or > 1800)
+            {
+                return ProblemResponse(StatusCodes.Status400BadRequest,
+                    "idle_threshold_sec deve ser um inteiro entre 60 e 1800 segundos.");
+            }
+        }
+
+        // ----- window_title_policy: só MASKED_PATTERNS | APP_ONLY via API -----
+        var hasPolicy = body.TryGetProperty("window_title_policy", out var policyEl);
+        string? policy = null;
+        if (hasPolicy)
+        {
+            policy = policyEl.ValueKind == JsonValueKind.String ? policyEl.GetString() : null;
+            if (policy is not ("MASKED_PATTERNS" or "APP_ONLY"))
+            {
+                return ProblemResponse(StatusCodes.Status400BadRequest,
+                    "window_title_policy deve ser MASKED_PATTERNS ou APP_ONLY. A política FULL " +
+                    "(títulos sem mascaramento) exige decisão registrada em contrato/DPA e é " +
+                    "aplicada pela operadora.", code: "full_requires_dpa");
+            }
+        }
+
+        // ----- masked_patterns: cada item precisa ser uma regex .NET válida — uma regex
+        // inválida quebraria o TitleMasker na frota inteira -----
+        var hasPatterns = body.TryGetProperty("masked_patterns", out var patternsEl);
+        string[]? patterns = null;
+        if (hasPatterns)
+        {
+            if (patternsEl.ValueKind != JsonValueKind.Array)
+            {
+                return ProblemResponse(StatusCodes.Status400BadRequest, "masked_patterns deve ser uma lista de expressões.");
+            }
+
+            var list = new List<string>();
+            foreach (var item in patternsEl.EnumerateArray())
+            {
+                var value = item.ValueKind == JsonValueKind.String ? item.GetString()?.Trim() : null;
+                if (string.IsNullOrEmpty(value) || value.Length > MaxPatternLength)
+                {
+                    return ProblemResponse(StatusCodes.Status400BadRequest,
+                        $"Cada padrão de mascaramento deve ser um texto de até {MaxPatternLength} caracteres.");
+                }
+
+                try
+                {
+                    _ = Regex.Match(string.Empty, value, RegexOptions.None, TimeSpan.FromMilliseconds(100));
+                }
+                catch (ArgumentException)
+                {
+                    return ProblemResponse(StatusCodes.Status400BadRequest,
+                        $"Padrão de mascaramento inválido (não é uma expressão regular válida): {value}",
+                        code: "invalid_pattern");
+                }
+                catch (RegexMatchTimeoutException)
+                {
+                    // timeout na string vazia é praticamente impossível; padrão patológico → rejeita
+                    return ProblemResponse(StatusCodes.Status400BadRequest,
+                        $"Padrão de mascaramento rejeitado por custo excessivo: {value}", code: "invalid_pattern");
+                }
+
+                list.Add(value);
+            }
+
+            if (list.Count > MaxMaskedPatterns)
+            {
+                return ProblemResponse(StatusCodes.Status400BadRequest,
+                    $"Máximo de {MaxMaskedPatterns} padrões de mascaramento.");
+            }
+
+            patterns = [.. list];
+        }
+
+        // ----- ignored_processes: nomes de executável simples, sem caminho -----
+        var hasIgnored = body.TryGetProperty("ignored_processes", out var ignoredEl);
+        string[]? ignored = null;
+        if (hasIgnored)
+        {
+            if (ignoredEl.ValueKind != JsonValueKind.Array)
+            {
+                return ProblemResponse(StatusCodes.Status400BadRequest, "ignored_processes deve ser uma lista de processos.");
+            }
+
+            var list = new List<string>();
+            foreach (var item in ignoredEl.EnumerateArray())
+            {
+                var value = item.ValueKind == JsonValueKind.String
+                    ? item.GetString()?.Trim().ToLowerInvariant()
+                    : null;
+                if (string.IsNullOrEmpty(value) || value.Length > MaxProcessNameLength
+                    || value.Contains('\\') || value.Contains('/'))
+                {
+                    return ProblemResponse(StatusCodes.Status400BadRequest,
+                        "Cada processo ignorado deve ser um nome de executável simples (ex.: nomedoapp.exe), sem caminho.");
+                }
+
+                list.Add(value);
+            }
+
+            if (list.Count > MaxIgnoredProcesses)
+            {
+                return ProblemResponse(StatusCodes.Status400BadRequest,
+                    $"Máximo de {MaxIgnoredProcesses} processos ignorados.");
+            }
+
+            ignored = [.. list.Distinct()];
+        }
+
+        // ----- collection_window: ALWAYS ou BUSINESS_HOURS com days/start/end válidos -----
+        var hasWindow = body.TryGetProperty("collection_window", out var windowEl);
+        string? windowJson = null;
+        if (hasWindow)
+        {
+            var error = ParseCollectionWindow(windowEl, out windowJson);
+            if (error is not null) return error;
+        }
+
+        if (!hasIdle && !hasPolicy && !hasPatterns && !hasIgnored && !hasWindow)
+        {
+            return ProblemResponse(StatusCodes.Status400BadRequest,
+                "Nenhum campo editável informado (idle_threshold_sec, window_title_policy, masked_patterns, ignored_processes, collection_window).");
+        }
+
+        var tenantId = CurrentUser.TenantId(User);
+        var config = await db.TenantAgentConfigs.FirstOrDefaultAsync(ct);
+        if (config is null)
+        {
+            // a linha só nasce no primeiro enroll — tenant recém-criado ainda não tem
+            config = new TenantAgentConfig { TenantId = tenantId };
+            db.TenantAgentConfigs.Add(config);
+        }
+
+        var changes = new Dictionary<string, object?>();
+        if (hasIdle && config.IdleThresholdSec != idle)
+        {
+            changes["idle_threshold_sec"] = new { from = config.IdleThresholdSec, to = idle };
+            config.IdleThresholdSec = idle;
+        }
+
+        if (hasPolicy && config.WindowTitlePolicy != policy)
+        {
+            changes["window_title_policy"] = new { from = config.WindowTitlePolicy, to = policy };
+            config.WindowTitlePolicy = policy!;
+        }
+
+        if (hasPatterns && !config.MaskedPatterns.SequenceEqual(patterns!))
+        {
+            changes["masked_patterns"] = new { from = config.MaskedPatterns, to = patterns };
+            config.MaskedPatterns = patterns!;
+        }
+
+        if (hasIgnored && !config.IgnoredProcesses.SequenceEqual(ignored!))
+        {
+            changes["ignored_processes"] = new { from = config.IgnoredProcesses, to = ignored };
+            config.IgnoredProcesses = ignored!;
+        }
+
+        var windowChanged = false;
+        if (hasWindow && !JsonEqual(config.CollectionWindow, windowJson))
+        {
+            changes["collection_window"] = new { from = config.CollectionWindow, to = windowJson };
+            config.CollectionWindow = windowJson!;
+            windowChanged = true;
+        }
+
+        if (changes.Count > 0)
+        {
+            // bump transacional: a frota recebe a config nova no próximo ack de cada device
+            config.ConfigVersion++;
+            config.UpdatedAt = DateTimeOffset.UtcNow;
+
+            audit.Add(tenantId, AuditActions.UpdatePrivacyConfig, CurrentUser.UserId(User),
+                HttpContext.Connection.RemoteIpAddress, targetType: "agent_config", targetId: tenantId,
+                detailJson: JsonSerializer.Serialize(new { changes, config_version = config.ConfigVersion }));
+
+            if (windowChanged)
+            {
+                // registro EXPLÍCITO da escolha da janela de coleta (spec linha 726):
+                // quem decide é a controladora, e a decisão fica evidenciada por si só
+                audit.Add(tenantId, AuditActions.CollectionWindowChoice, CurrentUser.UserId(User),
+                    HttpContext.Connection.RemoteIpAddress, targetType: "agent_config", targetId: tenantId,
+                    detailJson: windowJson);
+            }
+
+            await db.SaveChangesAsync(ct);
+        }
+
+        return Ok(ToAgentConfigResponse(config));
+    }
+
+    private static AgentConfigAdminResponse ToAgentConfigResponse(TenantAgentConfig config) => new(
+        config.ConfigVersion,
+        config.HeartbeatSec,
+        config.ActiveWindowPollSec,
+        config.IdleThresholdSec,
+        config.WindowTitlePolicy,
+        config.MaskedPatterns,
+        config.IgnoredProcesses,
+        AgentConfigService.ParseCollectionWindow(config.CollectionWindow),
+        config.UpdatedAt);
+
+    private ObjectResult? ParseCollectionWindow(JsonElement el, out string? canonicalJson)
+    {
+        canonicalJson = null;
+        if (el.ValueKind != JsonValueKind.Object
+            || !el.TryGetProperty("mode", out var modeEl)
+            || modeEl.ValueKind != JsonValueKind.String)
+        {
+            return ProblemResponse(StatusCodes.Status400BadRequest,
+                "collection_window deve ser um objeto com mode ALWAYS ou BUSINESS_HOURS.");
+        }
+
+        var mode = modeEl.GetString();
+        if (mode == "ALWAYS")
+        {
+            canonicalJson = TenantAgentConfig.FactoryDefaults.CollectionWindowAlways;
+            return null;
+        }
+
+        if (mode != "BUSINESS_HOURS")
+        {
+            return ProblemResponse(StatusCodes.Status400BadRequest,
+                "collection_window.mode deve ser ALWAYS ou BUSINESS_HOURS.");
+        }
+
+        int[]? days = null;
+        if (el.TryGetProperty("days", out var daysEl) && daysEl.ValueKind == JsonValueKind.Array)
+        {
+            var list = new List<int>();
+            foreach (var d in daysEl.EnumerateArray())
+            {
+                if (d.ValueKind != JsonValueKind.Number || !d.TryGetInt32(out var day) || day is < 0 or > 6)
+                {
+                    return ProblemResponse(StatusCodes.Status400BadRequest,
+                        "collection_window.days deve conter dias da semana entre 0 (domingo) e 6 (sábado).");
+                }
+
+                list.Add(day);
+            }
+
+            days = [.. list.Distinct().Order()];
+        }
+
+        if (days is null || days.Length == 0)
+        {
+            return ProblemResponse(StatusCodes.Status400BadRequest,
+                "collection_window BUSINESS_HOURS exige a lista de dias (days).");
+        }
+
+        var start = el.TryGetProperty("start", out var startEl) && startEl.ValueKind == JsonValueKind.String
+            ? startEl.GetString() : null;
+        var end = el.TryGetProperty("end", out var endEl) && endEl.ValueKind == JsonValueKind.String
+            ? endEl.GetString() : null;
+        if (!IsHourMinute(start) || !IsHourMinute(end))
+        {
+            return ProblemResponse(StatusCodes.Status400BadRequest,
+                "collection_window BUSINESS_HOURS exige start e end no formato HH:mm.");
+        }
+
+        canonicalJson = JsonSerializer.Serialize(new
+        {
+            mode = "BUSINESS_HOURS",
+            days,
+            start,
+            end,
+        });
+        return null;
+    }
+
+    private static bool IsHourMinute(string? value) =>
+        value is not null && Regex.IsMatch(value, "^([01][0-9]|2[0-3]):[0-5][0-9]$");
+
+    /// <summary>
+    /// F5 — Seção 8.3 passo 4: o checklist de primeiros passos é dispensável e o estado é da
+    /// ORGANIZAÇÃO (persistido no servidor, não em localStorage). Idempotente. Estado de UI
+    /// puro, sem dado pessoal: deliberadamente fora da trilha de auditoria.
+    /// </summary>
+    [HttpPost("onboarding-checklist/dismiss")]
+    [Authorize(Policy = AuthConstants.PolicyAdminPlus)]
+    public async Task<IActionResult> DismissOnboardingChecklist(CancellationToken ct)
+    {
+        var org = await db.Organizations.FirstAsync(ct);
+        if (org.OnboardingChecklistDismissedAt is null)
+        {
+            org.OnboardingChecklistDismissedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>Reabre o checklist de primeiros passos (link em Configurações).</summary>
+    [HttpDelete("onboarding-checklist/dismiss")]
+    [Authorize(Policy = AuthConstants.PolicyAdminPlus)]
+    public async Task<IActionResult> RestoreOnboardingChecklist(CancellationToken ct)
+    {
+        var org = await db.Organizations.FirstAsync(ct);
+        if (org.OnboardingChecklistDismissedAt is not null)
+        {
+            org.OnboardingChecklistDismissedAt = null;
+            await db.SaveChangesAsync(ct);
+        }
+
+        return NoContent();
     }
 
     /// <summary>
@@ -164,6 +543,30 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
         {
             error = ProblemResponse(StatusCodes.Status400BadRequest,
                 $"{field} excede o limite de {MaxTextLength} caracteres.");
+            return null;
+        }
+
+        return value;
+    }
+
+    /// <summary>
+    /// Inteiro opcional do corpo: ausente (não muda); null (limpa); número dentro da faixa.
+    /// Mesmo contrato do ParseOptionalText, para os campos numéricos das metas.
+    /// </summary>
+    private int? ParseOptionalInt(
+        JsonElement body, string field, int min, int max, out bool hasField, out ObjectResult? error)
+    {
+        error = null;
+        hasField = body.TryGetProperty(field, out var el);
+        if (!hasField || el.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        if (el.ValueKind != JsonValueKind.Number || !el.TryGetInt32(out var value) || value < min || value > max)
+        {
+            error = ProblemResponse(StatusCodes.Status400BadRequest,
+                $"{field} deve ser um inteiro entre {min} e {max}, ou null para remover a meta.");
             return null;
         }
 

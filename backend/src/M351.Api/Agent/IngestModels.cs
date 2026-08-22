@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace M351.Api.Agent;
 
-/// <summary>Tipos canônicos de evento do MVP (Seção 5.3 — exatamente 17).</summary>
+/// <summary>Tipos canônicos de evento do MVP (Seção 5.3 — exatamente 18).</summary>
 public static class EventTypes
 {
     public const string AgentStart = "AGENT_START";
@@ -24,11 +24,18 @@ public static class EventTypes
     public const string NoticeAck = "NOTICE_ACK";
     public const string PolicyApplied = "POLICY_APPLIED";
 
+    /// <summary>
+    /// F5 — falha interna do agente: {error_type, stack_hash, count}, sem a mensagem crua da
+    /// exceção. Rollout AGENTE-PRIMEIRO: um ingest anterior a este tipo apenas IGNORA o evento
+    /// (regra de tipo desconhecido da Seção 5.3), sem rejeitar o lote.
+    /// </summary>
+    public const string AgentError = "AGENT_ERROR";
+
     public static readonly FrozenSet<string> Known = new[]
     {
         AgentStart, AgentStop, SessionStart, SessionEnd, Lock, Unlock, ActiveWindowChanged,
         IdleStart, IdleEnd, Heartbeat, SystemSuspend, SystemResume, TimeChanged,
-        EventsDropped, AgentTamper, NoticeAck, PolicyApplied,
+        EventsDropped, AgentTamper, NoticeAck, PolicyApplied, AgentError,
     }.ToFrozenSet(StringComparer.Ordinal);
 }
 

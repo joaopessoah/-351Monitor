@@ -13,13 +13,15 @@
 //   acompanhamento em /relatorios/exportacoes. O backend audita view_report.
 // =============================================================================
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Scale } from "lucide-react";
 import { api } from "@/lib/api";
 import { ddmm, formatDuration, formatHm, weekdayShort } from "@/lib/format";
 import { genericErrorMessage } from "@/lib/messages";
 import type { JornadaReportResponse, JornadaRow, MeResponse } from "@/lib/types";
+import { useUrlState } from "@/lib/useUrlState";
+import type { UrlStateCodec } from "@/lib/useUrlState";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -33,6 +35,27 @@ import {
 import { ExportCsvBanner, ExportCsvButton, useCsvExport } from "@/components/reports/ExportCsv";
 
 const PAGE_SIZE = 50;
+
+/** Filtros da tela na URL (?device_ids=, ?page= - deep-link/compartilhável). */
+interface JornadaFilters {
+  deviceIds: string[];
+  page: number;
+}
+
+const JORNADA_FILTERS_CODEC: UrlStateCodec<JornadaFilters> = {
+  parse: (params) => {
+    const rawDevices = params.get("device_ids");
+    const rawPage = Number(params.get("page"));
+    return {
+      deviceIds: rawDevices !== null ? rawDevices.split(",").filter((id) => id.length > 0) : [],
+      page: Number.isInteger(rawPage) && rawPage > 1 ? rawPage : 1,
+    };
+  },
+  serialize: (value) => ({
+    device_ids: value.deviceIds.length > 0 ? value.deviceIds.join(",") : null,
+    page: value.page > 1 ? String(value.page) : null,
+  }),
+};
 
 function NoteCell({ note }: { note: JornadaRow["note"] }) {
   if (note === null) return null;
@@ -51,8 +74,9 @@ function NoteCell({ note }: { note: JornadaRow["note"] }) {
 }
 
 export function JornadaPage() {
-  const [deviceIds, setDeviceIds] = useState<string[]>([]);
-  const [page, setPage] = useState(1);
+  // Devices e página vivem na URL (replace, sem histórico).
+  const [filters, setFilters] = useUrlState(JORNADA_FILTERS_CODEC);
+  const { deviceIds, page } = filters;
 
   const meQuery = useQuery({
     queryKey: ["me"],
@@ -66,10 +90,21 @@ export function JornadaPage() {
   const deviceIdsKey = useMemo(() => [...deviceIds].sort().join(","), [deviceIds]);
   const deviceParam = deviceIdsKey.length > 0 ? `&device_ids=${deviceIdsKey}` : "";
 
-  // Trocar período/devices volta para a primeira página.
+  // Trocar o período volta para a primeira página (devices zeram a página na
+  // própria escrita atômica do toggle). O guard com o range anterior preserva
+  // o ?page= de deep-links no mount; o setter checa igualdade antes de
+  // escrever, então não há loop de history.
+  const prevRangeKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    setPage(1);
-  }, [range?.from, range?.to, deviceIdsKey]);
+    if (range === null) return;
+    const key = `${range.from}|${range.to}`;
+    if (prevRangeKeyRef.current !== null && prevRangeKeyRef.current !== key) {
+      setFilters({ ...filters, page: 1 });
+    }
+    prevRangeKeyRef.current = key;
+    // Deps restritas ao range de propósito: reset SÓ na troca de período.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range?.from, range?.to]);
 
   const jornadaQuery = useQuery({
     queryKey: ["reports", "jornada", { from: range?.from, to: range?.to, devices: deviceIdsKey, page }],
@@ -172,9 +207,14 @@ export function JornadaPage() {
             devices={devices}
             selected={deviceIds}
             onToggle={(id) =>
-              setDeviceIds((prev) => (prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id]))
+              setFilters({
+                deviceIds: deviceIds.includes(id)
+                  ? deviceIds.filter((d) => d !== id)
+                  : [...deviceIds, id],
+                page: 1,
+              })
             }
-            onClear={() => setDeviceIds([])}
+            onClear={() => setFilters({ deviceIds: [], page: 1 })}
           />
           <div className="ml-auto">
             <ExportCsvButton mutation={exportMutation} request={exportRequest} />
@@ -239,7 +279,11 @@ export function JornadaPage() {
                       {deviceIds.length > 0 ? (
                         <span className="inline-flex flex-col items-center gap-2">
                           <span>Nenhum resultado</span>
-                          <Button variant="outline" size="sm" onClick={() => setDeviceIds([])}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setFilters({ deviceIds: [], page: 1 })}
+                          >
                             Limpar filtros
                           </Button>
                         </span>
@@ -341,7 +385,7 @@ export function JornadaPage() {
                     variant="outline"
                     size="sm"
                     disabled={page <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    onClick={() => setFilters({ ...filters, page: Math.max(1, page - 1) })}
                   >
                     Anterior
                   </Button>
@@ -349,7 +393,7 @@ export function JornadaPage() {
                     variant="outline"
                     size="sm"
                     disabled={page >= Math.ceil(data.total / PAGE_SIZE)}
-                    onClick={() => setPage((p) => p + 1)}
+                    onClick={() => setFilters({ ...filters, page: page + 1 })}
                   >
                     Próxima
                   </Button>

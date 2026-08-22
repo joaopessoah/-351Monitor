@@ -74,6 +74,32 @@ public static class AuditActions
     /// Owner/Admin (AdminPlus) editam; Viewer recebe 403.
     /// </summary>
     public const string UpdatePrivacyConfig = "update_privacy_config";
+
+    /// <summary>
+    /// POST /auth/reset-password com sucesso (Seção 7.4): senha redefinida via link de
+    /// recuperação; todas as sessões (refresh tokens) do usuário são revogadas no ato.
+    /// </summary>
+    public const string PasswordReset = "password_reset";
+
+    /// <summary>
+    /// POST /users/{id}/mfa/reset: recuperação assistida de MFA (usuário perdeu o TOTP e os
+    /// recovery codes) — Owner/Admin zera segredo e códigos; o próximo login exige novo setup.
+    /// Mexer em Owner exige Owner, espelhando as demais rotas de usuários.
+    /// </summary>
+    public const string MfaReset = "mfa_reset";
+
+    /// <summary>
+    /// POST /auth/mfa/recovery-codes (Seção 7.5): (re)geração dos 10 códigos de recuperação de
+    /// MFA do próprio usuário; os códigos anteriores são invalidados. detail {count}.
+    /// </summary>
+    public const string MfaRecoveryCodes = "mfa_recovery_codes";
+
+    /// <summary>
+    /// Escolha explícita da janela de coleta (spec Seção 8.3 passo 1, linha 726): registro
+    /// próprio, além do de→para de update_privacy_config — quem decide é a CONTROLADORA e a
+    /// decisão precisa ser evidenciável por si só. detail = collection_window escolhida.
+    /// </summary>
+    public const string CollectionWindowChoice = "collection_window_choice";
 }
 
 /// <summary>Tabela audit_log — append-only, particionada por mês, retenção 24 meses (N13).</summary>

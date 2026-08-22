@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
+import { Check } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { loginErrorMessage } from "@/lib/messages";
@@ -17,6 +18,32 @@ type Step =
   | { kind: "credentials" }
   | { kind: "mfa_verify"; mfaToken: string }
   | { kind: "mfa_setup"; mfaToken: string };
+
+/**
+ * Bullets de confiança do painel de marca - dirigidos ao funcionário que chega
+ * sem contexto. O último abre a página pública de transparência de exemplo.
+ */
+const trustBullets = (
+  <ul className="mt-6 space-y-2 text-sm text-muted-foreground">
+    <li className="flex items-center gap-2">
+      <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+      Sem keylogger
+    </li>
+    <li className="flex items-center gap-2">
+      <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+      Sem capturas de tela
+    </li>
+    <li className="flex items-center gap-2">
+      <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+      <Link
+        to="/transparencia/empresa-demo"
+        className="underline underline-offset-4 transition-colors hover:text-foreground"
+      >
+        Você vê o que sua empresa vê
+      </Link>
+    </li>
+  </ul>
+);
 
 export function LoginPage() {
   const { status, signIn } = useAuth();
@@ -71,14 +98,14 @@ export function LoginPage() {
     return (
       <AuthCard
         title="Verificação em duas etapas"
-        description="Informe o código de 6 dígitos gerado pelo seu aplicativo autenticador."
+        description="Informe o código de 6 dígitos do aplicativo autenticador ou um código de recuperação."
         footer={
           <button type="button" className="underline underline-offset-4" onClick={() => setStep({ kind: "credentials" })}>
             Voltar ao login
           </button>
         }
       >
-        <MfaVerifyForm mfaToken={step.mfaToken} onSuccess={finishSignIn} submitLabel="Entrar" />
+        <MfaVerifyForm mfaToken={step.mfaToken} onSuccess={finishSignIn} submitLabel="Entrar" allowRecoveryCode />
       </AuthCard>
     );
   }
@@ -102,6 +129,7 @@ export function LoginPage() {
     <AuthCard
       title="Entrar"
       description="Acesse o portal da sua organização."
+      brandPanelExtra={trustBullets}
       footer={
         <Link to="/recuperar-senha" className="underline underline-offset-4">
           Esqueci minha senha

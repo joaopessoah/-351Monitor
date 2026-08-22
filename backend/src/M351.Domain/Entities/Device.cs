@@ -34,4 +34,13 @@ public class Device : ITenantEntity
 
     /// <summary>Motivo do tamper mais recente: helper_killed | helper_killed_repeatedly | pipe_denied (N19).</summary>
     public string? LastTamperReason { get; set; }
+
+    /// <summary>
+    /// F5 — token não adivinhável da página pública do funcionário ("Ver o que minha empresa
+    /// vê", antecipação da v1.1): GET /public/t/{token} mostra a política vigente, retenções,
+    /// canais do DPO e o status de ciência/operacional deste device, SEM dado pessoal do dia
+    /// (o histórico individual autenticado segue sendo decisão de v2+). Preenchido no enroll
+    /// e backfillado na migration.
+    /// </summary>
+    public Guid? TransparencyToken { get; set; }
 }

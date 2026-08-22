@@ -1,0 +1,92 @@
+# =============================================================================
+# +351 Monitor — smoke E2E semanal contra o staging
+# Reaproveita tools/aceite-f1/run.ps1 em modo -Smoke: apenas enroll + ingest
+# visivel em < 2 min (C1) e UNENROLL (C4), pulando a queda de rede de 10 min.
+# 1 enroll por execucao (dentro do rate limit de enroll por IP do staging).
+# Evidencias apenas como artifact (sem commit na branch). Mesmos secrets do
+# aceite F1; skip com aviso se ausentes (padrao do deploy-staging).
+# =============================================================================
+name: Smoke E2E semanal
+
+on:
+  schedule:
+    # segunda-feira, 09:00 UTC (06:00 BRT)
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-e2e-semanal
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: smoke E2E (runner Windows limpo -> staging)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar secrets (skip com aviso se ausentes)
+        id: gate
+        shell: pwsh
+        env:
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          if (-not $env:STAGING_SSH_HOST -or -not $env:STAGING_SSH_KEY) {
+            Write-Host '::warning::skipping: secrets ausentes (STAGING_SSH_HOST/STAGING_SSH_KEY), smoke semanal nao executado'
+            'run=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
+          } else {
+            'run=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
+          }
+
+      - name: Instalar .NET 8
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publicar agente (self-contained win-x64)
+        if: steps.gate.outputs.run == 'true'
+        shell: pwsh
+        run: |
+          dotnet publish agent/src/MonitorAgentService/MonitorAgentService.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishReadyToRun=true -o agent/publish/win-x64
+          dotnet publish agent/src/MonitorAgentSession/MonitorAgentSession.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishReadyToRun=true -o agent/publish/win-x64
+
+      - name: Preparar chave SSH do staging
+        if: steps.gate.outputs.run == 'true'
+        shell: pwsh
+        env:
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          $dir = Join-Path $env:USERPROFILE '.ssh'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $key = Join-Path $dir 'staging_key'
+          $texto = $env:STAGING_SSH_KEY.Replace("`r`n", "`n").TrimEnd() + "`n"
+          [IO.File]::WriteAllText($key, $texto)
+          # OpenSSH no Windows exige ACL restrita na chave privada
+          icacls $key /inheritance:r /grant:r "$($env:USERNAME):R" | Out-Null
+          "F1_SSH_KEY_PATH=$key" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8NoBOM
+
+      - name: Executar smoke (enroll + ingest + unenroll)
+        if: steps.gate.outputs.run == 'true'
+        shell: pwsh
+        env:
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          # porta 22 tem ufw limit (6 conexoes/30s) que dropa o IP NAT do runner;
+          # 2222 e um listener dedicado com ufw allow (ver tools/aceite-f1/run.ps1)
+          F1_SSH_PORT: '2222'
+        run: ./tools/aceite-f1/run.ps1 -Smoke
+
+      - name: Evidencias como artifact (sem commit na branch)
+        if: always() && steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-e2e-${{ github.run_id }}
+          path: tools/aceite-f1/evidencias
+          if-no-files-found: warn
+          retention-days: 30

@@ -44,6 +44,11 @@ export interface MfaVerifyResponse {
   expires_in: number;
 }
 
+/** Resposta de `POST /auth/mfa/recovery-codes` — 10 códigos exibidos UMA única vez. */
+export interface RecoveryCodesResponse {
+  codes: string[];
+}
+
 /** Resposta de `POST /auth/refresh` (autenticado pelo cookie httpOnly). */
 export interface RefreshResponse {
   access_token: string;
@@ -65,6 +70,16 @@ export interface MeResponse {
     timezone: string;
     /** Horário de trabalho configurado (jsonb cru) - null quando a org não definiu. */
     business_hours: BusinessHours | null;
+    /** Plano comercial da organização (ex.: "trial"). */
+    plan: string;
+    /** Limite de dispositivos do plano - null sem limite definido. */
+    device_limit: number | null;
+    /**
+     * Instante do dismiss do checklist de primeiros passos (POST
+     * /organization/onboarding-checklist/dismiss) - null enquanto o card da
+     * Visão Geral está visível; o DELETE na mesma rota reabre (volta a null).
+     */
+    onboarding_checklist_dismissed_at: string | null;
   };
 }
 
@@ -647,25 +662,99 @@ export interface DsrDeleteResponse {
 }
 
 // =============================================================================
+// Contratos das chaves de instalação (enrollment keys - Seção 8.3), endpoints
+// /enrollment-keys (PolicyAdminPlus). O segredo completo (`key`) aparece UMA
+// única vez, na resposta do POST - depois disso só o key_prefix é exibido.
+// =============================================================================
+
+/** Item de `GET /enrollment-keys`. */
+export interface EnrollmentKeyItem {
+  id: string;
+  /** Prefixo visível da chave (ex.: "ek_ab12") - o segredo completo nunca volta. */
+  key_prefix: string;
+  label: string | null;
+  /** Limite de usos - null sem limite. */
+  max_uses: number | null;
+  use_count: number;
+  /** Expiração - null sem expiração. */
+  expires_at: string | null;
+  /** Instante da revogação - null enquanto a chave está válida. */
+  revoked_at: string | null;
+}
+
+export interface EnrollmentKeysResponse {
+  items: EnrollmentKeyItem[];
+}
+
+/** Body de `POST /enrollment-keys` (201) - todos os campos opcionais. */
+export interface EnrollmentKeyCreateRequest {
+  label?: string;
+  max_uses?: number;
+  expires_at?: string;
+}
+
+/**
+ * Resposta 201 de `POST /enrollment-keys` - `key` é o segredo COMPLETO,
+ * retornado uma única vez (o portal exibe com aviso de guardar agora).
+ */
+export interface EnrollmentKeyCreateResponse {
+  id: string;
+  key: string;
+  key_prefix: string;
+  label: string | null;
+  max_uses: number | null;
+  expires_at: string | null;
+}
+
+// =============================================================================
 // Contratos da F4.7: auditoria de acesso (GET /audit-logs) e a listagem de
 // usuários (GET /users) usada para o filtro por ator. PolicyAdminPlus
 // (Owner+Admin) — o Viewer NÃO acessa nenhum dos dois. JSON snake_case.
 // =============================================================================
 
+/** Status do usuário do portal: convidado (sem senha ainda), ativo ou desativado. */
+export type UserStatus = "invited" | "active" | "disabled";
+
 /**
- * Item de `GET /users` (já existente no backend, PolicyAdminPlus). Aqui só nos
- * interessam id/nome/e-mail para popular o filtro por ator da auditoria; o
- * restante do shape (status, mfa, etc.) é ignorado por este consumidor.
+ * Item de `GET /users` (PolicyAdminPlus). Shape completo do backend
+ * (UserContracts.cs): a tela de Usuários consome tudo; a auditoria usa só
+ * id/nome/e-mail para o filtro por ator.
  */
 export interface UserListItem {
   id: string;
   email: string;
   display_name: string;
   role: Role;
+  status: UserStatus;
+  mfa_enabled: boolean;
+  /** Último login - null para quem nunca entrou (ex.: convite pendente). */
+  last_login_at: string | null;
 }
 
 export interface UsersResponse {
   items: UserListItem[];
+}
+
+/** Body de `POST /users/invitations` (201). Convidar Owner exige ator Owner. */
+export interface InviteUserRequest {
+  email: string;
+  role: Role;
+  display_name?: string;
+}
+
+/** Resposta 201 de `POST /users/invitations` - o convite vale por 7 dias. */
+export interface InviteUserResponse {
+  user_id: string;
+  invitation_id: string;
+  expires_at: string;
+}
+
+/**
+ * Body de `PATCH /users/{id}` - troca de papel. Mexer em Owner (origem ou
+ * destino) exige ator Owner; o backend garante sempre >= 1 Owner ativo (409).
+ */
+export interface UserRolePatchRequest {
+  role: Role;
 }
 
 /**
@@ -783,4 +872,44 @@ export interface OrganizationPatchRequest {
   finalidade_declarada?: string | null;
   contato_dpo?: string | null;
   data_vigencia?: string | null;
+  /**
+   * Horário de trabalho ({days,start,end}, dias ISO 1-7) ou null para limpar;
+   * campo ausente não muda. Alimenta a linha de referência dos gráficos e do
+   * relatório de jornada (Seção 8.5).
+   */
+  business_hours?: BusinessHours | null;
+}
+
+/** Janela de coleta do agente (jsonb canônico da Seção 5.5). */
+export interface CollectionWindow {
+  mode: "ALWAYS" | "BUSINESS_HOURS";
+  days?: number[] | null;
+  start?: string | null;
+  end?: string | null;
+}
+
+/**
+ * Resposta de `GET/PATCH /api/v1/organization/agent-config` (F5, §8.7).
+ * heartbeat_sec e active_window_poll_sec são constantes do protocolo (read-only);
+ * FULL nunca é aceito pelo PATCH (exige registro em DPA, aplicado pela operadora).
+ */
+export interface AgentConfigResponse {
+  config_version: number;
+  heartbeat_sec: number;
+  active_window_poll_sec: number;
+  idle_threshold_sec: number;
+  window_title_policy: "FULL" | "MASKED_PATTERNS" | "APP_ONLY";
+  masked_patterns: string[];
+  ignored_processes: string[];
+  collection_window: CollectionWindow;
+  updated_at: string;
+}
+
+/** Body de `PATCH /api/v1/organization/agent-config` (OwnerOnly; campos ausentes não mudam). */
+export interface AgentConfigPatchRequest {
+  idle_threshold_sec?: number;
+  window_title_policy?: "MASKED_PATTERNS" | "APP_ONLY";
+  masked_patterns?: string[];
+  ignored_processes?: string[];
+  collection_window?: CollectionWindow;
 }

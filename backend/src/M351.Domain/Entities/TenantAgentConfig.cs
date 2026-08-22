@@ -29,6 +29,21 @@ public class TenantAgentConfig : ITenantEntity
     /// <summary>JSON: {"mode":"ALWAYS|BUSINESS_HOURS","days":[1..5],"start":"08:00","end":"18:00"}.</summary>
     public string CollectionWindow { get; set; } = FactoryDefaults.CollectionWindowAlways;
 
+    /// <summary>
+    /// F5 — texto do aviso de ciência (NoticeForm) gerenciado pelo tenant; null = texto padrão
+    /// embutido no agente. Viaja na config do ack (Seção 5.5 estendida de 8 para 10 campos,
+    /// JSON desconhecido é ignorado por agentes antigos). Os trechos fixos que protegem a base
+    /// legal ("registro de ciência, não consentimento") são concatenados pelo AGENTE e não
+    /// fazem parte deste texto.
+    /// </summary>
+    public string? NoticeText { get; set; }
+
+    /// <summary>
+    /// F5 — versão do aviso de ciência: bump re-exibe o NoticeForm na frota (o MaybeShowNotice
+    /// do agente re-exibe quando a versão local é menor) e gera novo NOTICE_ACK.
+    /// </summary>
+    public int NoticeVersion { get; set; } = 1;
+
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     /// <summary>Defaults de fábrica (Seções 5.5, 6.3 e 9.2).</summary>

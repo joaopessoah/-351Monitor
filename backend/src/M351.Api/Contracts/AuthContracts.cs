@@ -13,3 +13,12 @@ public record InviteAcceptRequest(string? Token, string? Password, string? Displ
 
 /// <summary>Preview público do convite (tela /convite/:token — Seção 8.2).</summary>
 public record InvitePreviewResponse(string Email, string Role, string OrganizationName, bool MfaRequired);
+
+/// <summary>POST /auth/forgot-password (Seção 7.4): resposta SEMPRE genérica (202).</summary>
+public record ForgotPasswordRequest(string? Email);
+
+/// <summary>POST /auth/reset-password (Seção 7.4): token 1 h; invalida todas as sessões.</summary>
+public record ResetPasswordRequest(string? Token, string? Password);
+
+/// <summary>POST /auth/mfa/recovery-codes (Seção 7.5): exibidos UMA única vez.</summary>
+public record RecoveryCodesResponse(IReadOnlyList<string> Codes);

@@ -31,10 +31,37 @@ DNS: aponte `STAGING_DOMAIN` (A record) para o IP da VPS **antes** do primeiro `
 
 | Onde | O quê |
 |---|---|
-| `infra/.env` na VPS (NUNCA commitado; `.gitignore` cobre) | senha do Postgres, `JWT_SIGNING_KEY`, Sentry DSN, hash de admin do Seq |
-| GitHub → Settings → Secrets and variables → Actions | `STAGING_SSH_HOST`, `STAGING_SSH_KEY` (chave privada OpenSSH), `STAGING_SSH_USER` (opcional, default `deploy`) |
+| `infra/.env` na VPS (NUNCA commitado; `.gitignore` cobre) | senha do Postgres, `JWT_SIGNING_KEY`, Sentry DSN, hash de admin do Seq, URLs do healthchecks.io |
+| GitHub → Settings → Secrets and variables → Actions | `STAGING_SSH_HOST`, `STAGING_SSH_KEY` (chave privada OpenSSH), `STAGING_SSH_USER` (opcional, default `deploy`), `GHCR_TOKEN` (opcional, ver "Deploy por imagem") |
 
 Sem os secrets `STAGING_SSH_*`, o job `deploy-staging` do CI faz **skip com aviso** (não falha). Com eles, todo push na `main` deploya automaticamente (build+test → docker → SSH).
+
+## Deploy por imagem (GHCR)
+
+O job `docker` do CI publica as imagens no GHCR a cada push na `main`:
+`ghcr.io/joaopessoah/m351-api` e `ghcr.io/joaopessoah/m351-worker`, com duas tags,
+`sha-<sha>` (imutável, alvo de rollback) e `staging` (móvel).
+
+O `deploy-staging.sh` tem dois modos, controlados por `DEPLOY_BUILD`:
+
+- `DEPLOY_BUILD=1` (**default atual**): comportamento antigo, `git pull` +
+  `up -d --build` na VPS. Continua como default **até o primeiro push de imagem no
+  GHCR ser validado** — sem esse fallback o deploy quebraria com o registry vazio.
+  Depois de validar, troque o default para `0` no script e passe a deployar por imagem.
+- `DEPLOY_BUILD=0`: `compose pull` das imagens do GHCR + `up -d` (sem build na VPS).
+  Requer a VPS logada no GHCR: na primeira vez, exporte `GHCR_TOKEN` (PAT clássico com
+  escopo `read:packages`, ou o próprio `GITHUB_TOKEN` do job passado via secret) e o
+  script faz o `docker login ghcr.io` com o token via stdin; o login fica persistido
+  em `~/.docker/config.json` da VPS e as execuções seguintes dispensam o token.
+
+Em todo deploy, **antes** do `up`, o script roda `infra/scripts/backup.sh` (dump
+pré-deploy que protege o AutoMigrate) e, **depois** do `up`, aplica um health-gate:
+`curl` com retry por até 60 s em `https://<STAGING_DOMAIN>/healthz`; sem 200, o deploy
+falha (exit 1) com a instrução de rollback:
+
+```bash
+IMAGE_TAG=sha-<sha-anterior> DEPLOY_BUILD=0 bash infra/scripts/deploy-staging.sh
+```
 
 ## Backup e restore
 
@@ -53,8 +80,53 @@ Sem os secrets `STAGING_SSH_*`, o job `deploy-staging` do CI faz **skip com avis
 ## Observabilidade
 
 - **Seq** (logs Serilog): exposto só em loopback da VPS — `ssh -L 8341:127.0.0.1:8341 deploy@<vps>` e abra `http://localhost:8341`.
-- **Sentry**: configure `SENTRY_DSN` no `.env`.
-- **Healthcheck**: `https://<STAGING_DOMAIN>/healthz` (aponte o monitor de uptime externo aqui).
+- **Sentry**: configure `SENTRY_DSN` no `.env` (API e worker reportam exceções não tratadas e erros dos jobs; vazio = desativado).
+- **Healthcheck**: `https://<STAGING_DOMAIN>/healthz` (banco conectável) e `https://<STAGING_DOMAIN>/readyz` (banco + última manutenção com sucesso há menos de 26 h).
+
+## Monitoramento do próprio SaaS
+
+Quem monitora o monitor: sem estes passos, uma queda do staging (ou do worker, ou do backup) passa despercebida.
+
+1. **Monitor de uptime gratuito** (UptimeRobot ou Better Stack): crie 2 monitores HTTP
+   apontando para `https://<STAGING_DOMAIN>/healthz` e `https://<STAGING_DOMAIN>/readyz`,
+   intervalo de 5 min, alerta por e-mail. O `/readyz` só responde 200 quando o banco
+   conecta E a última execução com sucesso em `maintenance_runs` tem menos de 26 horas,
+   ou seja, ele detecta worker parado mesmo com a API de pé.
+2. **healthchecks.io** (plano gratuito): crie 3 checks:
+   - **backup** (período: 1 dia, grace: 3 h): cole a URL de ping em
+     `HEALTHCHECKS_BACKUP_URL` no `infra/.env`. O `backup.sh` pinga só após dump e
+     cópia off-site validada; ping ausente = backup quebrado.
+   - **worker** (período: 5 min, grace: 10 min): cole a URL em
+     `HEALTHCHECKS_WORKER_URL` no `infra/.env`. O worker pinga a cada 5 min
+     (DeadManSwitchJob); ping ausente = worker morto ou travado.
+   - **disco** (período: 30 min, grace: 1 h): cole a URL em `HEALTHCHECKS_DISK_URL`
+     no `infra/.env`. O `check-disk.sh` pinga sucesso abaixo de 80% de uso e
+     `URL/fail` acima.
+3. **Aplicar**: depois de preencher o `.env`, `docker compose ... up -d` para o worker
+   reler a env (o backup lê o `.env` a cada execução do cron).
+
+## Higiene de disco
+
+- **Rotação de logs de container**: todos os serviços do compose usam o driver
+  `json-file` com `max-size: 10m` e `max-file: 3` (âncora `x-logging` no topo do
+  `docker-compose.staging.yml`); sem isso, logs de container enchem o disco.
+- **Limites de memória**: `mem_limit` de 768m na api e no worker e 1g no seq. O
+  postgres fica **sem** limite de propósito (o banco não pode ser alvo do OOM killer
+  do cgroup; o teto dos demais é o que protege a RAM dele).
+- **check-disk.sh**: agende no cron da VPS; acima de 80% de uso sai com erro e pinga
+  a URL de falha do check (`HEALTHCHECKS_DISK_URL/fail`):
+  ```
+  */30 * * * * /usr/bin/bash /opt/351monitor/infra/scripts/check-disk.sh >> /var/log/m351-disk.log 2>&1
+  ```
+- **Retenção do Seq**: o volume `seq_data` cresce sem limite se nenhuma política de
+  retenção existir. Aplique uma (ex.: apagar eventos após 14 dias) por um dos caminhos:
+  - **UI** (recomendado, uma vez): túnel `ssh -L 8341:127.0.0.1:8341 deploy@<vps>`,
+    abra `http://localhost:8341`, Settings, Retention, "Add retention policy".
+  - **seqcli**: `seqcli retention create --after 14d --delete-all-events -s http://127.0.0.1:8341`
+    (com `-a <api-key>` se o Seq tiver autenticação).
+  - **deploy**: o `deploy-staging.sh` tem um passo opcional, desligado por padrão;
+    exporte `SEQ_RETENTION_DAYS=14` na chamada do deploy para aplicá-lo via seqcli
+    (idempotente, só cria quando nenhuma política existe).
 
 ## Dev local
 

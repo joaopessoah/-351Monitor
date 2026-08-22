@@ -6,9 +6,13 @@ using Microsoft.Extensions.Options;
 namespace M351.Api.Agent;
 
 /// <summary>
-/// Monta o objeto canônico de config do agente (Seção 5.5 — sempre os 8 campos).
+/// Monta o objeto canônico de config do agente (Seção 5.5 — sempre os 10 campos).
 /// `transparency_url` é derivada de Portal:BaseUrl + slug da org (página pública
 /// /transparencia/:slug — Seção 8.8).
+///
+/// F5: `notice_text`/`notice_version` viajam aqui (aviso de ciência gerenciado pelo tenant). O
+/// texto pode ser null — nesse caso o agente usa o padrão embutido nele — e os trechos fixos que
+/// protegem a base legal são concatenados NO AGENTE, jamais editáveis pelo tenant.
 /// </summary>
 public class AgentConfigService(IOptions<PortalOptions> portalOptions)
 {
@@ -22,7 +26,9 @@ public class AgentConfigService(IOptions<PortalOptions> portalOptions)
         config.MaskedPatterns,
         config.IgnoredProcesses,
         ParseCollectionWindow(config.CollectionWindow),
-        TransparencyUrl(orgSlug));
+        TransparencyUrl(orgSlug),
+        string.IsNullOrWhiteSpace(config.NoticeText) ? null : config.NoticeText,
+        config.NoticeVersion);
 
     public string TransparencyUrl(string orgSlug) =>
         $"{portalOptions.Value.BaseUrl.TrimEnd('/')}/transparencia/{orgSlug}";

@@ -70,6 +70,22 @@ public sealed class HeartbeatData
     [JsonPropertyName("foreground_process")] public string? ForegroundProcess { get; set; }
     [JsonPropertyName("idle_ms")] public long? IdleMs { get; set; }
     [JsonPropertyName("queue_depth")] public long QueueDepth { get; set; }
+
+    // ---- saúde operacional do agente (F5): metadados de OPERAÇÃO, nunca dado pessoal. Todos
+    // injetados pelo SERVIÇO (AgentRuntime.EnrichHeartbeat) — o helper não conhece fila nem ack.
+    // A página pública de transparência já declara a coleta de "saúde do agente".
+
+    /// <summary>Lotes na dead_letter (422 do servidor): &gt; 0 significa dado local preso.</summary>
+    [JsonPropertyName("dead_letter_count")] public long DeadLetterCount { get; set; }
+
+    /// <summary>Último reason de rejeição por evento visto num ack (null se nunca houve).</summary>
+    [JsonPropertyName("last_reject_code")] public string? LastRejectCode { get; set; }
+
+    /// <summary>Working set do processo do serviço em MB (meta N: &lt; 100 MB somados — Seção 6.8).</summary>
+    [JsonPropertyName("working_set_mb")] public long WorkingSetMb { get; set; }
+
+    /// <summary>Tamanho do arquivo queue.db em bytes (cap de 100 MB da N8).</summary>
+    [JsonPropertyName("queue_db_bytes")] public long QueueDbBytes { get; set; }
 }
 
 public sealed class SystemResumeData
@@ -90,8 +106,45 @@ public sealed class EventsDroppedData
     [JsonPropertyName("count")] public long Count { get; set; }
     [JsonPropertyName("oldest_dropped_at")] public string? OldestDroppedAt { get; set; }
 
-    /// <summary>retention_cap | rate_limit</summary>
+    /// <summary>retention_cap | rate_limit | pipe_overflow (ver DropReasons)</summary>
     [JsonPropertyName("reason")] public string Reason { get; set; } = "";
+}
+
+/// <summary>
+/// Motivos canônicos de descarte do EVENTS_DROPPED (Seção 5.3). Lista FECHADA: todo descarte do
+/// agente cai em um destes, porque queda de dado nunca é silenciosa (Princípio 7).
+///   - retention_cap: expurgo FIFO dos caps N8 na fila SQLite do serviço;
+///   - rate_limit: coalescimento N17 do helper (flapping de janela ativa);
+///   - pipe_overflow: buffer volátil do helper cheio (serviço indisponível/pipe caído) — o helper
+///     descarta a mensagem mais antiga e CONTA, reportando no próximo envio bem-sucedido.
+/// </summary>
+public static class DropReasons
+{
+    public const string RetentionCap = "retention_cap";
+    public const string RateLimit = "rate_limit";
+    public const string PipeOverflow = "pipe_overflow";
+
+    public static readonly IReadOnlyList<string> All = [RetentionCap, RateLimit, PipeOverflow];
+
+    public static bool IsKnown(string? reason) => reason is not null && All.Contains(reason);
+}
+
+/// <summary>
+/// AGENT_ERROR (F5): falha interna do agente sem vazar conteúdo. A `message` da exceção JAMAIS
+/// entra aqui — ela pode carregar caminho de arquivo, título de janela ou nome de usuário. O que
+/// viaja é o tipo da exceção, um hash da pilha (para agrupar ocorrências iguais no servidor) e
+/// quantas vezes o mesmo erro ocorreu na janela de agregação.
+/// </summary>
+public sealed class AgentErrorData
+{
+    /// <summary>Nome do tipo da exceção (ex.: "System.IO.IOException").</summary>
+    [JsonPropertyName("error_type")] public string ErrorType { get; set; } = "";
+
+    /// <summary>SHA-256 da stack trace, truncado (hex) — agrupa o mesmo erro sem expor a pilha.</summary>
+    [JsonPropertyName("stack_hash")] public string StackHash { get; set; } = "";
+
+    /// <summary>Ocorrências deste error_type desde o último AGENT_ERROR emitido (inclui esta).</summary>
+    [JsonPropertyName("count")] public long Count { get; set; }
 }
 
 public sealed class AgentTamperData

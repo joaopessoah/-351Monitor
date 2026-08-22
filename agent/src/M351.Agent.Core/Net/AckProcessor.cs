@@ -24,6 +24,13 @@ public sealed class AckProcessor
     /// <summary>Disparado no UNENROLL (orquestrador para a coleta).</summary>
     public event Action? Unenrolled;
 
+    /// <summary>
+    /// Último reason de rejeição POR EVENTO visto num ack (F5): vai no HEARTBEAT
+    /// (last_reject_code) para que uma rejeição sistemática apareça no painel de saúde em vez de
+    /// ficar só no log da máquina. null enquanto nenhum evento foi rejeitado.
+    /// </summary>
+    public string? LastRejectCode { get; private set; }
+
     public AckProcessor(SqliteEventQueue queue, AgentStateStore state, EventFactory factory, ILogSink log)
     {
         _queue = queue;
@@ -34,6 +41,13 @@ public sealed class AckProcessor
 
     public void Process(AckResponse ack)
     {
+        // o servidor rejeita evento a evento (Seção 5.5): guardamos o último reason para o HEARTBEAT
+        if (ack.Rejected.Count > 0)
+        {
+            var last = ack.Rejected[^1].Reason;
+            if (!string.IsNullOrWhiteSpace(last)) LastRejectCode = last;
+        }
+
         if (ack.Config is not null)
         {
             _state.SaveConfig(ack.Config, ack.ConfigVersion);

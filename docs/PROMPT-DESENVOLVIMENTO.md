@@ -147,6 +147,7 @@ Multi-tenancy (reforço de stack): pool model — schema único, `tenant_id` em 
 |---|---|---|
 | `POST /api/v1/agent/enroll` | enrollment key (no body) | Registro do device; devolve `device_id`, `device_token`, `config` |
 | `POST /api/v1/ingest/batch` | `Authorization: Bearer dt_...` (device token) | Ingestão de lote; o **ack** é o único canal de config e comandos |
+| `POST /api/v1/agent/diagnostics` | `Authorization: Bearer dt_...` (device token) | F5 — upload MANUAL do ZIP de diagnóstico (`application/zip`, máx. 10 MB), disparado pelo item "Enviar diagnóstico ao suporte" do tray com confirmação do usuário. Só logs já redigidos; gravado em `{Exports:Directory}/diagnostics/` |
 
 NÃO existem no MVP: endpoint separado de policy/config (`GET .../policy`), endpoint de rotação de token iniciado pelo agente, endpoint de ack de comandos. Config e comandos trafegam exclusivamente no ack do batch.
 
@@ -156,7 +157,7 @@ NÃO existem no MVP: endpoint separado de policy/config (`GET .../policy`), endp
 |---|---|---|---|
 | `event_id` | string UUID **v7** | sim | Gerado no agente; ordenável por tempo; chave de idempotência |
 | `seq` | int64 | sim | Sequência monotônica **por device**, persistida no SQLite (`AUTOINCREMENT`); o backend persiste e detecta lacunas |
-| `type` | string | sim | Um dos 17 tipos da tabela 5.3 |
+| `type` | string | sim | Um dos 18 tipos da tabela 5.3 |
 | `occurred_at` | string ISO-8601 **UTC** | sim | Relógio de parede no momento do evento; **imutável** após gravado na fila local (dedupe determinístico entre retries) |
 | `tz_offset_min` | int | sim | Offset local em minutos (ex.: `-180`) |
 | `mono_ms` | int64 | sim | `GetTickCount64` no momento do evento (imune a ajuste de relógio) |
@@ -166,9 +167,11 @@ NÃO existem no MVP: endpoint separado de policy/config (`GET .../policy`), endp
 | `windows_user` | string ou null | quando aplicável | `DOMINIO\usuario` |
 | `data` | objeto | sim (pode ser `{}`) | Campos específicos do tipo |
 
-### 5.3 Tabela canônica de tipos de evento do MVP (única — 17 tipos)
+### 5.3 Tabela canônica de tipos de evento do MVP (única — 18 tipos)
 
 Esta tabela é usada por: agente (emissão), ingestão (validação), pipeline (máquina de estados) e portal (exibição). **`APPS_SNAPSHOT` foi CORTADO do MVP** (sem consumidor + minimização LGPD) — não implementar a coleta nem o tipo.
+
+O 18º tipo (`AGENT_ERROR`) entrou na F5 e é o único acréscimo à tabela original de 17: rollout **agente-primeiro**, porque um ingest anterior a ele apenas ignora o tipo desconhecido (regra no fim desta seção) sem rejeitar o lote.
 
 | Tipo | Emissor | `data` (payload) | Papel no pipeline |
 |---|---|---|---|
@@ -181,14 +184,15 @@ Esta tabela é usada por: agente (emissão), ingestão (validação), pipeline (
 | `ACTIVE_WINDOW_CHANGED` | Helper | `process_name` ("chrome.exe", lowercase), `exe_path`, `app_id` (AUMID UWP, opcional), `window_title` (string ou null se política APP_ONLY/processo ignorado), `title_masked: bool` | Fecha intervalo corrente → abre `active(app)` |
 | `IDLE_START` | Helper | **`last_input_at`** (ISO-8601 UTC) — obrigatório | Fecha o intervalo ativo **RETROATIVAMENTE em `last_input_at`** → abre `idle` a partir de `last_input_at` |
 | `IDLE_END` | Helper | `idle_duration_ms` | Fecha `idle` → abre `active` com o último app conhecido |
-| `HEARTBEAT` | Helper (sessão) e Serviço (máquina sem usuário logado) | `state: active\|idle\|locked\|no_session, foreground_process, idle_ms, queue_depth` (`no_session`: máquina ligada sem sessão interativa; campos de sessão null no heartbeat de máquina) | Prova de vida; mantém intervalo aberto; alimenta `last_seen_at` |
+| `HEARTBEAT` | Helper (sessão) e Serviço (máquina sem usuário logado) | `state: active\|idle\|locked\|no_session, foreground_process, idle_ms, queue_depth` + saúde operacional injetada pelo SERVIÇO: `dead_letter_count, last_reject_code, working_set_mb, queue_db_bytes` (`no_session`: máquina ligada sem sessão interativa; campos de sessão null no heartbeat de máquina) | Prova de vida; mantém intervalo aberto; alimenta `last_seen_at` |
 | `SYSTEM_SUSPEND` | Serviço (Power) | `{}` | Fecha intervalo → `off_clean` |
 | `SYSTEM_RESUME` | Serviço (Power) | `sleep_duration_ms` (estimado por wall-clock) | Reabre cobertura |
 | `TIME_CHANGED` | Serviço | `old_utc, new_utc, delta_ms, new_tz_offset_min` | Marca eventos vizinhos como suspeitos de relógio; atualiza tz do device |
-| `EVENTS_DROPPED` | Serviço | `count, oldest_dropped_at, reason: retention_cap\|rate_limit` | Gap explicado na timeline ("dados descartados") |
+| `EVENTS_DROPPED` | Serviço | `count, oldest_dropped_at, reason: retention_cap\|rate_limit\|pipe_overflow` (`pipe_overflow`: buffer volátil do helper cheio — contado pelo helper e reportado ao serviço na reconexão) | Gap explicado na timeline ("dados descartados") |
 | `AGENT_TAMPER` | Serviço | `reason: helper_killed\|helper_killed_repeatedly\|pipe_denied` | Sinalização no painel de saúde |
 | `NOTICE_ACK` | Helper | `notice_version, shown_at` | Evidência de ciência LGPD (Seção 9.4); persistido e consultável por device/usuário |
 | `POLICY_APPLIED` | Serviço | `config_version` | Confirma aplicação de config; auditável |
+| `AGENT_ERROR` | Serviço e Helper | `error_type` (nome do tipo da exceção), `stack_hash` (SHA-256 truncado da pilha), `count` (ocorrências desde o último evento do mesmo `error_type`) — **JAMAIS a `message` crua da exceção**, que pode conter caminho, título de janela ou usuário. Limite de taxa: **máx. 1 evento por `error_type` por hora**, e as ocorrências suprimidas viram o `count` | Neutro no pipeline; falha do agente visível no painel de saúde em vez de morrer no log da máquina |
 
 **Regra de ingestão para tipo desconhecido:** ignorar o evento e incrementar métrica (`ingest_unknown_type_total`). **JAMAIS rejeitar o lote inteiro** por causa de um tipo desconhecido — garante compatibilidade quando agente novo falar com backend velho e vice-versa.
 
@@ -301,7 +305,9 @@ Notas do lote: `device_id` NÃO vai no body — o servidor o resolve do device t
     "masked_patterns": ["(?i)senha", "(?i)\\bbanco\\b", "\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}"],
     "ignored_processes": ["keepass.exe", "1password.exe", "bitwarden.exe", "logonui.exe", "lockapp.exe", "consent.exe"],
     "collection_window": { "mode": "ALWAYS", "days": null, "start": null, "end": null },
-    "transparency_url": "https://app.exemplo.com.br/transparencia/acme"
+    "transparency_url": "https://app.exemplo.com.br/transparencia/acme",
+    "notice_text": null,
+    "notice_version": 1
   },
   "commands": [
     { "id": "01976f2c-0000-7aaa-b111-00000000c0de", "type": "UNENROLL", "payload": {} }
@@ -313,7 +319,8 @@ Aritmética do exemplo (fórmula da Seção 5.6): 5 recebidos = 3 aceitos + 1 du
 
 Regras do ack:
 - `config` só vem quando o `config_version` enviado pelo agente está desatualizado; caso contrário `config: null`. **A config é entregue EXCLUSIVAMENTE por este canal** (sem endpoint de policy, sem assinatura de config no MVP — TLS + device token bastam). Ao aplicar, o agente emite `POLICY_APPLIED { config_version }`.
-- Objeto `config` completo (8 campos, sempre todos presentes): `heartbeat_sec`, `active_window_poll_sec`, `idle_threshold_sec`, `window_title_policy` (`FULL` | `MASKED_PATTERNS` | `APP_ONLY`), `masked_patterns[]`, `ignored_processes[]`, `collection_window` (`{mode: ALWAYS | BUSINESS_HOURS, days, start, end}`), `transparency_url`.
+- Objeto `config` completo (10 campos, sempre todos presentes): `heartbeat_sec`, `active_window_poll_sec`, `idle_threshold_sec`, `window_title_policy` (`FULL` | `MASKED_PATTERNS` | `APP_ONLY`), `masked_patterns[]`, `ignored_processes[]`, `collection_window` (`{mode: ALWAYS | BUSINESS_HOURS, days, start, end}`), `transparency_url`, `notice_text`, `notice_version`.
+- `notice_text` (F5) é o CORPO do aviso de ciência definido pelo tenant; `null` = o agente usa o texto padrão embutido nele. O enquadramento jurídico ("isto registra a sua ciência, não é um pedido de consentimento" + como ver a coleta em tempo real) é **fixo no agente e sempre concatenado** — o tenant não consegue publicar um aviso que transforme o `NOTICE_ACK` em consentimento. `notice_version` versiona o aviso: bump reexibe na frota (o helper compara com a versão confirmada localmente) e gera novo `NOTICE_ACK`.
 - `commands` no MVP contém **apenas `UNENROLL`** (`ROTATE_TOKEN`, `UPDATE_AGENT`, `PAUSE` são v1.1 — não implementar handlers). Ao receber `UNENROLL`: o agente **para a coleta e DESCARTA a fila local** (revogação definitiva). Sem endpoint de ack de comando: o servidor marca a entrega ao incluir no ack; o comando é idempotente se reentregue.
 - Erros HTTP: `401` token inválido/revogado (tratado como transitório: o agente **mantém a fila** e tenta re-enroll a cada **1 h** com a enrollment key persistida); `413` payload grande demais; `422` body sintaticamente malformado (JSON inválido) ou lote com > 500 eventos (reason `batch_too_large`) — únicos casos de rejeição do lote inteiro; `429`/`503` com `Retry-After` (agente respeita).
 
@@ -348,7 +355,7 @@ Resposta `201`:
   "device_id": "01976f00-aaaa-7bbb-8ccc-dddddddddddd",
   "device_token": "dt_Jh3K...256-bits-base64url...",
   "config_version": 5,
-  "config": { "...": "objeto config completo, mesmos 8 campos da Seção 5.5" }
+  "config": { "...": "objeto config completo, mesmos 10 campos da Seção 5.5" }
 }
 ```
 
@@ -429,7 +436,7 @@ Aplicado **antes de persistir na fila SQLite** — dado mascarado nunca toca o d
   - `FULL`: título completo (truncado a 256 chars).
   - `MASKED_PATTERNS` (**default de fábrica**): aplica as regex de `masked_patterns[]` ao título; trecho que casa é substituído por `***`; `title_masked: true` quando houve substituição.
   - `APP_ONLY`: `window_title: null`, só `process_name`.
-- **Rebaixamento automático para `APP_ONLY` em navegação anônima/privada** (heurística best-effort por sufixo de título, qualquer que seja a política vigente): `"(navegação anônima)"` (Chrome), `"InPrivate"` (Edge), `"(navegação privativa)"` (Firefox). Case-insensitive, comparação no fim do título.
+- **Rebaixamento automático para `APP_ONLY` em navegação anônima/privada** (heurística best-effort por sufixo de título, qualquer que seja a política vigente): `"(navegação anônima)"` / `"(navegação anónima)"` / `"(Incognito)"` (Chrome pt-BR / pt-PT / en-US), `"InPrivate"` (Edge, mesmo sufixo em qualquer idioma), `"(navegação privativa)"` / `"(navegação privada)"` / `"(Private Browsing)"` (Firefox pt-BR / pt-PT / en-US). Case-insensitive, comparação no fim do título.
 - `ignored_processes[]` (lista do tenant + defaults de fábrica: `keepass.exe`, `1password.exe`, `bitwarden.exe`, `logonui.exe`, `lockapp.exe`, `consent.exe` + processos do próprio agente): emite `ACTIVE_WINDOW_CHANGED` com `process_name: "(privado)"` e `window_title: null` — **o tempo conta, o conteúdo não**.
 - `collection_window` (da config): em `mode: BUSINESS_HOURS`, fora de `days/start/end` o helper NÃO coleta janela ativa nem idle; o serviço continua emitindo eventos de sessão/energia e heartbeat de máquina (uptime/login apenas). Em `mode: ALWAYS`, coleta contínua. A escolha é do tenant no onboarding (Seção 8.3) — quem decide é a controladora.
 - Logs de diagnóstico **nunca** contêm títulos de janela nem nomes de usuário em nível Information (apenas em Debug, ativado por config com aviso).
@@ -448,8 +455,9 @@ Aplicado **antes de persistir na fila SQLite** — dado mascarado nunca toca o d
 
 - `NotifyIcon` **sempre visível**, tooltip "Monitoramento corporativo ativo — {NomeDaEmpresa}". **Sem opção "Sair"** no menu; sem flag de ocultação (a opção não existe no código).
 - Menu: **"O que está sendo coletado agora"** (janela em tempo real: app ativo, título capturado — ou mascarado/null —, estado ativo/idle, último envio, `config_version` aplicada, device_id) · **"Política de monitoramento"** (abre `transparency_url` da config) · **"Status da conexão"** · **"Sobre"** (versão, device_id).
-- **NOTICE_ACK (gate LGPD):** no primeiro logon de cada usuário Windows após a instalação, o helper exibe aviso (toast + janela): *"Esta máquina é monitorada por {Empresa} — clique para ver o que é coletado"*, com link para a janela de transparência e botão **"Entendi"**. O clique emite `NOTICE_ACK{notice_version, shown_at}` — evidência de ciência para a controladora (NÃO é consentimento; é ciência). Persistir localmente que o usuário já confirmou (não reexibir a cada logon); reexibir se `notice_version` mudar.
+- **NOTICE_ACK (gate LGPD):** no primeiro logon de cada usuário Windows após a instalação, o helper exibe aviso (toast + janela): *"Esta máquina é monitorada por {Empresa} — clique para ver o que é coletado"*, com link para a janela de transparência e botão **"Entendi"**. O clique emite `NOTICE_ACK{notice_version, shown_at}` — evidência de ciência para a controladora (NÃO é consentimento; é ciência). Persistir localmente que o usuário já confirmou (não reexibir a cada logon); reexibir se `notice_version` mudar. O CORPO do aviso pode ser gerenciado pelo tenant (`notice_text` da config — Seção 5.5); o enquadramento jurídico é **fixo no agente e sempre concatenado**, e `notice_version`/`notice_text` chegam ao helper pelo mesmo caminho do `transparency_url` (config entregue pelo ack e repassada no pipe).
 - `MonitorAgentSession.exe --diag` gera ZIP de suporte (logs + config sanitizada + contadores), sem UI.
+- Item **"Enviar diagnóstico ao suporte"** no menu do tray (F5): pede confirmação declarando o que vai e o que NÃO vai no pacote (só logs redigidos; sem título de janela, usuário ou conteúdo), e o **serviço** — não o helper — empacota o MESMO ZIP do `--diag` e faz o `POST /api/v1/agent/diagnostics` com o device token. Resultado (sucesso/falha) volta ao tray como balão.
 
 ### 6.6 Instalador MSI e operação em frota
 
@@ -464,6 +472,7 @@ Aplicado **antes de persistir na fila SQLite** — dado mascarado nunca toca o d
 
 - Verificação a cada 6 h (jitter até 30 min): `GET {SERVERURL}/api/v1/agent/update-manifest?current=1.0.3` → `{version, url, sha256, min_version}`.
 - Download em background; verificação de **SHA-256 do manifesto + assinatura Authenticode do MSI** antes de executar; instalação via `msiexec /i /qn` (major upgrade preserva `%ProgramData%` — fila e identidade). `min_version`: abaixo dela o update é forçado imediatamente.
+- A verificação Authenticode é real (`WinVerifyTrust`, `WINTRUST_ACTION_GENERIC_VERIFY_V2`, mais checagem de que o `Subject` do signatário contém o CN esperado) e fica atrás da flag `verify_authenticode` do `install.json` — **default `false`** enquanto o certificado de code signing não foi comprado (`docs/runbooks/comprar-certificado-codesigning.md`); o release empacotado com o certificado liga a flag e o `expected_signer_cn`. Com a flag ligada, MSI sem assinatura confiável (ou de outro titular) é descartado sem instalar.
 - **Rollback = publicar a versão anterior no manifesto** (major-upgrade com downgrade controlado). **SEM anéis canary/percentuais, SEM canal beta no MVP** (v1.1).
 
 ### 6.8 Metas de consumo (gate de release, medido em VM 2 vCPU/4 GB)
@@ -787,14 +796,19 @@ RBAC MVP: **Owner ⊃ Admin ⊃ Viewer** (3 papéis; enum extensível — Manage
 | `POST /auth/mfa/setup` | Viewer | provisiona TOTP (QR); **obrigatório completar para Owner/Admin antes de qualquer outra rota** |
 | `POST /auth/refresh` | cookie | renova access token (refresh simples, sem famílias) |
 | `POST /auth/logout` | Viewer | revoga refresh |
-| `POST /auth/forgot-password` / `POST /auth/reset-password` | público | token 1 h; resposta sempre genérica |
-| `GET /me` | Viewer | perfil + papel + org |
+| `POST /auth/forgot-password` / `POST /auth/reset-password` | público | token 1 h; resposta sempre genérica; o reset revoga TODAS as sessões (F5) |
+| `POST /auth/mfa/recovery-codes` | Viewer | (re)gera os 10 recovery codes; exibidos UMA vez, aceitos no `/auth/mfa/verify` (F5) |
+| `POST /users/{id}/mfa/reset` | Admin (Owner p/ Owner) | recuperação assistida: zera MFA e sessões, próximo login exige novo setup (F5) |
+| `POST /users/{id}/invitations/resend` | Admin | novo token de 7 dias, invalida os anteriores (F5) |
+| `GET /me` | Viewer | perfil + papel + org (inclui `plan`, `device_limit`, metas e estado do checklist) |
+| `GET/PATCH /me/email-prefs` | Viewer | preferências de e-mail do próprio usuário: resumo semanal, alertas de frota, jornada semanal (F5) |
 | `GET /dashboard/presence` | Viewer | cards "agora" + tabela "Equipe agora" — lê `device_current_state` (estado, app em foco, "neste app há X min", último contato); regra N6 |
 | `GET /dashboard/summary?from&to&device_id&device_user_id` | Viewer | KPIs de `daily_device_summaries` |
 | `GET /dashboard/top-apps?from&to&limit=10` | Viewer | de `daily_app_usage` |
 | `GET /timeline/device?device_id&date` | Viewer | intervalos do dia (resolução fixa 1 min, cap ~3.000 — N21); inclui `data_incomplete` e fuso do device |
 | `GET /timeline/team?date` | Viewer | **uma lane por device, visão do dia** — mesma agregação; FICA no MVP (F3, demo vendável) |
-| `GET /devices?status&tag&q&page` | Viewer | lista paginada + saúde (último contato, versão, `os_type`) |
+| `GET /devices?status&tag&q&page&health` | Viewer | lista paginada + saúde (último contato, versão, `os_type`); `health=alert` filtra a FROTA inteira (F5) |
+| `GET /devices/health-summary` | Viewer | contagens de saúde da frota inteira por dimensão, para o card de atenção e os chips totais (F5) |
 | `GET /devices/{id}` | Viewer | detalhe |
 | `PATCH /devices/{id}` | Admin | renomear, tags, `status` (`active`/`paused`/`archived`) |
 | `POST /devices/{id}/revoke` | Admin | revoga token (`status=revoked`) + enfileira `UNENROLL` |
@@ -806,14 +820,16 @@ RBAC MVP: **Owner ⊃ Admin ⊃ Viewer** (3 papéis; enum extensível — Manage
 | `GET /app-catalog?uncategorized=true&q` · `PUT /app-catalog/{appId}/category` | Viewer · Admin | apps vistos pelo tenant; mapeamento |
 | `GET/POST /enrollment-keys` · `DELETE /enrollment-keys/{id}` | Admin | segredo exibido UMA única vez no POST |
 | `GET /users` · `POST /users/invitations` · `PATCH /users/{id}` · `DELETE /users/{id}` | Admin (owner só por Owner) | sempre ≥ 1 Owner ativo |
-| `GET/PATCH /organization` | Owner | timezone, business_hours, config de coleta (gera bump de `config_version` dos devices) |
+| `GET/PATCH /organization` | Viewer / Admin | leitura para qualquer papel; edição (Admin+) de transparência, business_hours e metas semanais agregadas (F5) |
+| `GET/PATCH /organization/agent-config` | Admin / **Owner** | config de coleta operável pela controladora: política de títulos (`MASKED_PATTERNS`/`APP_ONLY`; `FULL` só via operadora com registro em DPA), padrões de mascaramento (regex validada), processos ignorados, idle e janela de coleta. PATCH bumpa `config_version` na mesma transação e registra `update_privacy_config` + `collection_window_choice` (F5) |
+| `POST/DELETE /organization/onboarding-checklist/dismiss` | Admin | dispensa e reabre o card de primeiros passos (Seção 8.3 passo 4) |
 | `GET /audit-logs?from&to&actor&action` | Owner/Admin | trilha LGPD |
 | `POST /privacy/subjects/{deviceUserId}/export` | Admin | DSR: pacote JSON+CSV de todos os dados do titular (assíncrono, link expira 72 h); auditado |
 | `DELETE /privacy/subjects/{deviceUserId}/data` | Owner | DSR: exclusão definitiva (confirmação dupla + motivo); recibo com contagens; auditado |
 | `POST /privacy/devices/{deviceId}/export` · `DELETE /privacy/devices/{deviceId}/data` | Admin · Owner | mesmo fluxo por device |
 | `POST /privacy/tenant/full-export` | Owner | acervo completo do tenant (offboarding; processo de purge manual documentado) |
 | `GET /agent/update-manifest?current=` | device token | manifesto de auto-update (Seção 6.7) |
-| `GET /billing/billable-devices?month=` | Owner | **relatório interno mensal de devices cobráveis** (device com ≥ 1 batch no mês, excluindo `archived`) — insumo do billing manual |
+| `GET /billing/billable-devices?month=` | Owner | **relatório interno mensal de devices cobráveis** (device com ≥ 1 batch no mês, excluindo `archived`) — insumo do billing manual. F5: mês fechado vem CONGELADO de `device_billing_months` (`frozen: true`), então arquivar device não reescreve mais meses passados; o mês corrente segue ao vivo |
 
 Auditoria automática (middleware): toda chamada a timeline/relatórios/exports/DSR grava `audit_log` com ação, alvo, período e filtros — responde "quem viu os dados de quem, quando" (exposta a Owner/Admin).
 
@@ -836,6 +852,13 @@ Auditoria automática (middleware): toda chamada a timeline/relatórios/exports/
 | `RetentionPurge` | diário | `DELETE` de summaries > 24 meses; execução logada em `audit_log` |
 | `ExportWorker` | contínuo | gera CSVs (streaming p/ arquivo, nunca em memória) e pacotes DSR |
 | `Housekeeping` | diário | expira invitations, refresh tokens, export_jobs |
+| `WeeklyDigest` (F5) | horário | envia o resumo semanal às orgs cuja hora local é segunda 08h (multi-fuso sem um trigger por org); idempotência por `organizations.last_weekly_digest_at` |
+| `FleetAlert` (F5) | 15 min | alertas de saúde de frota por e-mail, só plano `pro`: 1 e-mail por org por ciclo, cooldown de 24 h por device+tipo (`device_alert_state`), silencioso fora do horário de trabalho da org |
+| `JornadaWeekly` (F5) | segunda 07h BRT | enfileira o export de jornada da semana anterior para quem assinou e envia o LINK (nunca anexo) |
+| `BillingSnapshot` (F5) | diário 04:00 BRT | congela os meses fechados em `device_billing_months` (idempotente, no fuso de cada tenant) |
+| `AccountHealth` (F5) | segunda 09h BRT | score interno de contas em risco por e-mail ao CS; só registrado com `Cs:AlertEmail` configurado |
+| `DemoKeepAlive` / `DemoReseed` (F5) | 60 s / domingo 04:30 BRT | mantêm a demo pública viva e re-semeada; só registrados com `Demo:Slug` configurado |
+| `DeadManSwitch` (F5) | 5 min | ping externo (healthchecks.io) que denuncia worker morto; só registrado com `DeadMan:WorkerUrl` |
 
 ### 7.7 NFRs (dimensionados para ~2.500 devices — N25)
 
@@ -987,7 +1010,7 @@ O sistema coleta SOMENTE: identificação de máquina/usuário Windows, eventos 
 
 ### 9.2 Mascaramento de títulos (enforcement no agente — Seção 6.3)
 
-`window_title_policy` com 3 níveis (`FULL` / `MASKED_PATTERNS` / `APP_ONLY`); **default de fábrica: `MASKED_PATTERNS`** com lista padrão (termos de saúde, sindicais, religiosos, financeiros pessoais, padrões de CPF/cartão); **rebaixamento automático para `APP_ONLY` em navegação anônima/privada** (heurística por sufixo de título: "(navegação anônima)" Chrome, "InPrivate" Edge, "(navegação privativa)" Firefox). Aplicado ANTES de persistir na fila local. `ignored_processes` com defaults (gerenciadores de senha, telas de logon). Servidor JAMAIS loga `window_title`.
+`window_title_policy` com 3 níveis (`FULL` / `MASKED_PATTERNS` / `APP_ONLY`); **default de fábrica: `MASKED_PATTERNS`** com lista padrão (termos de saúde, sindicais, religiosos, financeiros pessoais, padrões de CPF/cartão); **rebaixamento automático para `APP_ONLY` em navegação anônima/privada** (heurística por sufixo de título: "(navegação anônima)" / "(navegação anónima)" / "(Incognito)" Chrome pt-BR / pt-PT / en-US, "InPrivate" Edge em qualquer idioma, "(navegação privativa)" / "(navegação privada)" / "(Private Browsing)" Firefox pt-BR / pt-PT / en-US). Aplicado ANTES de persistir na fila local. `ignored_processes` com defaults (gerenciadores de senha, telas de logon). Servidor JAMAIS loga `window_title`.
 
 ### 9.3 Direitos do titular (DSR) — GATE DE LANÇAMENTO (F4)
 

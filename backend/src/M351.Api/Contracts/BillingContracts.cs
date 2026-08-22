@@ -9,7 +9,14 @@ public record BillableDevicesResponse(
     string Month,
     int DeviceCount,
     string Criteria,
-    IReadOnlyList<BillableDeviceResponse> Items);
+    IReadOnlyList<BillableDeviceResponse> Items,
+    /// <summary>
+    /// F5: true quando o mês foi CONGELADO em device_billing_months (mês fechado, snapshot
+    /// estável, seguro para anexar à fatura). false = mês corrente calculado ao vivo, ainda
+    /// sujeito a mudança até o fechamento.
+    /// </summary>
+    bool Frozen = false,
+    DateTimeOffset? FrozenAt = null);
 
 /// <summary>evidence = primeira regra que casou: "events" &gt; "enrolled" &gt; "keep_alive".</summary>
 public record BillableDeviceResponse(

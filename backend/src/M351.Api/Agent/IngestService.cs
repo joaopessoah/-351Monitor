@@ -77,33 +77,68 @@ public sealed class IngestService(
         await using var transaction = await connection.BeginTransactionAsync(ct);
 
         // serializa lotes concorrentes do mesmo device (seq_max/projeção consistentes)
-        var before = await connection.QuerySingleAsync<(long SeqMax, DateTime? LastSeenAt)>(
+        var before = await connection.QuerySingleAsync<(long SeqMax, DateTime? LastSeenAt, string Status)>(
             new CommandDefinition(
-                "SELECT seq_max, last_seen_at FROM devices WHERE id = @DeviceId AND tenant_id = @TenantId FOR UPDATE",
+                "SELECT seq_max, last_seen_at, status FROM devices WHERE id = @DeviceId AND tenant_id = @TenantId FOR UPDATE",
                 new { DeviceId = deviceId, TenantId = tenantId }, transaction, cancellationToken: ct));
 
-        var inserted = valid.Count == 0
+        // Enforcement do status 'paused' (regra do design 02 recuperada na F5): device pausado
+        // pelo gestor NÃO persiste coleta — nada de raw_events, device_users, projeção de
+        // presença nem cursor de intervalização. O ack ACEITA o lote para o agente drenar a
+        // fila local (sem inflar o buffer), e o UpdateDeviceAsync continua rodando: last_seen,
+        // seq_max, clock, notice_ack e tamper são metadados operacionais de saúde, não coleta.
+        // 'paused' NÃO sai do relatório de cobráveis: a spec só exclui archived (BillingController).
+        var paused = before.Status == "paused";
+
+        var inserted = paused || valid.Count == 0
             ? 0
             : await InsertRawEventsAsync(connection, transaction, tenantId, deviceId, valid, now, ct);
-        var duplicates = valid.Count - inserted;
+        var duplicates = paused ? 0 : valid.Count - inserted;
 
         await UpdateDeviceAsync(connection, transaction, tenantId, deviceId, batch, valid, now, ct);
-        await UpsertDeviceUsersAsync(connection, transaction, tenantId, deviceId, valid, ct);
-        await UpsertCurrentStateAsync(connection, transaction, tenantId, deviceId, valid, before.SeqMax, now, ct);
 
-        if (valid.Count > 0)
+        if (paused)
         {
-            // cursor dirty para o pipeline de intervalização (Seção 7.3, consumido na F2)
+            // a presença não pode ficar congelada num título antigo enquanto o gestor acredita
+            // que pausou: zera os campos pessoais e marca no_data, preservando o último contato
             await connection.ExecuteAsync(new CommandDefinition(
                 """
-                INSERT INTO ingest_cursors (tenant_id, device_id, processed_until, dirty_from, updated_at)
-                VALUES (@TenantId, @DeviceId, to_timestamp(0), @DirtyFrom, @Now)
+                INSERT INTO device_current_state
+                  (tenant_id, device_id, state, windows_sid, windows_username, foreground_process,
+                   foreground_title, state_since, app_since, last_contact_at, updated_at)
+                VALUES (@TenantId, @DeviceId, 'no_data', NULL, NULL, NULL, NULL, NULL, NULL, @Now, @Now)
                 ON CONFLICT (device_id) DO UPDATE SET
-                  dirty_from = LEAST(COALESCE(ingest_cursors.dirty_from, EXCLUDED.dirty_from), EXCLUDED.dirty_from),
+                  state = EXCLUDED.state,
+                  windows_sid = NULL,
+                  windows_username = NULL,
+                  foreground_process = NULL,
+                  foreground_title = NULL,
+                  state_since = NULL,
+                  app_since = NULL,
+                  last_contact_at = EXCLUDED.last_contact_at,
                   updated_at = EXCLUDED.updated_at
                 """,
-                new { TenantId = tenantId, DeviceId = deviceId, DirtyFrom = valid.Min(v => v.OccurredAt), Now = now },
-                transaction, cancellationToken: ct));
+                new { TenantId = tenantId, DeviceId = deviceId, Now = now }, transaction, cancellationToken: ct));
+        }
+        else
+        {
+            await UpsertDeviceUsersAsync(connection, transaction, tenantId, deviceId, valid, ct);
+            await UpsertCurrentStateAsync(connection, transaction, tenantId, deviceId, valid, before.SeqMax, now, ct);
+
+            if (valid.Count > 0)
+            {
+                // cursor dirty para o pipeline de intervalização (Seção 7.3, consumido na F2)
+                await connection.ExecuteAsync(new CommandDefinition(
+                    """
+                    INSERT INTO ingest_cursors (tenant_id, device_id, processed_until, dirty_from, updated_at)
+                    VALUES (@TenantId, @DeviceId, to_timestamp(0), @DirtyFrom, @Now)
+                    ON CONFLICT (device_id) DO UPDATE SET
+                      dirty_from = LEAST(COALESCE(ingest_cursors.dirty_from, EXCLUDED.dirty_from), EXCLUDED.dirty_from),
+                      updated_at = EXCLUDED.updated_at
+                    """,
+                    new { TenantId = tenantId, DeviceId = deviceId, DirtyFrom = valid.Min(v => v.OccurredAt), Now = now },
+                    transaction, cancellationToken: ct));
+            }
         }
 
         var (config, slug) = await LoadConfigAsync(connection, transaction, tenantId, ct);
@@ -112,7 +147,9 @@ public sealed class IngestService(
         // ack somente APÓS commit (perda pós-ack = 0 — Princípio 6)
         await transaction.CommitAsync(ct);
 
-        IngestMetrics.EventsTotal.Add(valid.Count);
+        // device pausado não conta como ingestão: nada foi persistido, e uma métrica que
+        // contasse esses eventos mentiria sobre o volume real gravado
+        IngestMetrics.EventsTotal.Add(paused ? 0 : valid.Count);
         IngestMetrics.DuplicatesTotal.Add(duplicates);
         foreach (var group in rejected.GroupBy(r => r.Reason))
         {
@@ -122,7 +159,8 @@ public sealed class IngestService(
         var configOutdated = batch.ConfigVersion is null || batch.ConfigVersion.Value != config.ConfigVersion;
 
         return new IngestAckResponse(
-            Accepted: inserted,
+            // device pausado: o lote é ACEITO (o agente drena a fila) mas nada foi persistido
+            Accepted: paused ? valid.Count : inserted,
             Duplicates: duplicates,
             Rejected: rejected,
             ServerTime: now,
@@ -505,7 +543,8 @@ public sealed class IngestService(
         var config = await connection.QuerySingleOrDefaultAsync<TenantAgentConfig>(new CommandDefinition(
             """
             SELECT tenant_id, config_version, heartbeat_sec, active_window_poll_sec, idle_threshold_sec,
-                   window_title_policy, masked_patterns, ignored_processes, collection_window
+                   window_title_policy, masked_patterns, ignored_processes, collection_window,
+                   notice_text, notice_version
             FROM tenant_agent_configs
             WHERE tenant_id = @TenantId
             """,

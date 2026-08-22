@@ -1,0 +1,113 @@
+# =============================================================================
+# +351 Monitor — teste de restore automatizado (mensal)
+# Restaura o dump mais recente de /var/backups/m351 num banco temporário
+# (m351_restore_test) dentro do container postgres do staging, roda as queries
+# de sanidade do runbook docs/runbooks/backup-restore.md e dropa o banco.
+# A saída fica como artifact de evidência (retention-days: 30).
+# Mesmos secrets STAGING_SSH_* do job deploy-staging (skip com aviso se ausentes).
+# =============================================================================
+name: Teste de restore mensal
+
+on:
+  schedule:
+    # dia 1 de cada mês, 06:00 UTC (03:00 BRT — depois do backup das 02:15 BRT)
+    - cron: "0 6 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: restore-test
+  cancel-in-progress: false
+
+jobs:
+  restore-test:
+    name: restore-test (dump mais recente -> banco temporário)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+      STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Teste de restore em staging (skip se secrets ausentes)
+        run: |
+          # pipefail: sem isto o "| tee" da evidência mascararia o exit do ssh remoto
+          set -o pipefail
+          if [ -z "${STAGING_SSH_HOST}" ] || [ -z "${STAGING_SSH_KEY}" ]; then
+            echo "::warning::skipping: secrets ausentes (STAGING_SSH_HOST/STAGING_SSH_KEY) — teste de restore não executado"
+            mkdir -p evidencia
+            echo "skip: secrets STAGING_SSH_* ausentes" > evidencia/restore-test.txt
+            exit 0
+          fi
+          mkdir -p ~/.ssh evidencia
+          printf '%s\n' "${STAGING_SSH_KEY}" > ~/.ssh/staging_key
+          chmod 600 ~/.ssh/staging_key
+          SSH_USER="${STAGING_SSH_USER:-deploy}"
+
+          ssh -i ~/.ssh/staging_key \
+              -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 \
+              "${SSH_USER}@${STAGING_SSH_HOST}" bash -s <<'REMOTE' 2>&1 | tee evidencia/restore-test.txt
+          set -euo pipefail
+          DIR=/opt/351monitor
+          COMPOSE="docker compose -f $DIR/infra/docker-compose.staging.yml --env-file $DIR/infra/.env"
+          BACKUP_DIR=/var/backups/m351
+          TEST_DB=m351_restore_test
+
+          # POSTGRES_USER vem do infra/.env do staging
+          POSTGRES_USER="$(grep -E '^POSTGRES_USER=' "$DIR/infra/.env" | cut -d= -f2- || true)"
+          POSTGRES_USER="${POSTGRES_USER:-m351}"
+
+          LATEST="$(ls -1t "$BACKUP_DIR"/m351_*.dump 2>/dev/null | head -n1 || true)"
+          if [ -z "$LATEST" ]; then
+            echo "ERRO: nenhum dump encontrado em $BACKUP_DIR — o backup diário está rodando?"
+            exit 1
+          fi
+          echo "[restore-test] dump escolhido: $LATEST ($(du -h "$LATEST" | cut -f1), $(date -r "$LATEST" '+%Y-%m-%d %H:%M %Z'))"
+
+          # dropa o banco de teste de resto de execução anterior, para garantir; o serviço do
+          # compose chama-se "postgres" (docker-compose.staging.yml)
+          echo "[restore-test] criando banco temporário $TEST_DB"
+          $COMPOSE exec -T postgres psql -U "$POSTGRES_USER" -d postgres \
+            -c "DROP DATABASE IF EXISTS $TEST_DB;" -c "CREATE DATABASE $TEST_DB;"
+
+          # --no-owner: o dono no dump é o mesmo usuário, mas mantém o restore neutro
+          echo "[restore-test] pg_restore para $TEST_DB (pode levar minutos)"
+          $COMPOSE exec -T postgres pg_restore -U "$POSTGRES_USER" -d "$TEST_DB" --no-owner < "$LATEST"
+
+          # Queries de sanidade (docs/runbooks/backup-restore.md): contagem de tenants e
+          # devices; existência das partições do mês corrente (raw_events é particionada
+          # por DIA raw_events_yyyyMMdd; activity_intervals por MÊS activity_intervals_yyyyMM)
+          psql_t() { $COMPOSE exec -T postgres psql -U "$POSTGRES_USER" -d "$TEST_DB" -tA -c "$1"; }
+
+          TENANTS="$(psql_t 'SELECT count(*) FROM organizations;')"
+          DEVICES="$(psql_t 'SELECT count(*) FROM devices;')"
+          RAW_PARTS="$(psql_t "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'raw_events_' || to_char(now(), 'YYYYMM') || '%';")"
+          AI_PARTS="$(psql_t "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tablename = 'activity_intervals_' || to_char(now(), 'YYYYMM');")"
+          MAINT="$(psql_t 'SELECT count(*) FROM maintenance_runs;')"
+
+          echo "[restore-test] sanidade: tenants=$TENANTS devices=$DEVICES particoes_raw_events_mes_corrente=$RAW_PARTS particao_activity_intervals_mes_corrente=$AI_PARTS maintenance_runs=$MAINT"
+
+          echo "[restore-test] dropando o banco temporário $TEST_DB"
+          $COMPOSE exec -T postgres psql -U "$POSTGRES_USER" -d postgres -c "DROP DATABASE IF EXISTS $TEST_DB;"
+
+          FAIL=0
+          if [ "${TENANTS:-0}" -lt 1 ]; then echo "FALHA: nenhum tenant no dump restaurado"; FAIL=1; fi
+          if [ "${RAW_PARTS:-0}" -lt 1 ]; then echo "FALHA: nenhuma partição raw_events do mês corrente no dump restaurado"; FAIL=1; fi
+          if [ "${AI_PARTS:-0}" -lt 1 ]; then echo "AVISO: partição activity_intervals do mês corrente ausente no dump"; fi
+          if [ "$FAIL" -ne 0 ]; then exit 1; fi
+
+          echo "[restore-test] OK: restore validado em $(date -u '+%Y-%m-%d %H:%M UTC')"
+          REMOTE
+
+      - name: Evidência como artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: restore-test-${{ github.run_id }}
+          path: evidencia/restore-test.txt
+          if-no-files-found: warn
+          retention-days: 30

@@ -162,6 +162,118 @@ public class UsersController(
         return Ok(new UserResponse(user.Id, user.Email, user.DisplayName, user.Role.ToDbValue(), user.Status, user.MfaEnabled, user.LastLoginAt));
     }
 
+    /// <summary>
+    /// Reenvia o convite de um usuário ainda 'invited' (Seção 8.7): gera token NOVO de 7 dias
+    /// e invalida os anteriores (o link antigo morre). Cobre SMTP que falhou no convite
+    /// original e convite expirado, sem precisar excluir e recriar o usuário.
+    /// </summary>
+    [HttpPost("{id:guid}/invitations/resend")]
+    public async Task<IActionResult> ResendInvitation(Guid id, CancellationToken ct)
+    {
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
+        if (user is null)
+        {
+            return NotFoundProblem();
+        }
+
+        if (user.Status != UserStatus.Invited)
+        {
+            return ProblemResponse(StatusCodes.Status409Conflict,
+                "Este usuário já ativou a conta (ou está desativado).");
+        }
+
+        if (user.Role == UserRole.Owner && CurrentUser.Role(User) != UserRole.Owner)
+        {
+            return ProblemResponse(StatusCodes.Status403Forbidden,
+                "Apenas um Owner pode reenviar convite de Owner.");
+        }
+
+        var tenantId = CurrentUser.TenantId(User);
+
+        var previous = await db.Invitations
+            .Where(i => i.Email == user.Email && i.AcceptedAt == null).ToListAsync(ct);
+        db.Invitations.RemoveRange(previous);
+
+        var token = TokenGenerator.NewOpaqueToken();
+        var invitation = new Invitation
+        {
+            Id = Uuid7.NewUuid7(),
+            TenantId = tenantId,
+            Email = user.Email,
+            Role = user.Role,
+            TokenHash = TokenGenerator.Sha256(token),
+            ExpiresAt = DateTimeOffset.UtcNow.Add(InvitationLifetime),
+            InvitedBy = CurrentUser.UserId(User),
+        };
+        db.Invitations.Add(invitation);
+        await db.SaveChangesAsync(ct);
+
+        var org = await db.Organizations.FirstAsync(ct);
+        var link = $"{portalOptions.Value.BaseUrl.TrimEnd('/')}/convite/{token}";
+        await emailSender.SendAsync(new EmailMessage(
+            user.Email,
+            $"Você foi convidado(a) para {org.Name} no +351 Monitor",
+            $"""
+            Olá,
+
+            Você foi convidado(a) para a organização {org.Name} no +351 Monitor com o papel {user.Role.ToDbValue()}.
+
+            Para criar sua senha e acessar o portal, abra o link abaixo (válido por 7 dias):
+
+            {link}
+
+            Este link substitui qualquer convite anterior. Se você não esperava este convite, ignore este e-mail.
+            """), ct);
+
+        return Ok(new InviteUserResponse(user.Id, invitation.Id, invitation.ExpiresAt));
+    }
+
+    /// <summary>
+    /// Recuperação assistida de MFA (Seção 7.5): usuário perdeu o TOTP e os recovery codes.
+    /// Zera segredo, códigos e sessões; o próximo login exige novo setup (mfa_setup_required
+    /// para Owner/Admin). Mexer em Owner exige Owner, como nas demais rotas.
+    /// </summary>
+    [HttpPost("{id:guid}/mfa/reset")]
+    public async Task<IActionResult> ResetMfa(Guid id, CancellationToken ct)
+    {
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
+        if (user is null)
+        {
+            return NotFoundProblem();
+        }
+
+        if (user.Role == UserRole.Owner && CurrentUser.Role(User) != UserRole.Owner)
+        {
+            return ProblemResponse(StatusCodes.Status403Forbidden,
+                "Apenas um Owner pode redefinir a MFA de outro Owner.");
+        }
+
+        if (!user.MfaEnabled && user.MfaSecretEnc is null)
+        {
+            return ProblemResponse(StatusCodes.Status409Conflict,
+                "Este usuário não tem MFA configurada.");
+        }
+
+        user.MfaEnabled = false;
+        user.MfaSecretEnc = null;
+
+        var codes = await db.MfaRecoveryCodes.Where(c => c.UserId == user.Id).ToListAsync(ct);
+        db.MfaRecoveryCodes.RemoveRange(codes);
+
+        var now = DateTimeOffset.UtcNow;
+        var sessions = await db.RefreshTokens.Where(t => t.UserId == user.Id && t.RevokedAt == null).ToListAsync(ct);
+        foreach (var session in sessions)
+        {
+            session.RevokedAt = now;
+        }
+
+        audit.Add(CurrentUser.TenantId(User), AuditActions.MfaReset, CurrentUser.UserId(User),
+            HttpContext.Connection.RemoteIpAddress, targetType: "user", targetId: user.Id);
+
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
     /// <summary>Desativa o usuário (status=disabled) e revoga seus refresh tokens.</summary>
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Deactivate(Guid id, CancellationToken ct)

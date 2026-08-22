@@ -1,14 +1,19 @@
+using M351.Agent.Core.Privacy;
+
 namespace MonitorAgentSession;
 
 /// <summary>
 /// Aviso de primeiro logon (Seção 6.5 / 9.4): "Esta máquina é monitorada — veja o que é
 /// coletado", com botão "Entendi" → NOTICE_ACK. É evidência de CIÊNCIA, não consentimento.
+///
+/// O corpo pode vir da config do tenant (notice_text); o enquadramento jurídico é fixo e
+/// concatenado pelo NoticeTextComposer — o tenant não edita essa parte.
 /// </summary>
 public sealed class NoticeForm : Form
 {
     public bool Acknowledged { get; private set; }
 
-    public NoticeForm(Action showCollectedWindow)
+    public NoticeForm(Action showCollectedWindow, string? tenantNoticeText = null)
     {
         Text = "Monitoramento corporativo";
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -16,18 +21,16 @@ public sealed class NoticeForm : Form
         MinimizeBox = false;
         ControlBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(480, 220);
+        ClientSize = new Size(480, 300);
         TopMost = true;
 
         var text = new Label
         {
             Dock = DockStyle.Top,
-            Height = 120,
+            Height = 200,
             Padding = new Padding(16),
-            Text = "Esta máquina é monitorada pela sua empresa.\n\n" +
-                   "São coletados: aplicativo e título da janela em foco (conforme a política da " +
-                   "empresa), eventos de sessão (logon/bloqueio), ociosidade e saúde do agente.\n" +
-                   "Este aviso registra a sua ciência. Não é um pedido de consentimento."
+            AutoEllipsis = true,
+            Text = NoticeTextComposer.Compose(tenantNoticeText)
         };
 
         var seeButton = new Button
@@ -36,7 +39,7 @@ public sealed class NoticeForm : Form
             Width = 170,
             Height = 32,
             Left = 60,
-            Top = 150
+            Top = 230
         };
         seeButton.Click += (_, _) => showCollectedWindow();
 
@@ -46,7 +49,7 @@ public sealed class NoticeForm : Form
             Width = 120,
             Height = 32,
             Left = 280,
-            Top = 150
+            Top = 230
         };
         okButton.Click += (_, _) =>
         {
