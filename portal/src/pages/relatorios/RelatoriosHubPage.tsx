@@ -12,7 +12,8 @@ const reports = [
   {
     to: "/relatorios/uso",
     title: "Uso de aplicativos",
-    description: "Relatório tabular de uso por aplicativo, categoria, dispositivo ou usuário.",
+    description:
+      "Relatório tabular de uso por aplicativo, categoria, dispositivo ou usuário, com a aba de atividade fora do horário de trabalho.",
   },
   {
     to: "/relatorios/exportacoes",
@@ -58,6 +59,13 @@ export function RelatoriosHubPage() {
             className="font-medium text-primary underline-offset-2 hover:underline"
           >
             Quem ficou mais tempo ocioso esta semana?
+          </Link>
+          <span aria-hidden className="text-muted-foreground">·</span>
+          <Link
+            to="/relatorios/uso?aba=fora-do-horario"
+            className="font-medium text-primary underline-offset-2 hover:underline"
+          >
+            Quanta atividade ficou fora do horário de trabalho?
           </Link>
         </div>
       </Card>

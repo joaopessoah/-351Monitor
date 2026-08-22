@@ -29,6 +29,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 const KIND_LABELS: Record<ExportKind, string> = {
   jornada_csv: "Jornada (CSV)",
   usage_csv: "Uso de aplicativos (CSV)",
+  fora_horario_csv: "Atividade fora do horário de trabalho (CSV)",
   // Pacotes DSR/offboarding (F4.5): ZIP, solicitados em Privacidade, prazo de 72h.
   dsr_subject: "Dados do titular (ZIP)",
   dsr_device: "Dados do dispositivo (ZIP)",
@@ -83,7 +84,13 @@ function downloadFallbackName(item: ExportJobItem): string {
       item.kind === "dsr_subject" ? "dsr_titular" : item.kind === "dsr_device" ? "dsr_dispositivo" : "acervo_tenant";
     return `${prefix}_${target ?? item.id}.zip`;
   }
-  return `${item.kind === "jornada_csv" ? "jornada" : "uso"}_${item.params.from}_${item.params.to}.csv`;
+  const prefix =
+    item.kind === "jornada_csv"
+      ? "jornada"
+      : item.kind === "fora_horario_csv"
+        ? "fora-do-horario"
+        : "uso";
+  return `${prefix}_${item.params.from}_${item.params.to}.csv`;
 }
 
 /** Status de UI: "Expirado" vence "Pronto" quando o prazo de retenção passou. */

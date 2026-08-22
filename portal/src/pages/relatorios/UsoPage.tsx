@@ -17,6 +17,12 @@
 //   para a visão individual (/pessoas/{device_user_id}), exceto na lane-máquina.
 // - Exportar CSV (admin E viewer): POST /exports {kind:"usage_csv"} com o
 //   group_by corrente; acompanhamento em /relatorios/exportacoes.
+// - Aba "Fora do horário" (?aba=fora-do-horario): atividade fora do horário de
+//   trabalho declarado, reusando os MESMOS filtros de período e dispositivos da
+//   aba de uso. Indicador de EQUILÍBRIO - jamais hora extra ou banco de horas -
+//   com o disclaimer da Portaria 671/MTE herdado do relatório de Jornada e
+//   exportação própria (kind fora_horario_csv), desabilitada quando a
+//   organização não tem horário declarado ou restringe a coleta a ele.
 // =============================================================================
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -28,6 +34,7 @@ import { classificationColor, classificationLabel, mergeUncategorizedRows } from
 import { ddmm, formatDuration } from "@/lib/format";
 import { genericErrorMessage } from "@/lib/messages";
 import type {
+  ForaDoHorarioResponse,
   MeResponse,
   UsageAppItem,
   UsageCategoryItem,
@@ -51,6 +58,8 @@ import {
   useReportRange,
 } from "@/components/reports/filters";
 import { ExportCsvBanner, ExportCsvButton, useCsvExport } from "@/components/reports/ExportCsv";
+import { foraDoHorarioKey, foraDoHorarioUrl } from "@/components/reports/ForaDoHorario";
+import { FORA_PAGE_SIZE, ForaDoHorarioPanel } from "@/components/reports/ForaDoHorarioPanel";
 import { DeltaBadge, useComparisonRange } from "@/components/dashboard/comparison";
 
 /** page_size máximo do contrato - mais linhas sob a ordenação client-side. */
@@ -58,6 +67,14 @@ const PAGE_SIZE = 100;
 
 /** UUID zero = lane-máquina (sem usuário Windows): não é pessoa, não tem página. */
 const MACHINE_LANE = "00000000-0000-0000-0000-000000000000";
+
+/** Abas da tela: o uso de aplicativos e o painel de fora do horário de trabalho. */
+type UsoTab = "uso" | "fora-do-horario";
+
+const TAB_OPTIONS: { value: UsoTab; label: string }[] = [
+  { value: "uso", label: "Uso de aplicativos" },
+  { value: "fora-do-horario", label: "Fora do horário de trabalho" },
+];
 
 type GroupBy = "app" | "category" | "device" | "device_user";
 
@@ -124,6 +141,7 @@ function sortFromUrl(params: URLSearchParams): SortState | null {
 
 /** Estado da tela na URL - ciclo completo: a URL é lida E escrita (replace). */
 interface UsoUrlState {
+  tab: UsoTab;
   groupBy: GroupBy;
   sort: SortState | null;
   page: number;
@@ -135,12 +153,14 @@ const USO_CODEC: UrlStateCodec<UsoUrlState> = {
   parse: (params) => {
     const rawPage = Number(params.get("page"));
     return {
+      tab: params.get("aba") === "fora-do-horario" ? "fora-do-horario" : "uso",
       groupBy: groupByFromUrl(params),
       sort: sortFromUrl(params),
       page: Number.isInteger(rawPage) && rawPage > 1 ? rawPage : 1,
     };
   },
   serialize: (value) => ({
+    aba: value.tab !== "uso" ? value.tab : null,
     group_by: value.groupBy !== "app" ? value.groupBy : null,
     sort: value.sort !== null ? value.sort.key : null,
     // desc é o default do sortFromUrl: só "asc" precisa ir para a URL.
@@ -249,12 +269,13 @@ export function UsoPage() {
   // Agrupamento, ordenação e página vivem na URL (deep-link do hub de
   // Relatórios) - lidos no mount E escritos de volta a cada interação.
   const [urlState, setUrlState] = useUrlState(USO_CODEC);
-  const { groupBy, sort, page } = urlState;
+  const { tab, groupBy, sort, page } = urlState;
+  const foraTab = tab === "fora-do-horario";
   const [deviceIds, setDeviceIds] = useState<string[]>([]);
   // Coluna "vs anterior": toggle DESLIGADO por padrão e indisponível no
   // agrupamento por pessoa (nunca comparar pessoas entre si).
   const [compareOn, setCompareOn] = useState(false);
-  const compareActive = compareOn && groupBy !== "device_user";
+  const compareActive = compareOn && groupBy !== "device_user" && !foraTab;
 
   const meQuery = useQuery({
     queryKey: ["me"],
@@ -294,7 +315,7 @@ export function UsoPage() {
       api<UsageReportResponse<UsageRow>>(
         `/reports/usage?from=${range?.from ?? ""}&to=${range?.to ?? ""}${deviceParam}&group_by=${groupBy}&page=${page}&page_size=${PAGE_SIZE}`,
       ),
-    enabled: range !== null,
+    enabled: range !== null && !foraTab,
     // Mantém a leitura anterior ao trocar página/período/devices, mas NÃO ao
     // trocar o agrupamento: as linhas têm formato diferente por group_by e
     // renderizar app como device (ou vice-versa) mostraria NaN no flash.
@@ -383,26 +404,56 @@ export function UsoPage() {
           : ["Dispositivo", "Usuário"];
   const colCount = textHeaders.length + numericCols.length + (compareActive ? 1 : 0);
 
+  // MESMA queryKey do ForaDoHorarioPanel: o TanStack resolve do cache, sem
+  // requisição extra. O botão de exportar precisa do status para não oferecer um
+  // CSV que o backend recusaria com 409 (organização sem horário declarado ou
+  // com a coleta restrita ao horário de trabalho).
+  const foraParams = {
+    from: range?.from ?? "",
+    to: range?.to ?? "",
+    deviceIdsKey,
+    page: 1,
+    includeDevices: true,
+    pageSize: FORA_PAGE_SIZE,
+  };
+  const foraStatusQuery = useQuery({
+    queryKey: foraDoHorarioKey(foraParams),
+    queryFn: () => api<ForaDoHorarioResponse>(foraDoHorarioUrl(foraParams)),
+    enabled: range !== null && foraTab,
+    placeholderData: (prev) => prev,
+  });
+  const foraExportavel = foraStatusQuery.data?.status === "ok";
+
   const exportMutation = useCsvExport();
   const exportRequest =
-    range !== null
-      ? {
-          kind: "usage_csv" as const,
-          params: {
-            from: range.from,
-            to: range.to,
-            group_by: groupBy,
-            ...(deviceIds.length > 0 ? { device_ids: deviceIds } : {}),
-          },
-        }
-      : null;
+    range === null
+      ? null
+      : foraTab
+        ? {
+            kind: "fora_horario_csv" as const,
+            params: {
+              from: range.from,
+              to: range.to,
+              ...(deviceIds.length > 0 ? { device_ids: deviceIds } : {}),
+            },
+          }
+        : {
+            kind: "usage_csv" as const,
+            params: {
+              from: range.from,
+              to: range.to,
+              group_by: groupBy,
+              ...(deviceIds.length > 0 ? { device_ids: deviceIds } : {}),
+            },
+          };
 
   const header = (
     <div>
       <h1 className="text-2xl font-semibold tracking-tight">Uso de aplicativos</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Relatório tabular de uso por aplicativo, categoria, dispositivo ou pessoa, com exportação em
-        CSV.
+        {foraTab
+          ? "Atividade fora do horário de trabalho declarado pela organização, por dispositivo, com exportação em CSV."
+          : "Relatório tabular de uso por aplicativo, categoria, dispositivo ou pessoa, com exportação em CSV."}
       </p>
     </div>
   );
@@ -429,26 +480,52 @@ export function UsoPage() {
     <div className="space-y-4">
       {header}
 
-      {/* Barra de filtros (controles em h-9): agrupamento, período, devices, export. */}
+      {/* Abas da tela: uso de aplicativos | fora do horário de trabalho. */}
+      <div role="tablist" aria-label="Visão do relatório" className="flex flex-wrap gap-1 border-b">
+        {TAB_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            role="tab"
+            aria-selected={tab === opt.value}
+            onClick={() => setUrlState({ tab: opt.value, groupBy, sort: null, page: 1 })}
+            className={cn(
+              "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              tab === opt.value
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Barra de filtros (controles em h-9): agrupamento, período, devices, export.
+          Período e dispositivos servem as DUAS abas; o agrupamento só faz sentido
+          no uso de aplicativos. */}
       <Card>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-          <div
-            role="group"
-            aria-label="Agrupar por"
-            className="inline-flex h-9 items-stretch rounded-md border border-input bg-card p-0.5"
-          >
-            {GROUP_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                aria-pressed={groupBy === opt.value}
-                onClick={() => setUrlState({ groupBy: opt.value, sort: null, page: 1 })}
-                className={cn(segmentedButton, groupBy === opt.value ? segmentedOn : segmentedOff)}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+          {!foraTab && (
+            <div
+              role="group"
+              aria-label="Agrupar por"
+              className="inline-flex h-9 items-stretch rounded-md border border-input bg-card p-0.5"
+            >
+              {GROUP_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  aria-pressed={groupBy === opt.value}
+                  onClick={() => setUrlState({ tab, groupBy: opt.value, sort: null, page: 1 })}
+                  className={cn(segmentedButton, groupBy === opt.value ? segmentedOn : segmentedOff)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           <PeriodPresetGroup active={activePreset} onSelect={applyPreset} disabled={todayStr === null} />
           {range !== null && (
@@ -464,7 +541,7 @@ export function UsoPage() {
             }
             onClear={() => setDeviceIds([])}
           />
-          {groupBy !== "device_user" && (
+          {!foraTab && groupBy !== "device_user" && (
             <Button
               variant="outline"
               size="sm"
@@ -477,14 +554,31 @@ export function UsoPage() {
             </Button>
           )}
           <div className="ml-auto">
-            <ExportCsvButton mutation={exportMutation} request={exportRequest} />
+            {/* Na aba de fora do horário o CSV só existe com janela declarada e
+                coleta contínua: sem isso o botão fica desabilitado, e o painel
+                logo abaixo explica o motivo. */}
+            <ExportCsvButton
+              mutation={exportMutation}
+              request={exportRequest}
+              disabled={foraTab && !foraExportavel}
+            />
           </div>
         </div>
       </Card>
 
       <ExportCsvBanner mutation={exportMutation} />
 
-      {usageQuery.isError && data !== undefined && (
+      {/* Aba "Fora do horário": painel próprio, mesmos filtros de período e
+          dispositivos da aba de uso. */}
+      {foraTab && (
+        <ForaDoHorarioPanel
+          range={range}
+          deviceIdsKey={deviceIdsKey}
+          onClearDevices={() => setDeviceIds([])}
+        />
+      )}
+
+      {!foraTab && usageQuery.isError && data !== undefined && (
         <div
           role="alert"
           className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
@@ -496,6 +590,7 @@ export function UsoPage() {
         </div>
       )}
 
+      {!foraTab && (
       <Card>
         {usageQuery.isError && data === undefined ? (
           <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
@@ -723,6 +818,7 @@ export function UsoPage() {
           </div>
         )}
       </Card>
+      )}
     </div>
   );
 }

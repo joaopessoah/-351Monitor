@@ -591,13 +591,77 @@ export interface JornadaReportResponse {
   device_totals: JornadaDeviceTotals[];
 }
 
+// ----- GET /reports/fora-do-horario (atividade fora do horário de trabalho) -----
+
 /**
- * Tipos de export. usage_csv/jornada_csv (F3.5) são criados pelo POST /exports
- * genérico; os pacotes DSR (F4.5) são criados pelos endpoints /privacy/* e NUNCA
- * pelo POST /exports - mas a listagem e o download os servem (pacote ZIP, prazo
- * de 72h em vez dos 7 dias do CSV de relatório).
+ * Situação do painel. Fora de "ok" a resposta vem SEM número de propósito: sem
+ * horário de trabalho declarado, ou com a coleta restrita ao próprio horário,
+ * qualquer valor seria enganoso - a tela explica o motivo em vez de exibir zero.
  */
-export type ExportKind = "usage_csv" | "jornada_csv" | "dsr_subject" | "dsr_device" | "tenant_full";
+export type ForaDoHorarioStatus =
+  | "ok"
+  | "horario_nao_configurado"
+  | "coleta_restrita_ao_horario";
+
+/** Totais do período INTEIRO - outside = before + after + non_business_day. */
+export interface ForaDoHorarioTotals {
+  /** Tempo ativo total do recorte, da MESMA fonte (activity_intervals). */
+  seconds_active: number;
+  seconds_outside: number;
+  /** Antes do início do horário de trabalho. */
+  seconds_before: number;
+  /** Depois do fim do horário de trabalho. */
+  seconds_after: number;
+  /** Em dias que não estão na escala declarada. */
+  seconds_non_business_day: number;
+  devices_with_activity_outside: number;
+}
+
+/** Uma linha por dispositivo COM atividade fora do horário no período. */
+export interface ForaDoHorarioItem {
+  device_id: string;
+  device_name: string;
+  seconds_active: number;
+  seconds_outside: number;
+  seconds_before: number;
+  seconds_after: number;
+  seconds_non_business_day: number;
+  days_with_activity_outside: number;
+}
+
+/**
+ * Resposta de `GET /reports/fora-do-horario`. Indicador de EQUILÍBRIO da equipe:
+ * o vocabulário da tela é sempre "atividade fora do horário de trabalho", jamais
+ * hora extra, jornada extraordinária ou banco de horas.
+ *
+ * `items` só vem preenchido com include_devices=true (ou device_ids); `total` é o
+ * número de dispositivos com atividade fora no período inteiro.
+ */
+export interface ForaDoHorarioResponse {
+  status: ForaDoHorarioStatus;
+  timezone: string;
+  business_hours: BusinessHours | null;
+  collection_window_mode: string;
+  totals: ForaDoHorarioTotals | null;
+  items: ForaDoHorarioItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+/**
+ * Tipos de export. usage_csv/jornada_csv/fora_horario_csv (F3.5) são criados pelo
+ * POST /exports genérico; os pacotes DSR (F4.5) são criados pelos endpoints
+ * /privacy/* e NUNCA pelo POST /exports - mas a listagem e o download os servem
+ * (pacote ZIP, prazo de 72h em vez dos 7 dias do CSV de relatório).
+ */
+export type ExportKind =
+  | "usage_csv"
+  | "jornada_csv"
+  | "fora_horario_csv"
+  | "dsr_subject"
+  | "dsr_device"
+  | "tenant_full";
 
 /** Os pacotes DSR/offboarding (F4.5) saem como ZIP; o CSV de relatório como text/csv. */
 export const DSR_EXPORT_KINDS: ExportKind[] = ["dsr_subject", "dsr_device", "tenant_full"];
