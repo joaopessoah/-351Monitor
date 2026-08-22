@@ -1,4 +1,5 @@
 using M351.Infrastructure;
+using M351.Infrastructure.AccountHealth;
 using M351.Infrastructure.Aggregation;
 using M351.Infrastructure.Alerts;
 using M351.Infrastructure.Billing;
@@ -95,6 +96,20 @@ builder.Services.AddSingleton<BillingSnapshotService>(sp => new BillingSnapshotS
     sp.GetRequiredService<NpgsqlDataSource>(),
     sp.GetRequiredService<ILogger<BillingSnapshotService>>()));
 
+// Score de saúde de conta (telemetria INTERNA de CS): só faz sentido registrar com um
+// destinatário configurado (Cs__AlertEmail). O tenant de demo pública fica DE FORA da
+// apuração, ele é reiniciado toda semana e viraria um falso churn permanente na lista.
+var csAlertEmail = builder.Configuration["Cs:AlertEmail"];
+if (!string.IsNullOrWhiteSpace(csAlertEmail))
+{
+    builder.Services.AddSingleton<AccountHealthService>(sp => new AccountHealthService(
+        sp.GetRequiredService<NpgsqlDataSource>(),
+        sp.GetRequiredService<IEmailSender>(),
+        csAlertEmail,
+        builder.Configuration["Demo:Slug"],
+        sp.GetRequiredService<ILogger<AccountHealthService>>()));
+}
+
 // Quartz (Seção 7.6): Intervalization a cada 60 s; DailyAggregation a cada 15 min;
 // ExportWorker a cada 15 s ("contínuo" da spec via polling curto — padrão dos demais jobs);
 // jobs noturnos de retenção/purga (F4.6) em cron no fuso America/Sao_Paulo (tzdata no container):
@@ -179,6 +194,19 @@ builder.Services.AddQuartz(quartz =>
         .ForJob(billingSnapshotKey)
         .WithIdentity("billing-snapshot-0400-brt")
         .WithCronSchedule("0 0 4 * * ?", cron => cron.InTimeZone(saoPaulo)));
+
+    // Score de saúde de conta (F5, telemetria interna de CS): segunda 09h BRT, uma hora
+    // DEPOIS do digest dos clientes. Sem Cs:AlertEmail configurado (env Cs__AlertEmail) o
+    // job NEM É REGISTRADO: antes do piloto a lista é vazia por definição.
+    if (!string.IsNullOrWhiteSpace(csAlertEmail))
+    {
+        var accountHealthKey = new JobKey("account-health");
+        quartz.AddJob<AccountHealthJob>(options => options.WithIdentity(accountHealthKey));
+        quartz.AddTrigger(trigger => trigger
+            .ForJob(accountHealthKey)
+            .WithIdentity("account-health-segunda-0900-brt")
+            .WithCronSchedule("0 0 9 ? * MON", cron => cron.InTimeZone(saoPaulo)));
+    }
 
     // Demo pública permanente (F5): keep-alive 60 s + reseed semanal (domingo 04:30 BRT,
     // apaga e re-semeia o tenant demo, limpando o audit_log dos acessos públicos).
