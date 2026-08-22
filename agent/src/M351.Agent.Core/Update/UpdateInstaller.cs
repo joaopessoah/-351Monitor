@@ -5,7 +5,8 @@ namespace M351.Agent.Core.Update;
 
 /// <summary>
 /// Aplica um update ja decidido (Secao 6.7): baixa o MSI, verifica SHA-256 + assinatura
-/// (gancho Authenticode), grava a sentinela .update e dispara msiexec /i /qn. O MSI para o
+/// Authenticode (real, atras da flag verify_authenticode do install.json — ver VerifyAuthenticode
+/// abaixo), grava a sentinela .update e dispara msiexec /i /qn. O MSI para o
 /// servico (ResolveStopReason ve .update -> AGENT_STOP{reason:update}), instala a versao nova
 /// e reinicia (OnStart ve .update -> AGENT_START{start_reason:update}).
 ///
@@ -20,6 +21,8 @@ public sealed class UpdateInstaller
     private readonly Action _writeUpdateSentinel;
     private readonly Action _clearUpdateSentinel;
     private readonly Func<string, CancellationToken, Task<bool>> _runInstaller;
+    private readonly bool _verifyAuthenticode;
+    private readonly string? _expectedSignerCn;
 
     public UpdateInstaller(
         UpdateClient client,
@@ -27,7 +30,9 @@ public sealed class UpdateInstaller
         string updatesDir,
         Action writeUpdateSentinel,
         Func<string, CancellationToken, Task<bool>>? runInstaller = null,
-        Action? clearUpdateSentinel = null)
+        Action? clearUpdateSentinel = null,
+        bool verifyAuthenticode = false,
+        string? expectedSignerCn = null)
     {
         _client = client;
         _log = log;
@@ -35,6 +40,8 @@ public sealed class UpdateInstaller
         _writeUpdateSentinel = writeUpdateSentinel;
         _clearUpdateSentinel = clearUpdateSentinel ?? (() => { });
         _runInstaller = runInstaller ?? DefaultRunMsiexecAsync;
+        _verifyAuthenticode = verifyAuthenticode;
+        _expectedSignerCn = expectedSignerCn;
     }
 
     /// <summary>
@@ -108,12 +115,40 @@ public sealed class UpdateInstaller
     }
 
     /// <summary>
-    /// GANCHO Authenticode (F5). Por ora apenas loga e retorna true; a verificacao real da
-    /// assinatura do MSI baixado entra na F5 (code signing ainda ADIADO).
+    /// Verificacao Authenticode do MSI baixado, ATRAS DE FLAG (install.json verify_authenticode,
+    /// default FALSE).
+    ///
+    /// Desligada (padrao de hoje): o certificado de code signing ainda nao foi comprado
+    /// (docs/runbooks/comprar-certificado-codesigning.md) e o MSI nao-assinado precisa instalar em
+    /// dev/teste, entao apenas registramos no log que a barreira esta desligada e seguimos com o
+    /// SHA-256 do manifesto como unica verificacao. Nao e silencio: sai no log a cada update.
+    ///
+    /// Ligada (versao empacotada pos-compra): WinVerifyTrust de verdade
+    /// (WINTRUST_ACTION_GENERIC_VERIFY_V2) mais a exigencia de que o Subject do certificado do
+    /// signatario contenha o CN esperado (expected_signer_cn), para que um MSI assinado por OUTRA
+    /// empresa tambem seja recusado. Qualquer recusa descarta o MSI sem instalar.
     /// </summary>
     public bool VerifyAuthenticode(string msiPath)
     {
-        _log.Info($"Auto-update: assinatura do MSI ({Path.GetFileName(msiPath)}): verificacao real na F5 (gancho).");
+        var fileName = Path.GetFileName(msiPath);
+        if (!_verifyAuthenticode)
+        {
+            _log.Warn($"Auto-update: verificacao Authenticode DESLIGADA (install.json verify_authenticode=false) " +
+                      $"— {fileName} aceito apenas pelo SHA-256 do manifesto. Ligar quando o certificado de code " +
+                      $"signing estiver em uso.");
+            return true;
+        }
+
+        var result = Authenticode.Verify(msiPath, _expectedSignerCn);
+        if (!result.Trusted)
+        {
+            _log.Error($"Auto-update: assinatura de {fileName} RECUSADA — {result.Detail}" +
+                       (result.SignerSubject is null ? "" : $" (signatario: {result.SignerSubject})") + ".",
+                new InvalidOperationException(result.Detail));
+            return false;
+        }
+
+        _log.Info($"Auto-update: assinatura de {fileName} confere ({result.SignerSubject}).");
         return true;
     }
 

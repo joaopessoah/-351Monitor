@@ -10,6 +10,7 @@ namespace MonitorAgentService;
 ///
 ///   --write-install-config --data-dir &lt;dir&gt; [--server &lt;url&gt;] [--proxy &lt;url&gt;]
 ///                          [--enroll-key &lt;ek_...&gt;] [--noenroll 0|1]
+///                          [--verify-authenticode 0|1] [--expected-signer-cn &lt;CN&gt;]
 ///
 /// A enrollment key so e gravada como pendente quando NOENROLL=1 (golden image): nesse caso o
 /// enroll acontece no PRIMEIRO BOOT real (AgentWindowsService.ApplyInstallConfigAndEnroll),
@@ -41,16 +42,23 @@ public static class InstallConfigCommand
         var noEnroll = args.TryGetValue("noenroll", out var ne) && ne is "1" or "true";
         args.TryGetValue("enroll-key", out var enrollKey);
 
+        // Default FALSE (certificado de code signing ainda nao comprado): a versao empacotada com
+        // o certificado passa --verify-authenticode 1 [--expected-signer-cn "<razao social>"].
+        var verifyAuthenticode = args.TryGetValue("verify-authenticode", out var va) && va is "1" or "true";
+
         var cfg = new InstallConfig
         {
             ServerUrl = Blank(args, "server"),
             ProxyUrl = Blank(args, "proxy"),
             // So persiste a key pendente em golden image; instalacao normal nao grava segredo.
-            PendingEnrollKey = noEnroll && !string.IsNullOrWhiteSpace(enrollKey) ? enrollKey : null
+            PendingEnrollKey = noEnroll && !string.IsNullOrWhiteSpace(enrollKey) ? enrollKey : null,
+            VerifyAuthenticode = verifyAuthenticode,
+            ExpectedSignerCn = Blank(args, "expected-signer-cn")
         };
 
         cfg.Save(dataDir, log);
-        log.Info($"install.json gravado em {InstallConfig.PathFor(dataDir)} (noenroll={noEnroll}).");
+        log.Info($"install.json gravado em {InstallConfig.PathFor(dataDir)} (noenroll={noEnroll}, " +
+                 $"verify_authenticode={verifyAuthenticode}).");
         return 0;
     }
 

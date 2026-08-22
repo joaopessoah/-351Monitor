@@ -196,16 +196,144 @@ public class UpdateServiceTests
         }
     }
 
+    /// <summary>
+    /// Flag DESLIGADA (default de hoje, enquanto o certificado de code signing nao foi comprado —
+    /// docs/runbooks/comprar-certificado-codesigning.md): comportamento atual preservado, o MSI
+    /// passa apenas pelo SHA-256 do manifesto.
+    /// </summary>
     [Fact]
-    public async Task VerifyAuthenticode_e_gancho_e_retorna_true()
+    public void VerifyAuthenticode_com_flag_desligada_aceita_sem_verificar()
     {
         using var temp = new TempQueue();
         var (_, client, _) = BuildClient(temp, _ => new HttpResponseMessage(HttpStatusCode.NoContent));
         var installer = new UpdateInstaller(client, new NullLogSink(), Path.GetTempPath(),
-            writeUpdateSentinel: () => { });
+            writeUpdateSentinel: () => { }); // verifyAuthenticode: false é o default
 
-        await Task.CompletedTask;
-        Assert.True(installer.VerifyAuthenticode("qualquer.msi")); // F5: placeholder
+        Assert.True(installer.VerifyAuthenticode("qualquer.msi"));
+        // nem existir o arquivo importa: com a flag desligada nada é verificado
+        Assert.True(installer.VerifyAuthenticode(Path.Combine(Path.GetTempPath(), "inexistente.msi")));
+    }
+
+    /// <summary>
+    /// Flag LIGADA: a verificacao real roda. O caminho POSITIVO (assinatura confiavel) nao e
+    /// testavel aqui — exigiria um MSI assinado por certificado confiavel na maquina de CI, que e
+    /// justamente o que ainda nao existe. Cobrimos o caminho de RECUSA, que e o que protege a
+    /// cadeia de suprimento: arquivo sem assinatura e arquivo inexistente NUNCA sao instalados.
+    /// </summary>
+    [Fact]
+    public void VerifyAuthenticode_com_flag_ligada_recusa_arquivo_sem_assinatura()
+    {
+        using var temp = new TempQueue();
+        var (_, client, _) = BuildClient(temp, _ => new HttpResponseMessage(HttpStatusCode.NoContent));
+        var installer = new UpdateInstaller(client, new NullLogSink(), Path.GetTempPath(),
+            writeUpdateSentinel: () => { }, verifyAuthenticode: true);
+
+        var unsigned = Path.Combine(Path.GetTempPath(), $"m351-unsigned-{Guid.NewGuid():N}.msi");
+        try
+        {
+            File.WriteAllText(unsigned, "nao sou um MSI assinado");
+            Assert.False(installer.VerifyAuthenticode(unsigned));
+            Assert.False(installer.VerifyAuthenticode(Path.Combine(Path.GetTempPath(), "inexistente.msi")));
+        }
+        finally
+        {
+            try { File.Delete(unsigned); } catch (Exception) { /* best-effort */ }
+        }
+    }
+
+    [Fact]
+    public void Authenticode_verify_nunca_lanca_e_explica_a_recusa()
+    {
+        var result = Authenticode.Verify(Path.Combine(Path.GetTempPath(), $"nao-existe-{Guid.NewGuid():N}.msi"), null);
+        Assert.False(result.Trusted);
+        Assert.Null(result.SignerSubject);
+        Assert.NotEmpty(result.Detail);
+
+        var unsigned = Path.Combine(Path.GetTempPath(), $"m351-unsigned-{Guid.NewGuid():N}.msi");
+        try
+        {
+            File.WriteAllText(unsigned, "conteudo qualquer");
+            var unsignedResult = Authenticode.Verify(unsigned, expectedSignerCn: "Empresa Exemplo LTDA");
+            Assert.False(unsignedResult.Trusted);
+            Assert.NotEmpty(unsignedResult.Detail);
+        }
+        finally
+        {
+            try { File.Delete(unsigned); } catch (Exception) { /* best-effort */ }
+        }
+    }
+
+    /// <summary>
+    /// Com a flag LIGADA e MSI sem assinatura, o fluxo completo aborta ANTES da sentinela e do
+    /// msiexec: nada de update, o MSI baixado e descartado (mesma disciplina do SHA-256 errado).
+    /// </summary>
+    [Fact]
+    public async Task Apply_com_flag_ligada_e_msi_sem_assinatura_NAO_instala()
+    {
+        using var temp = new TempQueue();
+        var msiBytes = Encoding.UTF8.GetBytes("msi sem assinatura authenticode");
+        var sha = Convert.ToHexString(SHA256.HashData(msiBytes)).ToLowerInvariant();
+
+        var (_, client, _) = BuildClient(temp, req =>
+            req.RequestUri!.AbsolutePath.Contains("releases")
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(msiBytes) }
+                : Json(HttpStatusCode.OK, ManifestBody("1.1.0", sha)));
+
+        var updatesDir = Path.Combine(Path.GetTempPath(), $"m351-upd-{Guid.NewGuid():N}");
+        var sentinelWritten = false;
+        var installerRan = false;
+        try
+        {
+            var installer = new UpdateInstaller(client, new NullLogSink(), updatesDir,
+                writeUpdateSentinel: () => sentinelWritten = true,
+                runInstaller: (_, _) => { installerRan = true; return Task.FromResult(true); },
+                verifyAuthenticode: true,
+                expectedSignerCn: "Empresa Exemplo LTDA");
+
+            var manifest = new UpdateManifest { Version = "1.1.0", Url = MsiUrl, Sha256 = sha, MinVersion = "1.0.0" };
+            var ok = await installer.ApplyAsync(manifest, CancellationToken.None);
+
+            Assert.False(ok);
+            Assert.False(sentinelWritten);   // assinatura reprovada antes da sentinela
+            Assert.False(installerRan);      // msiexec nunca dispara
+            Assert.False(File.Exists(Path.Combine(updatesDir, "MonitorAgent-1.1.0.msi"))); // MSI descartado
+        }
+        finally
+        {
+            try { Directory.Delete(updatesDir, recursive: true); } catch (Exception) { /* best-effort */ }
+        }
+    }
+
+    /// <summary>SHA-256 confere e a flag esta desligada: o update segue (comportamento de hoje).</summary>
+    [Fact]
+    public async Task Apply_com_flag_desligada_instala_msi_nao_assinado()
+    {
+        using var temp = new TempQueue();
+        var msiBytes = Encoding.UTF8.GetBytes("msi de dev, sem assinatura");
+        var sha = Convert.ToHexString(SHA256.HashData(msiBytes)).ToLowerInvariant();
+
+        var (_, client, _) = BuildClient(temp, req =>
+            req.RequestUri!.AbsolutePath.Contains("releases")
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(msiBytes) }
+                : Json(HttpStatusCode.OK, ManifestBody("1.1.0", sha)));
+
+        var updatesDir = Path.Combine(Path.GetTempPath(), $"m351-upd-{Guid.NewGuid():N}");
+        var installerRan = false;
+        try
+        {
+            var installer = new UpdateInstaller(client, new NullLogSink(), updatesDir,
+                writeUpdateSentinel: () => { },
+                runInstaller: (_, _) => { installerRan = true; return Task.FromResult(true); },
+                verifyAuthenticode: false);
+
+            var manifest = new UpdateManifest { Version = "1.1.0", Url = MsiUrl, Sha256 = sha, MinVersion = "1.0.0" };
+            Assert.True(await installer.ApplyAsync(manifest, CancellationToken.None));
+            Assert.True(installerRan);
+        }
+        finally
+        {
+            try { Directory.Delete(updatesDir, recursive: true); } catch (Exception) { /* best-effort */ }
+        }
     }
 
     [Fact]

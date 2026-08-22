@@ -41,6 +41,24 @@ public sealed record InstallConfig
     [JsonPropertyName("verbose_debug")]
     public bool VerboseDebug { get; init; }
 
+    /// <summary>
+    /// Verificacao Authenticode REAL do MSI do auto-update (Secao 6.7). Default FALSE: o
+    /// certificado de code signing ainda nao foi comprado
+    /// (docs/runbooks/comprar-certificado-codesigning.md) e o MSI nao-assinado precisa instalar em
+    /// dev/teste. A versao empacotada COM o certificado grava true aqui, e a partir dai um MSI sem
+    /// assinatura confiavel e descartado sem instalar.
+    /// </summary>
+    [JsonPropertyName("verify_authenticode")]
+    public bool VerifyAuthenticode { get; init; }
+
+    /// <summary>
+    /// CN esperado no Subject do certificado do signatario (ex.: a razao social da empresa). Opcional:
+    /// com verify_authenticode ligado e este campo preenchido, um MSI assinado por OUTRO titular
+    /// (ainda que por certificado valido) tambem e recusado. Ignorado se verify_authenticode=false.
+    /// </summary>
+    [JsonPropertyName("expected_signer_cn")]
+    public string? ExpectedSignerCn { get; init; }
+
     private const string FileName = "install.json";
 
     public static string PathFor(string dataDirectory) => Path.Combine(dataDirectory, FileName);

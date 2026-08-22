@@ -469,6 +469,7 @@ Aplicado **antes de persistir na fila SQLite** — dado mascarado nunca toca o d
 
 - Verificação a cada 6 h (jitter até 30 min): `GET {SERVERURL}/api/v1/agent/update-manifest?current=1.0.3` → `{version, url, sha256, min_version}`.
 - Download em background; verificação de **SHA-256 do manifesto + assinatura Authenticode do MSI** antes de executar; instalação via `msiexec /i /qn` (major upgrade preserva `%ProgramData%` — fila e identidade). `min_version`: abaixo dela o update é forçado imediatamente.
+- A verificação Authenticode é real (`WinVerifyTrust`, `WINTRUST_ACTION_GENERIC_VERIFY_V2`, mais checagem de que o `Subject` do signatário contém o CN esperado) e fica atrás da flag `verify_authenticode` do `install.json` — **default `false`** enquanto o certificado de code signing não foi comprado (`docs/runbooks/comprar-certificado-codesigning.md`); o release empacotado com o certificado liga a flag e o `expected_signer_cn`. Com a flag ligada, MSI sem assinatura confiável (ou de outro titular) é descartado sem instalar.
 - **Rollback = publicar a versão anterior no manifesto** (major-upgrade com downgrade controlado). **SEM anéis canary/percentuais, SEM canal beta no MVP** (v1.1).
 
 ### 6.8 Metas de consumo (gate de release, medido em VM 2 vCPU/4 GB)

@@ -359,10 +359,15 @@ public sealed class AgentWindowsService : ServiceBase
     {
         if (_runtime is null) return;
         var updatesDir = Path.Combine(dataDir, "updates");
+        // verify_authenticode/expected_signer_cn vêm do install.json (Seção 6.7): a verificação real
+        // da assinatura do MSI só é exigida na versão empacotada com o certificado de code signing.
+        var installConfig = InstallConfig.TryLoad(dataDir, _log);
         var installer = new UpdateInstaller(
             _runtime.UpdateClient, _log, updatesDir,
             writeUpdateSentinel: () => UpdateFlag.Write(dataDir, _log),
-            clearUpdateSentinel: () => UpdateFlag.Consume(dataDir, _log));
+            clearUpdateSentinel: () => UpdateFlag.Consume(dataDir, _log),
+            verifyAuthenticode: installConfig?.VerifyAuthenticode ?? false,
+            expectedSignerCn: installConfig?.ExpectedSignerCn);
         var service = new UpdateService(_runtime.UpdateClient, installer, _runtime.State, _log);
         try
         {

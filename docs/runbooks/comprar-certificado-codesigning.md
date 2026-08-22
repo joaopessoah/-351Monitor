@@ -97,6 +97,49 @@ O `build-agent-msi.ps1` já tem o gancho condicional. Ajuste conforme a opção:
   credenciais do HSM em secrets do GitHub Actions. Me peça que eu adapto o gancho quando você
   souber qual provedor.
 
+## PASSO OBRIGATÓRIO no release pós-compra: ligar a verificação no agente
+
+Assinar o MSI resolve o SmartScreen, mas **não** protege o auto-update sozinho: o agente já
+instalado precisa RECUSAR um MSI que não esteja assinado por você. Essa verificação existe no
+código (`UpdateInstaller.VerifyAuthenticode` → `Authenticode.Verify`, com `WinVerifyTrust`), mas
+nasce **desligada** por uma flag, justamente porque hoje o MSI não é assinado e o agente precisa
+conseguir se atualizar em dev/piloto interno.
+
+No **primeiro release empacotado com o certificado**, ligue a flag no `install.json`:
+
+```json
+{
+  "server_url": "https://api.produto.com.br",
+  "verify_authenticode": true,
+  "expected_signer_cn": "RAZAO SOCIAL EXATA DO CERTIFICADO"
+}
+```
+
+Na prática, quem grava o arquivo é a custom action do MSI, então basta passar os argumentos novos:
+
+```
+MonitorAgentService.exe --write-install-config --data-dir "%ProgramData%\M351\MonitorAgent" ^
+    --server https://api.produto.com.br ^
+    --verify-authenticode 1 ^
+    --expected-signer-cn "RAZAO SOCIAL EXATA DO CERTIFICADO"
+```
+
+Regras e cuidados:
+- `expected_signer_cn` é **opcional, mas recomendado**: sem ele, qualquer MSI assinado por um
+  certificado confiável do sistema passa. Com ele, um MSI assinado por OUTRA empresa é recusado.
+  O valor tem de ser um trecho do `Subject` do certificado (a razão social como ela aparece no
+  campo `CN=` — confira com `signtool verify /pa /v MonitorAgent.msi` depois de assinar).
+- **Ordem correta do rollout:** publique primeiro um release ASSINADO com a flag ainda desligada
+  (assim toda a frota chega numa versão assinada) e só no release SEGUINTE ligue a flag. Ligar a
+  flag antes de a frota estar em versão assinada não quebra nada hoje (a verificação é do MSI
+  BAIXADO, não do instalado), mas essa ordem deixa um degrau a menos de risco.
+- Comportamento com a flag ligada: MSI sem assinatura, com certificado revogado/expirado, com
+  cadeia incompleta ou assinado por outro titular é **descartado sem instalar** (mesma disciplina
+  do SHA-256 divergente), com o motivo exato no log do serviço. O update é retentado no ciclo
+  seguinte (6 h), então um erro de configuração aqui atrasa updates — não derruba o agente.
+- Renovação do certificado: se a razão social no `CN=` mudar, atualize `expected_signer_cn` no
+  mesmo release em que o certificado novo passa a assinar.
+
 ## Depois de assinar: submeter ao Microsoft Defender
 
 Antes de instalar em cliente, submeter o MSI assinado ao **Microsoft Security Intelligence**
