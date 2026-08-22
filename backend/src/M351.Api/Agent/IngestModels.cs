@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace M351.Api.Agent;
 
-/// <summary>Tipos canônicos de evento do MVP (Seção 5.3 — exatamente 18).</summary>
+/// <summary>Tipos canônicos de evento do MVP (Seção 5.3 — exatamente 19).</summary>
 public static class EventTypes
 {
     public const string AgentStart = "AGENT_START";
@@ -31,12 +31,35 @@ public static class EventTypes
     /// </summary>
     public const string AgentError = "AGENT_ERROR";
 
+    /// <summary>
+    /// Auto-update que NÃO chegou a instalar: {from_version, to_version, reason}. Mesmo rollout
+    /// agente-primeiro do AGENT_ERROR. O sucesso não tem tipo próprio — ele é o
+    /// AGENT_START{start_reason:"update"} da versão nova.
+    /// </summary>
+    public const string UpdateFailed = "UPDATE_FAILED";
+
     public static readonly FrozenSet<string> Known = new[]
     {
         AgentStart, AgentStop, SessionStart, SessionEnd, Lock, Unlock, ActiveWindowChanged,
         IdleStart, IdleEnd, Heartbeat, SystemSuspend, SystemResume, TimeChanged,
-        EventsDropped, AgentTamper, NoticeAck, PolicyApplied, AgentError,
+        EventsDropped, AgentTamper, NoticeAck, PolicyApplied, AgentError, UpdateFailed,
     }.ToFrozenSet(StringComparer.Ordinal);
+}
+
+/// <summary>
+/// Motivos canônicos do UPDATE_FAILED (espelho de UpdateFailureReasons do agente). Só estes são
+/// materializados em devices: um motivo fora da lista (agente adulterado ou de versão futura) é
+/// ignorado na materialização, do mesmo jeito que os TamperReasons.
+/// </summary>
+public static class UpdateFailureReasons
+{
+    public const string Download = "download";
+    public const string Hash = "hash";
+    public const string Signature = "signature";
+    public const string Install = "install";
+
+    public static readonly FrozenSet<string> Known =
+        new[] { Download, Hash, Signature, Install }.ToFrozenSet(StringComparer.Ordinal);
 }
 
 /// <summary>Motivos canônicos de rejeição (Seções 5.5/5.6).</summary>
@@ -74,4 +97,6 @@ public sealed record ParsedEvent(
     DateTimeOffset? LastInputAt,
     string? HeartbeatState,
     int? AppliedConfigVersion,
-    string? TamperReason);
+    string? TamperReason,
+    string? UpdateFailureReason,
+    string? UpdateTargetVersion);

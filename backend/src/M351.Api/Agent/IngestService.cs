@@ -25,6 +25,10 @@ public sealed class IngestService(
     ILogger<IngestService> logger)
 {
     private const int WindowTitleMaxLength = 256; // revalidação servidor (Seção 5.6)
+
+    /// <summary>Teto defensivo para a versão alvo do UPDATE_FAILED (semver cabe folgado).</summary>
+    private const int AgentVersionMaxLength = 64;
+
     private static readonly TimeSpan MaxPast = TimeSpan.FromDays(14);     // N9
     private static readonly TimeSpan MaxFuture = TimeSpan.FromMinutes(5); // N9
 
@@ -227,6 +231,8 @@ public sealed class IngestService(
         string? heartbeatState = null;
         int? appliedConfigVersion = null;
         string? tamperReason = null;
+        string? updateFailureReason = null;
+        string? updateTargetVersion = null;
 
         if (hasData)
         {
@@ -260,6 +266,18 @@ public sealed class IngestService(
             {
                 tamperReason = reason;
             }
+
+            // UPDATE_FAILED: motivo CATEGORIZADO + versão alvo — vigilância de rollout. Motivo fora
+            // da lista canônica é ignorado na materialização (mesma régua do AGENT_TAMPER); o evento
+            // segue persistido em raw_events de qualquer forma.
+            if (type == EventTypes.UpdateFailed
+                && GetString(data, "reason") is { } updateReason
+                && UpdateFailureReasons.Known.Contains(updateReason))
+            {
+                updateFailureReason = updateReason;
+                var target = GetString(data, "to_version")?.Trim();
+                updateTargetVersion = target is { Length: > 0 and <= AgentVersionMaxLength } ? target : null;
+            }
         }
 
         parsed = new ParsedEvent(
@@ -279,7 +297,9 @@ public sealed class IngestService(
             LastInputAt: lastInputAt,
             HeartbeatState: heartbeatState,
             AppliedConfigVersion: appliedConfigVersion,
-            TamperReason: tamperReason);
+            TamperReason: tamperReason,
+            UpdateFailureReason: updateFailureReason,
+            UpdateTargetVersion: updateTargetVersion);
 
         return ParseOutcome.Valid;
     }
@@ -381,6 +401,12 @@ public sealed class IngestService(
             .Where(v => v.Type == EventTypes.PolicyApplied && v.AppliedConfigVersion is not null)
             .Select(v => v.AppliedConfigVersion)
             .Max();
+        // falha de update mais recente do lote (mesma régua monotônica do tamper): motivo e versão
+        // alvo vêm do MESMO evento, para a leitura no portal nunca cruzar motivo de uma tentativa
+        // com o alvo de outra
+        var latestUpdateFailure = valid
+            .Where(v => v.Type == EventTypes.UpdateFailed && v.UpdateFailureReason is not null)
+            .MaxBy(v => v.OccurredAt);
 
         var parameters = new DynamicParameters();
         parameters.Add("TenantId", tenantId, DbType.Guid);
@@ -393,6 +419,9 @@ public sealed class IngestService(
         parameters.Add("TamperAt", latestTamper?.OccurredAt, DbType.DateTimeOffset);
         parameters.Add("TamperReason", latestTamper?.TamperReason, DbType.String);
         parameters.Add("AppliedConfigVersion", appliedConfigVersion, DbType.Int32);
+        parameters.Add("UpdateFailAt", latestUpdateFailure?.OccurredAt, DbType.DateTimeOffset);
+        parameters.Add("UpdateFailReason", latestUpdateFailure?.UpdateFailureReason, DbType.String);
+        parameters.Add("UpdateFailTarget", latestUpdateFailure?.UpdateTargetVersion, DbType.String);
         parameters.Add("Skew", skewMs, DbType.Int64);
 
         await connection.ExecuteAsync(new CommandDefinition(
@@ -412,6 +441,19 @@ public sealed class IngestService(
                 ELSE last_tamper_reason
               END,
               config_version = COALESCE(@AppliedConfigVersion, config_version),
+              -- falha de auto-update, monotônica pelo mesmo motivo do tamper: um lote atrasado
+              -- (fila drenando depois de dias offline) não pode regredir a última falha conhecida
+              last_update_failure_at = GREATEST(last_update_failure_at, @UpdateFailAt),
+              last_update_failure_reason = CASE
+                WHEN @UpdateFailAt IS NULL THEN last_update_failure_reason
+                WHEN last_update_failure_at IS NULL OR @UpdateFailAt > last_update_failure_at THEN @UpdateFailReason
+                ELSE last_update_failure_reason
+              END,
+              last_update_target_version = CASE
+                WHEN @UpdateFailAt IS NULL THEN last_update_target_version
+                WHEN last_update_failure_at IS NULL OR @UpdateFailAt > last_update_failure_at THEN @UpdateFailTarget
+                ELSE last_update_target_version
+              END,
               clock_offset_ms = CASE
                 WHEN @Skew IS NULL THEN clock_offset_ms
                 WHEN last_seen_at IS NULL THEN @Skew

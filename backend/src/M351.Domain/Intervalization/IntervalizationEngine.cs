@@ -236,8 +236,9 @@ public sealed class IntervalizationEngine
                 break;
             }
 
-            // TIME_CHANGED, NOTICE_ACK, POLICY_APPLIED, AGENT_TAMPER e desconhecidos:
-            // neutros — não mudam estado, só sustentam o intervalo (via _lastEventAt).
+            // TIME_CHANGED, NOTICE_ACK, POLICY_APPLIED, AGENT_TAMPER, AGENT_ERROR, UPDATE_FAILED
+            // e desconhecidos: neutros — não mudam estado, só sustentam o intervalo (via
+            // _lastEventAt). Falha de update é saúde do agente, não presença de ninguém.
         }
 
         if (_lastEventAt is null || e.OccurredAt > _lastEventAt) _lastEventAt = e.OccurredAt;

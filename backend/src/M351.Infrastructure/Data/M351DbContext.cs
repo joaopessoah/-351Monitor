@@ -208,6 +208,10 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
             e.Property(x => x.NoticeAckedAt).HasColumnName("notice_acked_at");
             e.Property(x => x.LastTamperAt).HasColumnName("last_tamper_at");
             e.Property(x => x.LastTamperReason).HasColumnName("last_tamper_reason").HasColumnType("text");
+            // Vigilância de rollout — última tentativa de auto-update que não instalou
+            e.Property(x => x.LastUpdateFailureAt).HasColumnName("last_update_failure_at");
+            e.Property(x => x.LastUpdateFailureReason).HasColumnName("last_update_failure_reason").HasColumnType("text");
+            e.Property(x => x.LastUpdateTargetVersion).HasColumnName("last_update_target_version").HasColumnType("text");
             // F5 — página pública do funcionário por device
             e.Property(x => x.TransparencyToken).HasColumnName("transparency_token");
             e.HasIndex(x => x.TransparencyToken).IsUnique();

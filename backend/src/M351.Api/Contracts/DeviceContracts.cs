@@ -35,3 +35,39 @@ public record DeviceHealthSummaryResponse(
     int WithAlert,
     bool WithinBusinessHours,
     DateTimeOffset ServerTime);
+
+/// <summary>
+/// Uma versão do agente presente na frota. Version null é a máquina que ainda não reportou versão
+/// alguma (enrolada e sem primeiro lote); ela aparece na lista para o total bater com
+/// active_devices, em vez de sumir e deixar a soma inexplicável.
+/// </summary>
+public record FleetVersionRow(string? Version, int Count, bool Outdated);
+
+/// <summary>
+/// Falha RECENTE de auto-update num device (materializada do UPDATE_FAILED). Reason é a etapa
+/// canônica que reprovou: download | hash | signature | install. Nunca há texto livre aqui.
+/// </summary>
+public record UpdateFailureRow(
+    Guid DeviceId,
+    string Hostname,
+    string? DisplayName,
+    string Reason,
+    string? TargetVersion,
+    DateTimeOffset OccurredAt);
+
+/// <summary>
+/// GET /devices/version-summary: distribuição de versões do agente na FROTA INTEIRA (devices
+/// active) mais as falhas de atualização recentes, ambas computadas no servidor, no mesmo padrão
+/// do health-summary. É a vigilância de rollout: current_version/min_version dizem para onde a
+/// frota deveria estar indo, versions diz onde ela está, e recent_failures diz em que etapa quem
+/// não chegou lá emperrou.
+/// </summary>
+public record DeviceVersionSummaryResponse(
+    int ActiveDevices,
+    string? CurrentVersion,
+    string? MinVersion,
+    IReadOnlyList<FleetVersionRow> Versions,
+    int UpdateFailures,
+    IReadOnlyList<UpdateFailureRow> RecentFailures,
+    int UpdateFailureWindowDays,
+    DateTimeOffset ServerTime);
