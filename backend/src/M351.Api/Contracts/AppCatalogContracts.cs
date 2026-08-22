@@ -19,6 +19,11 @@ public sealed record AppCatalogListResponse(
 /// Métricas da janela dos últimos 30 dias no fuso do tenant; category null = não categorizado.
 /// JsonPropertyName explícito nos campos _30d: a SnakeCaseLower do .NET não separa dígito de
 /// letra ("SecondsActive30d" viraria "seconds_active30d", fora do contrato).
+///
+/// default_category (F1.1) é a SUGESTÃO do dicionário brasileiro (app_catalog.default_category,
+/// nome canônico de categoria), null para app sem curadoria. É só sugestão: quem decide é o
+/// tenant em category. O portal usa os dois para oferecer "aplicar sugestões" em lote
+/// (PUT /app-catalog/categories/batch).
 /// </summary>
 public sealed record AppCatalogItemResponse(
     Guid AppId,
@@ -26,6 +31,7 @@ public sealed record AppCatalogItemResponse(
     string DisplayName,
     string? CustomDisplayName,
     AppCategoryResponse? Category,
+    string? DefaultCategory,
     [property: JsonPropertyName("seconds_active_30d")] long SecondsActive30d,
     [property: JsonPropertyName("device_count_30d")] int DeviceCount30d);
 
@@ -45,6 +51,27 @@ public sealed record AppCategoryMappingResponse(
     string DisplayName,
     string? CustomDisplayName,
     AppCategoryResponse? Category);
+
+// ----- PUT /api/v1/app-catalog/categories/batch (F1.1, aplicação em LOTE das sugestões) -----
+
+/// <summary>
+/// Um mapeamento do lote: app_id do catálogo global + category_id do TENANT
+/// (null = desmapear, mesma semântica do PUT individual).
+/// </summary>
+public sealed record BatchAppCategoryItem(Guid AppId, Guid? CategoryId);
+
+/// <summary>Corpo do PUT em lote: a lista de mapeamentos a aplicar de uma vez.</summary>
+public sealed record BatchAppCategoryRequest(IReadOnlyList<BatchAppCategoryItem>? Items);
+
+/// <summary>
+/// Resultado do lote: applied = quantidade de mapeamentos escritos; items = estado final de
+/// cada um (mesmo shape do PUT individual). reaggregation_days = linhas enfileiradas em
+/// dirty_days pela ÚNICA reagregação do lote (contra N reagregações de N PUTs individuais).
+/// </summary>
+public sealed record BatchAppCategoryResponse(
+    int Applied,
+    IReadOnlyList<AppCategoryMappingResponse> Items,
+    [property: JsonPropertyName("reaggregation_days")] int ReaggregationDays);
 
 // ----- GET /api/v1/app-catalog/{appId}/titles (drill-down de títulos, F3.3) -----
 

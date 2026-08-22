@@ -1,0 +1,343 @@
+# Dicionário de apps do mercado brasileiro (+351 Monitor), VERSIONADO NO REPO.
+#
+# Formato: process_name;display_name;default_category  (separador ';', UTF-8, comentários com '#')
+#
+# REGRAS INEGOCIÁVEIS desta lista:
+#  - process_name SEMPRE minúsculo e sem espaços nas bordas: é a chave de app_catalog e o
+#    agente/ingestão normalizam com Trim().ToLowerInvariant() (Win32ForegroundWindowQuery e
+#    IngestService). Uma linha em maiúsculas nunca casaria com o uso real;
+#  - default_category usa EXATAMENTE um dos nomes canônicos semeados por tenant em
+#    CreateOrgCommand.SeedCategoriesAsync. Nome fora da lista é sugestão órfã (o portal não
+#    encontraria a categoria do tenant) e o seeder descarta a linha com log de erro;
+#  - a sugestão é SEMPRE apenas sugestão: quem decide é o tenant (tenant_app_categories).
+#    O seeder nunca escreve mapeamento de tenant nem custom_display_name;
+#  - na dúvida, o app NÃO recebe categoria de classificação negativa. Ferramentas de uso
+#    ambíguo (mensageiros, players, emuladores de uso misto) ficam em categoria relacionada
+#    ao trabalho ou neutra: o produto não acusa ninguém, apenas organiza o catálogo.
+#
+# Categorias canônicas válidas:
+#   Desenvolvimento | Escritório/Documentos | Comunicação | Reuniões | Navegação | Design |
+#   ERP/Sistemas internos | Sistema/Utilitários | Música/Streaming de áudio |
+#   Não categorizado | Jogos | Redes sociais | Vídeo/Streaming
+
+# ----------------------------------------------------------------- navegadores
+chrome.exe;Google Chrome;Navegação
+chrome_proxy.exe;Aplicativo web (Chrome);Navegação
+msedge.exe;Microsoft Edge;Navegação
+firefox.exe;Mozilla Firefox;Navegação
+opera.exe;Opera;Navegação
+opera_gx.exe;Opera GX;Navegação
+brave.exe;Brave;Navegação
+vivaldi.exe;Vivaldi;Navegação
+chromium.exe;Chromium;Navegação
+iexplore.exe;Internet Explorer;Navegação
+
+# ----------------------------------------------------------------- escritório e documentos
+winword.exe;Microsoft Word;Escritório/Documentos
+excel.exe;Microsoft Excel;Escritório/Documentos
+powerpnt.exe;Microsoft PowerPoint;Escritório/Documentos
+onenote.exe;Microsoft OneNote;Escritório/Documentos
+onenoteim.exe;OneNote para Windows;Escritório/Documentos
+msaccess.exe;Microsoft Access;Escritório/Documentos
+mspub.exe;Microsoft Publisher;Escritório/Documentos
+visio.exe;Microsoft Visio;Escritório/Documentos
+winproj.exe;Microsoft Project;Escritório/Documentos
+soffice.exe;LibreOffice;Escritório/Documentos
+soffice.bin;LibreOffice;Escritório/Documentos
+swriter.exe;LibreOffice Writer;Escritório/Documentos
+scalc.exe;LibreOffice Calc;Escritório/Documentos
+simpress.exe;LibreOffice Impress;Escritório/Documentos
+wps.exe;WPS Writer;Escritório/Documentos
+et.exe;WPS Planilhas;Escritório/Documentos
+wpp.exe;WPS Apresentações;Escritório/Documentos
+notepad.exe;Bloco de Notas;Escritório/Documentos
+wordpad.exe;WordPad;Escritório/Documentos
+acrord32.exe;Adobe Acrobat Reader;Escritório/Documentos
+acrobat.exe;Adobe Acrobat;Escritório/Documentos
+foxitreader.exe;Foxit Reader;Escritório/Documentos
+foxitpdfreader.exe;Foxit PDF Reader;Escritório/Documentos
+foxitphantompdf.exe;Foxit PDF Editor;Escritório/Documentos
+sumatrapdf.exe;SumatraPDF;Escritório/Documentos
+pdfxcview.exe;PDF-XChange Viewer;Escritório/Documentos
+pdfxedit.exe;PDF-XChange Editor;Escritório/Documentos
+nitropdf.exe;Nitro PDF;Escritório/Documentos
+onedrive.exe;OneDrive;Escritório/Documentos
+dropbox.exe;Dropbox;Escritório/Documentos
+googledrivesync.exe;Google Drive;Escritório/Documentos
+googledrivefs.exe;Google Drive;Escritório/Documentos
+evernote.exe;Evernote;Escritório/Documentos
+notion.exe;Notion;Escritório/Documentos
+obsidian.exe;Obsidian;Escritório/Documentos
+todoist.exe;Todoist;Escritório/Documentos
+trello.exe;Trello;Escritório/Documentos
+
+# ----------------------------------------------------------------- comunicação
+outlook.exe;Microsoft Outlook;Comunicação
+olk.exe;Novo Outlook;Comunicação
+hxoutlook.exe;Correio do Windows;Comunicação
+thunderbird.exe;Mozilla Thunderbird;Comunicação
+emclient.exe;eM Client;Comunicação
+mailbird.exe;Mailbird;Comunicação
+bluemail.exe;BlueMail;Comunicação
+zimbradesktop.exe;Zimbra Desktop;Comunicação
+whatsapp.exe;WhatsApp Desktop;Comunicação
+telegram.exe;Telegram Desktop;Comunicação
+signal.exe;Signal;Comunicação
+slack.exe;Slack;Comunicação
+discord.exe;Discord;Comunicação
+mattermost.exe;Mattermost;Comunicação
+rocketchat.exe;Rocket.Chat;Comunicação
+skype.exe;Skype;Comunicação
+lync.exe;Skype for Business;Comunicação
+
+# ----------------------------------------------------------------- reuniões
+teams.exe;Microsoft Teams;Reuniões
+ms-teams.exe;Microsoft Teams;Reuniões
+zoom.exe;Zoom;Reuniões
+zoomworkplace.exe;Zoom Workplace;Reuniões
+webex.exe;Cisco Webex;Reuniões
+ciscocollabhost.exe;Cisco Webex;Reuniões
+googlemeet.exe;Google Meet;Reuniões
+gotomeeting.exe;GoToMeeting;Reuniões
+zoiper.exe;Zoiper (softphone);Reuniões
+3cxdesktopapp.exe;3CX;Reuniões
+microsip.exe;MicroSIP (softphone);Reuniões
+
+# ----------------------------------------------------------------- desenvolvimento
+devenv.exe;Visual Studio;Desenvolvimento
+code.exe;Visual Studio Code;Desenvolvimento
+cursor.exe;Cursor;Desenvolvimento
+windsurf.exe;Windsurf;Desenvolvimento
+rider64.exe;JetBrains Rider;Desenvolvimento
+idea64.exe;IntelliJ IDEA;Desenvolvimento
+pycharm64.exe;PyCharm;Desenvolvimento
+webstorm64.exe;WebStorm;Desenvolvimento
+phpstorm64.exe;PhpStorm;Desenvolvimento
+studio64.exe;Android Studio;Desenvolvimento
+eclipse.exe;Eclipse;Desenvolvimento
+sublime_text.exe;Sublime Text;Desenvolvimento
+notepad++.exe;Notepad++;Desenvolvimento
+gvim.exe;Vim;Desenvolvimento
+bds.exe;Delphi / RAD Studio;Desenvolvimento
+delphi32.exe;Delphi;Desenvolvimento
+ssms.exe;SQL Server Management Studio;Desenvolvimento
+sqldeveloper.exe;Oracle SQL Developer;Desenvolvimento
+dbeaver.exe;DBeaver;Desenvolvimento
+pgadmin4.exe;pgAdmin;Desenvolvimento
+mysqlworkbench.exe;MySQL Workbench;Desenvolvimento
+postman.exe;Postman;Desenvolvimento
+docker desktop.exe;Docker Desktop;Desenvolvimento
+pwsh.exe;PowerShell 7;Desenvolvimento
+windowsterminal.exe;Terminal do Windows;Desenvolvimento
+wt.exe;Terminal do Windows;Desenvolvimento
+wsl.exe;WSL;Desenvolvimento
+mintty.exe;Git Bash;Desenvolvimento
+bash.exe;Bash;Desenvolvimento
+putty.exe;PuTTY;Desenvolvimento
+winscp.exe;WinSCP;Desenvolvimento
+filezilla.exe;FileZilla;Desenvolvimento
+sourcetree.exe;Sourcetree;Desenvolvimento
+gitkraken.exe;GitKraken;Desenvolvimento
+githubdesktop.exe;GitHub Desktop;Desenvolvimento
+tortoisegitproc.exe;TortoiseGit;Desenvolvimento
+node.exe;Node.js;Desenvolvimento
+python.exe;Python;Desenvolvimento
+pythonw.exe;Python;Desenvolvimento
+java.exe;Java;Desenvolvimento
+javaw.exe;Aplicativo Java;Desenvolvimento
+dotnet.exe;.NET CLI;Desenvolvimento
+unity.exe;Unity Editor;Desenvolvimento
+
+# ----------------------------------------------------------------- ERPs, contábeis e fiscais brasileiros
+smartclient.exe;TOTVS Protheus (SmartClient);ERP/Sistemas internos
+totvssmartclient.exe;TOTVS SmartClient;ERP/Sistemas internos
+smartclient_x64.exe;TOTVS Protheus (SmartClient 64);ERP/Sistemas internos
+appserver.exe;TOTVS Application Server;ERP/Sistemas internos
+protheus.exe;TOTVS Protheus;ERP/Sistemas internos
+prowin32.exe;TOTVS Datasul (Progress);ERP/Sistemas internos
+prowin.exe;TOTVS Datasul (Progress);ERP/Sistemas internos
+rm.exe;TOTVS RM;ERP/Sistemas internos
+winthor.exe;TOTVS Winthor;ERP/Sistemas internos
+sankhyaw.exe;Sankhya;ERP/Sistemas internos
+benner.exe;Benner;ERP/Sistemas internos
+senior.exe;Senior Sistemas;ERP/Sistemas internos
+contabil.exe;Domínio Contábil;ERP/Sistemas internos
+escritafiscal.exe;Domínio Escrita Fiscal;ERP/Sistemas internos
+folha.exe;Domínio Folha;ERP/Sistemas internos
+honorarios.exe;Domínio Honorários;ERP/Sistemas internos
+dominioweb.exe;Domínio Web;ERP/Sistemas internos
+alterdata.exe;Alterdata;ERP/Sistemas internos
+bimer.exe;Alterdata Bimer;ERP/Sistemas internos
+shop.exe;Alterdata Shop;ERP/Sistemas internos
+sage.exe;Sage;ERP/Sistemas internos
+folhamatic.exe;Folhamatic (Sage);ERP/Sistemas internos
+questor.exe;Questor Contábil;ERP/Sistemas internos
+contmatic.exe;Contmatic Phoenix;ERP/Sistemas internos
+phoenix.exe;Contmatic Phoenix;ERP/Sistemas internos
+mastermaq.exe;Mastermaq;ERP/Sistemas internos
+prosoft.exe;Prosoft;ERP/Sistemas internos
+fortes.exe;Fortes Tecnologia;ERP/Sistemas internos
+nasajon.exe;Nasajon;ERP/Sistemas internos
+bling.exe;Bling;ERP/Sistemas internos
+omie.exe;Omie;ERP/Sistemas internos
+tiny.exe;Tiny ERP;ERP/Sistemas internos
+conta azul.exe;Conta Azul;ERP/Sistemas internos
+linxpos.exe;Linx POS;ERP/Sistemas internos
+saplogon.exe;SAP Logon;ERP/Sistemas internos
+saplgpad.exe;SAP GUI;ERP/Sistemas internos
+receitanet.exe;ReceitaNet;ERP/Sistemas internos
+irpf.exe;IRPF (Receita Federal);ERP/Sistemas internos
+dirf.exe;DIRF;ERP/Sistemas internos
+sefip.exe;SEFIP;ERP/Sistemas internos
+conectividadesocial.exe;Conectividade Social (Caixa);ERP/Sistemas internos
+esocial.exe;eSocial;ERP/Sistemas internos
+spedcontabil.exe;SPED Contábil;ERP/Sistemas internos
+spedfiscal.exe;SPED Fiscal;ERP/Sistemas internos
+spedecf.exe;SPED ECF;ERP/Sistemas internos
+gdrais.exe;GDRAIS;ERP/Sistemas internos
+emissornfe.exe;Emissor de NF-e;ERP/Sistemas internos
+aplicativobb.exe;Banco do Brasil;ERP/Sistemas internos
+sicoob.exe;Sicoob;ERP/Sistemas internos
+sicredi.exe;Sicredi;ERP/Sistemas internos
+
+# ----------------------------------------------------------------- certificado digital e segurança bancária
+warsaw.exe;Módulo de Segurança Warsaw;Sistema/Utilitários
+gbpsv.exe;Guardião (Itaú);Sistema/Utilitários
+safesign.exe;SafeSign (certificado digital);Sistema/Utilitários
+sacmonitor.exe;SafeNet Authentication Client;Sistema/Utilitários
+watchdata.exe;Watchdata (certificado digital);Sistema/Utilitários
+tokenadmin.exe;Gerenciador de Token;Sistema/Utilitários
+assinadorserpro.exe;Assinador SERPRO;Sistema/Utilitários
+assinadordigital.exe;Assinador Digital;Sistema/Utilitários
+pjeoffice.exe;PJe Office;Sistema/Utilitários
+birdid.exe;Bird ID (certificado em nuvem);Sistema/Utilitários
+
+# ----------------------------------------------------------------- sistema e utilitários de TI
+explorer.exe;Explorador de Arquivos;Sistema/Utilitários
+taskmgr.exe;Gerenciador de Tarefas;Sistema/Utilitários
+control.exe;Painel de Controle;Sistema/Utilitários
+systemsettings.exe;Configurações do Windows;Sistema/Utilitários
+mmc.exe;Console de Gerenciamento;Sistema/Utilitários
+regedit.exe;Editor de Registro;Sistema/Utilitários
+cmd.exe;Prompt de Comando;Sistema/Utilitários
+powershell.exe;Windows PowerShell;Sistema/Utilitários
+searchapp.exe;Pesquisa do Windows;Sistema/Utilitários
+calc.exe;Calculadora;Sistema/Utilitários
+microsoft.photos.exe;Fotos;Sistema/Utilitários
+snippingtool.exe;Ferramenta de Captura;Sistema/Utilitários
+sharex.exe;ShareX;Sistema/Utilitários
+greenshot.exe;Greenshot;Sistema/Utilitários
+7zfm.exe;7-Zip;Sistema/Utilitários
+winrar.exe;WinRAR;Sistema/Utilitários
+winzip32.exe;WinZip;Sistema/Utilitários
+peazip.exe;PeaZip;Sistema/Utilitários
+anydesk.exe;AnyDesk;Sistema/Utilitários
+teamviewer.exe;TeamViewer;Sistema/Utilitários
+rustdesk.exe;RustDesk;Sistema/Utilitários
+supremo.exe;Supremo Remoto;Sistema/Utilitários
+mstsc.exe;Área de Trabalho Remota;Sistema/Utilitários
+vncviewer.exe;VNC Viewer;Sistema/Utilitários
+msedgewebview2.exe;WebView2 (aplicativo web);Sistema/Utilitários
+ccleaner64.exe;CCleaner;Sistema/Utilitários
+everything.exe;Everything (busca);Sistema/Utilitários
+wireshark.exe;Wireshark;Sistema/Utilitários
+vmware.exe;VMware Workstation;Sistema/Utilitários
+virtualbox.exe;VirtualBox;Sistema/Utilitários
+vmconnect.exe;Hyper-V;Sistema/Utilitários
+avastui.exe;Avast;Sistema/Utilitários
+avgui.exe;AVG;Sistema/Utilitários
+avp.exe;Kaspersky;Sistema/Utilitários
+mbam.exe;Malwarebytes;Sistema/Utilitários
+
+# ----------------------------------------------------------------- design e produção de conteúdo
+photoshop.exe;Adobe Photoshop;Design
+illustrator.exe;Adobe Illustrator;Design
+indesign.exe;Adobe InDesign;Design
+adobe premiere pro.exe;Adobe Premiere Pro;Design
+afterfx.exe;Adobe After Effects;Design
+lightroom.exe;Adobe Lightroom;Design
+xd.exe;Adobe XD;Design
+coreldrw.exe;CorelDRAW;Design
+corelpp.exe;Corel PHOTO-PAINT;Design
+figma.exe;Figma;Design
+canva.exe;Canva;Design
+inkscape.exe;Inkscape;Design
+gimp.exe;GIMP;Design
+gimp-2.10.exe;GIMP;Design
+krita.exe;Krita;Design
+blender.exe;Blender;Design
+sketchup.exe;SketchUp;Design
+acad.exe;AutoCAD;Design
+revit.exe;Autodesk Revit;Design
+sldworks.exe;SolidWorks;Design
+resolve.exe;DaVinci Resolve;Design
+capcut.exe;CapCut;Design
+camtasia.exe;Camtasia;Design
+obs64.exe;OBS Studio;Design
+audacity.exe;Audacity;Design
+mspaint.exe;Paint;Design
+
+# ----------------------------------------------------------------- jogos e lojas de jogos
+steam.exe;Steam;Jogos
+steamwebhelper.exe;Steam (navegador interno);Jogos
+epicgameslauncher.exe;Epic Games Launcher;Jogos
+battle.net.exe;Battle.net;Jogos
+eadesktop.exe;EA app;Jogos
+origin.exe;EA Origin;Jogos
+upc.exe;Ubisoft Connect;Jogos
+uplay.exe;Ubisoft Connect;Jogos
+riotclientservices.exe;Riot Client;Jogos
+leagueclient.exe;League of Legends;Jogos
+league of legends.exe;League of Legends;Jogos
+valorant.exe;VALORANT;Jogos
+valorant-win64-shipping.exe;VALORANT;Jogos
+cs2.exe;Counter-Strike 2;Jogos
+csgo.exe;Counter-Strike: Global Offensive;Jogos
+dota2.exe;Dota 2;Jogos
+fortniteclient-win64-shipping.exe;Fortnite;Jogos
+minecraft.exe;Minecraft;Jogos
+minecraftlauncher.exe;Minecraft Launcher;Jogos
+robloxplayerbeta.exe;Roblox;Jogos
+gta5.exe;Grand Theft Auto V;Jogos
+fivem.exe;FiveM (GTA RP);Jogos
+tibia.exe;Tibia;Jogos
+gameloop.exe;GameLoop;Jogos
+bluestacks.exe;BlueStacks;Jogos
+hd-player.exe;BlueStacks;Jogos
+ldplayer.exe;LDPlayer;Jogos
+xbox.exe;Xbox;Jogos
+
+# ----------------------------------------------------------------- redes sociais
+tiktok.exe;TikTok;Redes sociais
+instagram.exe;Instagram;Redes sociais
+facebook.exe;Facebook;Redes sociais
+messenger.exe;Messenger;Redes sociais
+twitter.exe;X (Twitter);Redes sociais
+linkedin.exe;LinkedIn;Redes sociais
+
+# ----------------------------------------------------------------- vídeo e streaming
+netflix.exe;Netflix;Vídeo/Streaming
+primevideo.exe;Prime Video;Vídeo/Streaming
+disneyplus.exe;Disney+;Vídeo/Streaming
+globoplay.exe;Globoplay;Vídeo/Streaming
+hbomax.exe;Max;Vídeo/Streaming
+youtube.exe;YouTube;Vídeo/Streaming
+twitch.exe;Twitch;Vídeo/Streaming
+video.ui.exe;Filmes e TV;Vídeo/Streaming
+vlc.exe;VLC media player;Vídeo/Streaming
+wmplayer.exe;Windows Media Player;Vídeo/Streaming
+potplayermini64.exe;PotPlayer;Vídeo/Streaming
+mpc-hc64.exe;MPC-HC;Vídeo/Streaming
+
+# ----------------------------------------------------------------- música e áudio
+spotify.exe;Spotify;Música/Streaming de áudio
+deezer.exe;Deezer;Música/Streaming de áudio
+itunes.exe;iTunes;Música/Streaming de áudio
+applemusic.exe;Apple Music;Música/Streaming de áudio
+music.ui.exe;Groove Música;Música/Streaming de áudio
+tidal.exe;TIDAL;Música/Streaming de áudio
+amazonmusic.exe;Amazon Music;Música/Streaming de áudio
+youtubemusic.exe;YouTube Music;Música/Streaming de áudio
+winamp.exe;Winamp;Música/Streaming de áudio
+aimp.exe;AIMP;Música/Streaming de áudio
+foobar2000.exe;foobar2000;Música/Streaming de áudio

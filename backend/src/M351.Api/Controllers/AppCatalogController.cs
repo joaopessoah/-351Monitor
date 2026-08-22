@@ -22,6 +22,11 @@ namespace M351.Api.Controllers;
 /// PUT do mapeamento reagrega os últimos 30 dias e audita update_category na MESMA transação
 /// da mutação (o mapeamento vale para o tenant inteiro, spec Seção 8.6). Drill-down de títulos
 /// SEMPRE audita view_report (dado pessoal, spec linha 1004).
+///
+/// F1.1, curadoria assistida: a listagem expõe default_category (SUGESTÃO do dicionário
+/// brasileiro aplicado pelo AppDictionarySeeder) e o PUT /categories/batch aplica N sugestões
+/// numa ÚNICA transação com UMA ÚNICA reagregação (N PUTs individuais custariam N reagregações
+/// de 30 dias). A sugestão nunca é aplicada automaticamente: quem decide é o tenant.
 /// </summary>
 [Route("api/v1/app-catalog")]
 [Authorize] // Viewer+ nas leituras; o PUT exige AdminPlus
@@ -35,6 +40,12 @@ public class AppCatalogController(
 
     public const int TopTitles = 20;
     private const int MaxCustomNameLength = 200;
+
+    /// <summary>
+    /// Teto do PUT em lote: mesmo teto da listagem (500), o lote nasce da tela que lista no
+    /// máximo 500 apps, então "aplicar todas as sugestões da tela" sempre cabe em uma chamada.
+    /// </summary>
+    public const int MaxBatchItems = MaxItems;
 
     /// <summary>
     /// GET /api/v1/app-catalog?q=&amp;uncategorized=true (Viewer): recorte do tenant, ordenado
@@ -76,7 +87,8 @@ public class AppCatalogController(
                 UNION
                 SELECT tac.app_id FROM tenant_app_categories tac WHERE tac.tenant_id = @TenantId
             )
-            SELECT a.id AS app_id, a.process_name, a.display_name, tac.custom_display_name,
+            SELECT a.id AS app_id, a.process_name, a.display_name, a.default_category,
+                   tac.custom_display_name,
                    c.id AS category_id, c.name AS category_name,
                    c.classification AS category_classification, c.color AS category_color,
                    COALESCE(u.seconds_active_30d, 0) AS seconds_active_30d,
@@ -113,6 +125,7 @@ public class AppCatalogController(
         var items = rows.Select(r => new AppCatalogItemResponse(
                 r.AppId, r.ProcessName, r.DisplayName, r.CustomDisplayName,
                 ToCategory(r.CategoryId, r.CategoryName, r.CategoryClassification, r.CategoryColor),
+                r.DefaultCategory,
                 r.SecondsActive30d, r.DeviceCount30d))
             .ToList();
 
@@ -201,6 +214,135 @@ public class AppCatalogController(
             category is null
                 ? null
                 : new AppCategoryResponse(category.Id, category.Name, category.Classification, category.Color)));
+    }
+
+    /// <summary>
+    /// PUT /api/v1/app-catalog/categories/batch (Admin): aplica N mapeamentos app→categoria
+    /// numa ÚNICA transação, com UMA ÚNICA reagregação de 30 dias no fim (F1.1).
+    ///
+    /// POR QUE ESTE ENDPOINT EXISTE: o PUT individual reagrega os últimos 30 dias a cada
+    /// chamada, então aplicar as sugestões do dicionário app por app custaria N reagregações
+    /// (N × varredura de activity_intervals + N × recomputo dos baldes do tenant). No lote a
+    /// reagregação roda UMA vez, na mesma transação das escritas: ou todos os mapeamentos e a
+    /// reagregação entram, ou nenhum entra.
+    ///
+    /// Semântica idêntica ao PUT individual, item a item: category_id null desmapeia (a linha
+    /// sai inteira, custom_display_name junto); app inexistente no catálogo global e categoria
+    /// inexistente ou de outro tenant respondem 404 (nunca 403, Princípio 4) e NADA é aplicado;
+    /// custom_display_name NÃO faz parte do lote (renomear é ato individual da tela de detalhe).
+    /// Auditoria update_category por app, na MESMA transação (uma linha por app, igual ao PUT).
+    /// </summary>
+    [HttpPut("categories/batch")]
+    [Authorize(Policy = AuthConstants.PolicyAdminPlus)]
+    public async Task<IActionResult> SetCategoriesBatch(
+        [FromBody] BatchAppCategoryRequest? request, CancellationToken ct)
+    {
+        if (request?.Items is not { Count: > 0 } items)
+            return ProblemResponse(StatusCodes.Status400BadRequest,
+                "Corpo inválido: items deve conter ao menos um mapeamento {app_id, category_id}.");
+
+        if (items.Count > MaxBatchItems)
+            return ProblemResponse(StatusCodes.Status400BadRequest,
+                $"Lote muito grande: máximo de {MaxBatchItems} mapeamentos por chamada.");
+
+        // app_id repetido no mesmo lote seria ambíguo (qual categoria vence?), 400 explícito
+        if (items.Select(i => i.AppId).Distinct().Count() != items.Count)
+            return ProblemResponse(StatusCodes.Status400BadRequest,
+                "Lote inválido: há app_id repetido em items.");
+
+        var tenantId = Auth.CurrentUser.TenantId(User);
+        var userId = Auth.CurrentUser.UserId(User);
+
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+
+        // ----- validação ANTES de abrir a transação: um id ruim não aplica NADA do lote -----
+        var appIds = items.Select(i => i.AppId).ToArray();
+        var apps = (await connection.QueryAsync<AppRow>(new CommandDefinition(
+            "SELECT id AS app_id, process_name, display_name FROM app_catalog WHERE id = ANY(@AppIds)",
+            new { AppIds = appIds }, cancellationToken: ct))).ToDictionary(a => a.AppId);
+        if (apps.Count != appIds.Length) return NotFoundProblem(); // app desconhecido do catálogo
+
+        var categoryIds = items.Where(i => i.CategoryId is not null).Select(i => i.CategoryId!.Value).Distinct().ToArray();
+        var categories = (await connection.QueryAsync<CategoryRefRow>(new CommandDefinition(
+            "SELECT id, name, classification, color FROM categories WHERE tenant_id = @TenantId AND id = ANY(@Ids)",
+            new { TenantId = tenantId, Ids = categoryIds }, cancellationToken: ct))).ToDictionary(c => c.Id);
+        if (categories.Count != categoryIds.Length) return NotFoundProblem(); // inexistente OU de outro tenant
+
+        // estado ANTERIOR de cada app (de→para da trilha), numa leitura só
+        var previous = (await connection.QueryAsync<MappingRow>(new CommandDefinition(
+            """
+            SELECT app_id, category_id, custom_display_name
+            FROM tenant_app_categories WHERE tenant_id = @TenantId AND app_id = ANY(@AppIds)
+            """,
+            new { TenantId = tenantId, AppIds = appIds }, cancellationToken: ct)))
+            .ToDictionary(r => r.AppId);
+
+        var actorIp = HttpContext.Connection.RemoteIpAddress;
+        int reaggregationDays;
+
+        await using var tx = await connection.BeginTransactionAsync(ct);
+
+        foreach (var item in items)
+        {
+            if (item.CategoryId is null)
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    "DELETE FROM tenant_app_categories WHERE tenant_id = @TenantId AND app_id = @AppId",
+                    new { TenantId = tenantId, AppId = item.AppId }, transaction: tx, cancellationToken: ct));
+            }
+            else
+            {
+                // custom_display_name fica FORA do lote: o DO UPDATE só troca category_id, então
+                // um nome custom definido antes pelo PUT individual SOBREVIVE ao lote (a decisão
+                // do cliente sempre vence). Em linha nova ele nasce NULL.
+                await connection.ExecuteAsync(new CommandDefinition(
+                    """
+                    INSERT INTO tenant_app_categories (tenant_id, app_id, category_id, custom_display_name)
+                    VALUES (@TenantId, @AppId, @CategoryId, NULL)
+                    ON CONFLICT (tenant_id, app_id) DO UPDATE
+                    SET category_id = EXCLUDED.category_id
+                    """,
+                    new { TenantId = tenantId, AppId = item.AppId, CategoryId = item.CategoryId },
+                    transaction: tx, cancellationToken: ct));
+            }
+
+            // uma linha de trilha por app (mesmo detail do PUT individual)
+            await AuditWriter.AddInTransactionAsync(connection, tx, tenantId, AuditActions.UpdateCategory,
+                actorUserId: userId,
+                actorIp: actorIp,
+                targetType: "app", targetId: item.AppId,
+                detailJson: JsonSerializer.Serialize(new
+                {
+                    app_id = item.AppId,
+                    process_name = apps[item.AppId].ProcessName,
+                    from_category_id = previous.TryGetValue(item.AppId, out var from) ? from.CategoryId : (Guid?)null,
+                    to_category_id = item.CategoryId,
+                    batch = true,
+                }), ct: ct);
+        }
+
+        // UMA reagregação para o lote inteiro (o ganho do endpoint), na mesma transação
+        reaggregationDays = await ReaggregationRequester.RequestLast30DaysAsync(connection, tx, tenantId, ct);
+
+        await tx.CommitAsync(ct);
+
+        var applied = items.Select(item =>
+        {
+            var app = apps[item.AppId];
+            var category = item.CategoryId is { } id ? categories[id] : null;
+            // custom_display_name: o lote não escreve nem apaga nomes custom, o valor exibido
+            // é o que já existia (null quando o item desmapeou, pois a linha inteira saiu)
+            var customName = item.CategoryId is not null && previous.TryGetValue(item.AppId, out var before)
+                ? before.CustomDisplayName
+                : null;
+            return new AppCategoryMappingResponse(
+                app.AppId, app.ProcessName, app.DisplayName, customName,
+                category is null
+                    ? null
+                    : new AppCategoryResponse(category.Id, category.Name, category.Classification, category.Color));
+        }).ToList();
+
+        return Ok(new BatchAppCategoryResponse(applied.Count, applied, reaggregationDays));
     }
 
     /// <summary>
@@ -307,6 +449,7 @@ public class AppCatalogController(
         Guid AppId,
         string ProcessName,
         string DisplayName,
+        string? DefaultCategory,
         string? CustomDisplayName,
         Guid? CategoryId,
         string? CategoryName,
@@ -318,6 +461,9 @@ public class AppCatalogController(
     private sealed record AppRow(Guid AppId, string ProcessName, string DisplayName);
 
     private sealed record CategoryRefRow(Guid Id, string Name, short Classification, string? Color);
+
+    /// <summary>Estado vigente de um mapeamento do tenant (leitura do de→para do lote).</summary>
+    private sealed record MappingRow(Guid AppId, Guid CategoryId, string? CustomDisplayName);
 
     private sealed record TitleTotalsRow(long MaskedSeconds, long TotalSeconds);
 

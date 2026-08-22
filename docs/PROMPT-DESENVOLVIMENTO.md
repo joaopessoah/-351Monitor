@@ -817,7 +817,8 @@ RBAC MVP: **Owner ⊃ Admin ⊃ Viewer** (3 papéis; enum extensível — Manage
 | `GET /reports/usage?from&to&group_by=app\|category\|device\|device_user` | Viewer | tabular paginado |
 | `POST /exports` · `GET /exports/{id}` | Viewer | CSV assíncrono (worker; máx. 500 k linhas; UTF-8 com BOM, separador `;`); auditado |
 | `GET/POST /categories` · `PATCH/DELETE /categories/{id}` | Admin | CRUD; dispara reagregação 30 dias |
-| `GET /app-catalog?uncategorized=true&q` · `PUT /app-catalog/{appId}/category` | Viewer · Admin | apps vistos pelo tenant; mapeamento |
+| `GET /app-catalog?uncategorized=true&q` · `PUT /app-catalog/{appId}/category` | Viewer · Admin | apps vistos pelo tenant; mapeamento. A listagem devolve `default_category`, a SUGESTÃO do dicionário brasileiro semeado em `app_catalog` (F1.1); quem decide continua sendo o tenant |
+| `PUT /app-catalog/categories/batch` | Admin | aplica N mapeamentos app ⇒ categoria numa ÚNICA transação, com UMA única reagregação de 30 dias e auditoria `update_category` por app (F1.1). Nunca toca `custom_display_name` |
 | `GET/POST /enrollment-keys` · `DELETE /enrollment-keys/{id}` | Admin | segredo exibido UMA única vez no POST |
 | `GET /users` · `POST /users/invitations` · `PATCH /users/{id}` · `DELETE /users/{id}` | Admin (owner só por Owner) | sempre ≥ 1 Owner ativo |
 | `GET/PATCH /organization` | Viewer / Admin | leitura para qualquer papel; edição (Admin+) de transparência, business_hours e metas semanais agregadas (F5) |

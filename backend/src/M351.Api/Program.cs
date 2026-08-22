@@ -9,6 +9,7 @@ using M351.Api.RateLimiting;
 using M351.Api.Services;
 using M351.Infrastructure;
 using M351.Infrastructure.Data;
+using M351.Infrastructure.Data.AppDictionary;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -209,6 +210,14 @@ if (app.Configuration.GetValue<bool>("Database:AutoMigrate"))
 {
     using var scope = app.Services.CreateScope();
     await DatabaseInitializer.MigrateAsync(scope.ServiceProvider.GetRequiredService<M351DbContext>());
+
+    // F1.1, dicionário de apps BR: seeder IDEMPOTENTE do catálogo global (display_name
+    // amigável + default_category sugerida + curated=true). Roda junto com as migrations
+    // porque é dado de produto que evolui a cada release (uma migration aplicaria a versão
+    // daquele commit uma única vez). Jamais toca o mapeamento do tenant.
+    await new AppDictionarySeeder(
+        scope.ServiceProvider.GetRequiredService<NpgsqlDataSource>(),
+        scope.ServiceProvider.GetRequiredService<ILogger<AppDictionarySeeder>>()).RunOnceAsync();
 }
 
 // antes de QUALQUER middleware que use o IP da conexão (rate limit por IP, logs)
