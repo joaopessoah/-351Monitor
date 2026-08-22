@@ -447,6 +447,13 @@ export interface AppCatalogItem {
   display_name: string;
   custom_display_name: string | null;
   category: TopAppCategory | null;
+  /**
+   * SUGESTÃO do dicionário brasileiro (F1.1): nome canônico de categoria, igual ao
+   * vocabulário semeado na criação da organização, ou null para app sem curadoria.
+   * É só sugestão: quem decide é `category`. O portal traduz esse nome no id da
+   * categoria da organização para oferecer o lote.
+   */
+  default_category: string | null;
   seconds_active_30d: number;
   device_count_30d: number;
 }
@@ -465,6 +472,42 @@ export interface AppCategoryPutRequest {
   category_id: string | null;
   custom_display_name?: string | null;
 }
+
+/**
+ * Item do lote `PUT /app-catalog/categories/batch` - mesma semântica do PUT individual,
+ * category_id null desmapeia. custom_display_name fica de fora do lote: renomear é ato
+ * individual, e o nome custom já definido SOBREVIVE ao lote.
+ */
+export interface AppCategoryBatchItem {
+  app_id: string;
+  category_id: string | null;
+}
+
+/**
+ * Body do lote. No máximo 500 itens por chamada e sem app_id repetido (o backend
+ * responde 400 nos dois casos); app ou categoria desconhecidos respondem 404 e NADA
+ * é aplicado. Tudo numa transação, com UMA única reagregação de 30 dias.
+ */
+export interface AppCategoryBatchRequest {
+  items: AppCategoryBatchItem[];
+}
+
+/** Resposta do lote: `applied` mapeamentos escritos e o estado final de cada um. */
+export interface AppCategoryBatchResponse {
+  applied: number;
+  items: {
+    app_id: string;
+    process_name: string;
+    display_name: string;
+    custom_display_name: string | null;
+    category: TopAppCategory | null;
+  }[];
+  /** Linhas enfileiradas em dirty_days pela única reagregação do lote. */
+  reaggregation_days: number;
+}
+
+/** Teto de itens por chamada do lote (espelha AppCatalogController.MaxBatchItems). */
+export const APP_CATEGORY_BATCH_MAX = 500;
 
 /** Item de `GET /app-catalog/{appId}/titles?from&to` (top 20 títulos por tempo ativo). */
 export interface AppTitleItem {
