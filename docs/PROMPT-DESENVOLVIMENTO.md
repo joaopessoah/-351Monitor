@@ -741,11 +741,21 @@ CREATE TABLE audit_log (               -- append-only (sem UPDATE/DELETE pela ro
 
 CREATE TABLE export_jobs (             -- CSV assíncrono + exports DSR
   id uuid PRIMARY KEY, tenant_id uuid NOT NULL, requested_by uuid NOT NULL,
-  kind text NOT NULL,                  -- 'usage_csv'|'jornada_csv'|'dsr_subject'|'dsr_device'|'tenant_full'
+  kind text NOT NULL,                  -- 'usage_csv'|'jornada_csv'|'fora_horario_csv'|'dsr_subject'|'dsr_device'|'tenant_full'
   params jsonb NOT NULL,
   status text NOT NULL DEFAULT 'queued',   -- queued|running|done|failed
   file_path text, row_count int, expires_at timestamptz   -- expira em 7 dias para CSV de relatórios; 72 h para pacotes DSR
 );
+
+CREATE TABLE jornada_report_deliveries (  -- F5: costura assinatura semanal -> export -> e-mail com link
+  id uuid PRIMARY KEY, tenant_id uuid NOT NULL,
+  user_id uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  export_job_id uuid NOT NULL REFERENCES export_jobs (id) ON DELETE CASCADE,
+  week_start date NOT NULL, week_end date NOT NULL,
+  queued_at timestamptz NOT NULL, emailed_at timestamptz, gave_up_at timestamptz
+);
+-- UNIQUE (user_id, week_start) é a idempotência do job no BANCO: o trigger roda de 5 em 5 min
+-- dentro da janela das 07h e duas instâncias do worker não duplicam a entrega.
 ```
 
 ### 7.2 Retenção e particionamento (resumo executável)
@@ -856,7 +866,7 @@ Auditoria automática (middleware): toda chamada a timeline/relatórios/exports/
 | `Housekeeping` | diário | expira invitations, refresh tokens, export_jobs |
 | `WeeklyDigest` (F5) | horário | envia o resumo semanal às orgs cuja hora local é segunda 08h (multi-fuso sem um trigger por org); idempotência por `organizations.last_weekly_digest_at` |
 | `FleetAlert` (F5) | 15 min | alertas de saúde de frota por e-mail, só plano `pro`: 1 e-mail por org por ciclo, cooldown de 24 h por device+tipo (`device_alert_state`), silencioso fora do horário de trabalho da org |
-| `JornadaWeekly` (F5) | segunda 07h BRT | enfileira o export de jornada da semana anterior para quem assinou e envia o LINK (nunca anexo) |
+| `JornadaWeekly` (F5) | 5 min | enfileira o export de jornada da semana anterior nas orgs `pro` cuja hora local é segunda 07h (multi-fuso sem um trigger por org) e, no mesmo ciclo, envia o LINK do download autenticado quando o export fica pronto (NUNCA anexo); idempotência por `UNIQUE (user_id, week_start)` em `jornada_report_deliveries` |
 | `BillingSnapshot` (F5) | diário 04:00 BRT | congela os meses fechados em `device_billing_months` (idempotente, no fuso de cada tenant) |
 | `AccountHealth` (F5) | segunda 09h BRT | score interno de contas em risco por e-mail ao CS; só registrado com `Cs:AlertEmail` configurado |
 | `DemoKeepAlive` / `DemoReseed` (F5) | 60 s / domingo 04:30 BRT | mantêm a demo pública viva e re-semeada; só registrados com `Demo:Slug` configurado |

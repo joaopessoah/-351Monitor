@@ -43,4 +43,6 @@ Banco de dev: `m351_dev` (criado automaticamente pelas migrations no primeiro ru
 
 Em cima disso, a leva de melhorias da F5: recuperação de senha e recovery codes de MFA, política de coleta editável pela controladora, resumo semanal e alertas de frota por e-mail, saúde de frota server-side, cobrança mensal congelada, telas de chaves e usuários com checklist de ativação, demo pública permanente, backup off-site verificável e observabilidade (Sentry, `/readyz`, dead-man switches).
 
+A leva de continuação acrescentou três itens: painel de atividade fora do horário de trabalho (indicador de equilíbrio, nunca controle de ponto), relatório de jornada semanal por e-mail com link autenticado em vez de anexo, e o score interno de saúde de conta que avisa o CS sobre risco de churn antes da cobrança manual perceber.
+
 Pendências externas antes do primeiro cliente real: certificado de code signing (comprar com a data do piloto marcada, lead time de 1 a 3 semanas), revisão jurídica do kit LGPD/DPA e decisão da cloud gerenciada de produção. Staging: VPS Hostinger com deploy automático no push para `main`.

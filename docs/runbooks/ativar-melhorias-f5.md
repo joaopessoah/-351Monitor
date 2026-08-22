@@ -207,6 +207,37 @@ Conformidade do cliente: a saúde comercial da conta não é assunto dele.
 
 ---
 
+## 8. Painel de atividade fora do horário de trabalho
+
+Este não depende de variável de ambiente: depende de **duas configurações da organização
+cliente**, e sem elas a tela mostra uma explicação em vez de um número.
+
+1. **Horário de trabalho declarado** em `/configuracoes/organizacao` (dias da semana e hora de
+   início e fim). Sem isso o endpoint responde `horario_nao_configurado` e a tela convida a
+   configurar, em vez de fingir que o tempo fora do horário é zero.
+2. **Janela de coleta contínua** em `/configuracoes/coleta`. Se a controladora escolheu coletar
+   **somente durante o horário de trabalho**, não existe dado fora dele por construção: o
+   endpoint responde `coleta_restrita_ao_horario` e a exportação recusa com 409, para nunca
+   gerar um CSV de zeros que seria lido como "ninguém trabalha fora do horário".
+
+Onde aparece: card na Visão Geral com a semana corrente, aba
+`/relatorios/uso?aba=fora-do-horario` com o detalhe por dispositivo, e o kind de exportação
+`fora_horario_csv`.
+
+**Isto é um indicador de equilíbrio, nunca um controle de ponto.** O número soma apenas tempo
+**ativo** fora da janela declarada, no fuso do tenant. Máquina ligada e ociosa às 22h não entra,
+justamente para o indicador não inflar e virar leitura de jornada estendida. Não existe coluna
+de excedente, saldo nem comparação com carga horária esperada, e o disclaimer da Portaria 671
+acompanha a tela e a última linha do CSV. Ao apresentar para o cliente, trate como conversa de
+saúde de equipe, jamais como insumo de hora extra ou banco de horas.
+
+Uma divergência conhecida e esperada: o tempo ativo deste painel sai de `activity_intervals` e
+o da aba de Uso ao lado sai dos agregados diários, então os dois podem diferir por poucos
+segundos no mesmo recorte. O percentual é internamente consistente porque numerador e
+denominador saem da mesma fonte.
+
+---
+
 ## Ordem recomendada
 
 1. Seção 1 inteira (backup, restore, monitoramento). Antes do primeiro agente em cliente.
@@ -215,3 +246,4 @@ Conformidade do cliente: a saúde comercial da conta não é assunto dele.
 4. Seção 4 (GHCR) antes de operar produção com clientes pagantes.
 5. Seções 5 e 6 no dia do certificado e na assinatura do primeiro DPA.
 6. Seção 7 quando o piloto começar.
+7. Seção 8 no onboarding de cada cliente, junto com a decisão da janela de coleta.
