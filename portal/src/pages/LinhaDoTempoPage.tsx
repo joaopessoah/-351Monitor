@@ -132,10 +132,17 @@ export function LinhaDoTempoPage() {
   const [windowMode, setWindowMode] = useUrlState(WINDOW_CODEC);
 
   // Visão default sem ?view= na URL: preferência salva do navegador; sem
-  // preferência, canvas. Congelada no mount (o codec precisa ser estável).
+  // preferência, telas estreitas (até 768px) abrem direto na tabela - o canvas
+  // depende de hover fino. Congelada no mount (o codec precisa ser estável).
   const [defaultView] = useState<TimelineView>(() => {
     const stored = readPref(PREF_TIMELINE_VIEW);
-    return stored === "table" || stored === "canvas" ? stored : "canvas";
+    if (stored === "table" || stored === "canvas") return stored;
+    try {
+      if (window.matchMedia("(max-width: 768px)").matches) return "table";
+    } catch {
+      // matchMedia indisponível: mantém o default de desktop.
+    }
+    return "canvas";
   });
   const viewCodec = useMemo<UrlStateCodec<TimelineView>>(
     () => ({

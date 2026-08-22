@@ -11,7 +11,7 @@
 // =============================================================================
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { AlertTriangle } from "lucide-react";
 import type { TeamTimelineLane, TimelineInterval } from "@/lib/types";
 import { formatDuration, formatHm, gmtLabel, stateLabels } from "@/lib/format";
@@ -94,6 +94,9 @@ export function TeamTimelineCanvas({
 }: TeamTimelineCanvasProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Instante do último toque: o click sintetizado logo após um tap é ignorado
+  // (o tap serve ao tooltip; navegar por toque fica nos botões de rótulo).
+  const lastTouchMsRef = useRef(0);
   const [width, setWidth] = useState(0);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const [hoverLane, setHoverLane] = useState<number | null>(null);
@@ -301,7 +304,17 @@ export function TeamTimelineCanvas({
     setTooltip({ x, y, lane, iv: hit.iv });
   }
 
+  // Toque (melhoria mobile): o tap segue o MESMO caminho do onMouseMove - tap
+  // num intervalo abre o tooltip; um segundo tap fora fecha. Nada de gestos.
+  function handlePointerDown(e: ReactPointerEvent<HTMLCanvasElement>): void {
+    if (e.pointerType !== "touch") return;
+    lastTouchMsRef.current = Date.now();
+    handleMouseMove(e);
+  }
+
   function handleClick(e: ReactMouseEvent<HTMLCanvasElement>): void {
+    // Click sintetizado de um toque recente: não navega (ver lastTouchMsRef).
+    if (Date.now() - lastTouchMsRef.current < 700) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const laneIdx = laneIndexAt(e.clientY - rect.top);
     if (laneIdx !== null) onSelectDevice(indexedLanes[laneIdx].lane.device_id);
@@ -353,6 +366,7 @@ export function TeamTimelineCanvas({
           style={{ height }}
           onMouseMove={handleMouseMove}
           onMouseLeave={clearHover}
+          onPointerDown={handlePointerDown}
           onClick={handleClick}
         />
         {tooltip !== null && (
