@@ -6,7 +6,10 @@
 	email {$ACME_EMAIL}
 }
 
-{$STAGING_DOMAIN} {
+# O domínio da demo pública (F5) é servido pelo MESMO site: mesma API/SPA, o
+# isolamento é o multi-tenant (tenant demo semeado pelo DemoSeeder). Sem
+# DEMO_DOMAIN configurado, o default demo.localhost fica inerte (cert interno).
+{$STAGING_DOMAIN}, {$DEMO_DOMAIN:demo.localhost} {
 	encode zstd gzip
 
 	# Headers de segurança na borda (valem para a API e para a SPA do portal)

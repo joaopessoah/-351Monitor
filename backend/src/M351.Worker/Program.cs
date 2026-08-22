@@ -70,6 +70,12 @@ builder.Services.AddSingleton<HousekeepingService>(sp => new HousekeepingService
 // E-mail no worker (F5): digest semanal e alertas usam o MESMO seletor Dev/Smtp da API
 // (Email__Provider etc. já plumbados no compose). Portal:BaseUrl monta os links do e-mail.
 builder.Services.AddM351Email(builder.Configuration);
+
+// Demo pública (F5): o reseed semanal usa o DemoSeeder, que precisa do hasher de senha
+builder.Services.Configure<M351.Infrastructure.Security.PasswordHashingOptions>(
+    builder.Configuration.GetSection(M351.Infrastructure.Security.PasswordHashingOptions.SectionName));
+builder.Services.AddSingleton<M351.Infrastructure.Security.IPasswordHasher,
+    M351.Infrastructure.Security.Argon2PasswordHasher>();
 builder.Services.AddSingleton<WeeklyDigestService>(sp => new WeeklyDigestService(
     sp.GetRequiredService<NpgsqlDataSource>(),
     sp.GetRequiredService<IEmailSender>(),
@@ -141,6 +147,27 @@ builder.Services.AddQuartz(quartz =>
         .ForJob(digestKey)
         .WithIdentity("weekly-digest-hourly")
         .WithCronSchedule("0 5 * ? * *"));
+
+    // Demo pública permanente (F5): keep-alive 60 s + reseed semanal (domingo 04:30 BRT,
+    // apaga e re-semeia o tenant demo, limpando o audit_log dos acessos públicos).
+    // Sem Demo:Slug configurado (env Demo__Slug) os jobs NEM SÃO REGISTRADOS.
+    if (!string.IsNullOrWhiteSpace(builder.Configuration["Demo:Slug"]))
+    {
+        var demoKeepAliveKey = new JobKey("demo-keep-alive");
+        quartz.AddJob<DemoKeepAliveJob>(options => options.WithIdentity(demoKeepAliveKey));
+        quartz.AddTrigger(trigger => trigger
+            .ForJob(demoKeepAliveKey)
+            .WithIdentity("demo-keep-alive-60s")
+            .StartNow()
+            .WithSimpleSchedule(schedule => schedule.WithIntervalInSeconds(60).RepeatForever()));
+
+        var demoReseedKey = new JobKey("demo-reseed");
+        quartz.AddJob<DemoReseedJob>(options => options.WithIdentity(demoReseedKey));
+        quartz.AddTrigger(trigger => trigger
+            .ForJob(demoReseedKey)
+            .WithIdentity("demo-reseed-domingo-0430-brt")
+            .WithCronSchedule("0 30 4 ? * SUN", cron => cron.InTimeZone(saoPaulo)));
+    }
 
     // Dead-man switch (quem monitora o monitor): GET a cada 5 min na URL de
     // DeadMan:WorkerUrl (env DeadMan__WorkerUrl, um check do healthchecks.io).
