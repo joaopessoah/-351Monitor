@@ -9,6 +9,11 @@ namespace M351.Agent.Core.Privacy;
 /// isso os trechos fixos ficam AQUI, no agente, e são sempre concatenados ao corpo — um tenant não
 /// consegue publicar um aviso que transforme o NOTICE_ACK em "consentimento" nem que esconda o
 /// caminho para ver a coleta em tempo real.
+///
+/// ATENÇÃO: <see cref="DefaultBody"/> e <see cref="FixedFraming"/> estão copiados literalmente em
+/// M351.Domain.Privacy.NoticeTextPolicy, no backend (soluções separadas, sem referência entre
+/// elas). O servidor usa as cópias para validar o texto do tenant antes de salvar e para mostrar
+/// o preview do aviso no portal. Ao mexer aqui, mexa lá.
 /// </summary>
 public static class NoticeTextComposer
 {
