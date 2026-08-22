@@ -452,6 +452,89 @@ public class TenantIsolationTests(ApiTestFixture fixture) : IAsyncLifetime
         Assert.DoesNotContain(_deviceB.Id, ids);
     }
 
+    // ------------------------------------------------------------ F5: saúde de frota, etiquetas e fora do horário
+    [Fact]
+    public async Task HealthSummary_ContaSoAFrotaDoProprioTenant()
+    {
+        // device de A saudável; device de B com TODOS os sinais de alerta ligados
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString, """
+            UPDATE devices SET last_seen_at = now(), notice_acked_at = now() - interval '5 days'
+            WHERE id = @d
+            """, ("d", _deviceA.Id));
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString, """
+            UPDATE devices
+            SET last_seen_at = now() - interval '6 hours', notice_acked_at = NULL,
+                clock_offset_ms = 400000, last_tamper_at = now() - interval '1 hour',
+                last_tamper_reason = 'helper_killed'
+            WHERE id = @d
+            """, ("d", _deviceB.Id));
+
+        var response = await SendAsync(HttpMethod.Get, "/api/v1/devices/health-summary");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = body.RootElement;
+        // só o device de A entra na conta, e ele está saudável: nenhum alerta de B vaza
+        Assert.Equal(1, root.GetProperty("active_devices").GetInt32());
+        Assert.Equal(0, root.GetProperty("with_alert").GetInt32());
+        Assert.Equal(0, root.GetProperty("offline").GetInt32());
+        Assert.Equal(0, root.GetProperty("clock_skewed").GetInt32());
+        Assert.Equal(0, root.GetProperty("tampered").GetInt32());
+        Assert.Equal(0, root.GetProperty("notice_pending").GetInt32());
+    }
+
+    [Fact]
+    public async Task FiltroPorEtiqueta_MesmaTagEmDoisTenants_NaoMistura()
+    {
+        // etiqueta é texto livre por device: nada impede dois tenants de usarem "comercial"
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            "UPDATE devices SET tags = ARRAY['comercial'] WHERE id = ANY(@ids)",
+            ("ids", new[] { _deviceA.Id, _deviceB.Id }));
+
+        var lista = await SendAsync(HttpMethod.Get, "/api/v1/devices?tag=comercial&page_size=100");
+        Assert.Equal(HttpStatusCode.OK, lista.StatusCode);
+        using (var body = JsonDocument.Parse(await lista.Content.ReadAsStringAsync()))
+        {
+            var ids = body.RootElement.GetProperty("items").EnumerateArray()
+                .Select(d => d.GetProperty("id").GetGuid())
+                .ToList();
+            Assert.Contains(_deviceA.Id, ids);
+            Assert.DoesNotContain(_deviceB.Id, ids);
+        }
+
+        // agregados do tenant B com a MESMA etiqueta não entram no recorte de A
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString, """
+            INSERT INTO daily_device_summaries (
+                tenant_id, summary_date, device_id, device_user_id,
+                seconds_active, seconds_on, computed_at)
+            VALUES (@t, '2026-06-01', @d, '00000000-0000-0000-0000-000000000000', 3600, 3600, now())
+            """, ("t", _deviceB.TenantId), ("d", _deviceB.Id));
+
+        var summary = await SendAsync(HttpMethod.Get,
+            "/api/v1/dashboard/summary?from=2026-05-30&to=2026-06-03&tag=comercial");
+        Assert.Equal(HttpStatusCode.OK, summary.StatusCode);
+        using (var body = JsonDocument.Parse(await summary.Content.ReadAsStringAsync()))
+        {
+            Assert.Empty(body.RootElement.GetProperty("days").EnumerateArray());
+            Assert.Equal(0, body.RootElement.GetProperty("totals").GetProperty("device_count").GetInt32());
+        }
+    }
+
+    [Fact]
+    public async Task ForaDoHorarioComDeviceIdsDeOutroTenant_Retorna404_ESemAuditoria()
+    {
+        // mesmo gate do usage e da jornada, agora no painel de atividade fora do horário
+        var response = await SendAsync(HttpMethod.Get,
+            $"/api/v1/reports/fora-do-horario?from=2026-06-01&to=2026-06-07&device_ids={_deviceB.Id}&include_devices=true");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+
+        // o probe que levou 404 não deixa rastro de view_report no tenant A
+        var audits = await TestDb.ScalarAsync<long>(fixture.Database.ConnectionString,
+            "SELECT count(*) FROM audit_log WHERE tenant_id = @t AND action = 'view_report'",
+            ("t", _ownerA.TenantId));
+        Assert.Equal(0L, audits);
+    }
+
     [Fact]
     public async Task RespostaCruzada_NuncaEh403_SempreEh404()
     {
