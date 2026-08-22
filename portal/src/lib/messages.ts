@@ -36,3 +36,18 @@ export function genericErrorMessage(err: unknown): string {
   if (err instanceof ApiError) return GENERIC_ERROR;
   return NETWORK_ERROR;
 }
+
+/**
+ * Mensagem do ProblemDetails do backend (detail, senão title) quando ela
+ * existe - as regras de negócio respondem em pt-BR pronto para exibição
+ * (ex.: 409 "A organização precisa de pelo menos um Owner ativo."). Sem
+ * problem legível, cai na mensagem genérica/de rede.
+ */
+export function problemErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    const text = err.problem?.detail ?? err.problem?.title;
+    if (text !== undefined && text.trim().length > 0) return text;
+    return GENERIC_ERROR;
+  }
+  return NETWORK_ERROR;
+}

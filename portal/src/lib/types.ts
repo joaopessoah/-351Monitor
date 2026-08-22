@@ -702,20 +702,49 @@ export interface EnrollmentKeyCreateResponse {
 // (Owner+Admin) — o Viewer NÃO acessa nenhum dos dois. JSON snake_case.
 // =============================================================================
 
+/** Status do usuário do portal: convidado (sem senha ainda), ativo ou desativado. */
+export type UserStatus = "invited" | "active" | "disabled";
+
 /**
- * Item de `GET /users` (já existente no backend, PolicyAdminPlus). Aqui só nos
- * interessam id/nome/e-mail para popular o filtro por ator da auditoria; o
- * restante do shape (status, mfa, etc.) é ignorado por este consumidor.
+ * Item de `GET /users` (PolicyAdminPlus). Shape completo do backend
+ * (UserContracts.cs): a tela de Usuários consome tudo; a auditoria usa só
+ * id/nome/e-mail para o filtro por ator.
  */
 export interface UserListItem {
   id: string;
   email: string;
   display_name: string;
   role: Role;
+  status: UserStatus;
+  mfa_enabled: boolean;
+  /** Último login - null para quem nunca entrou (ex.: convite pendente). */
+  last_login_at: string | null;
 }
 
 export interface UsersResponse {
   items: UserListItem[];
+}
+
+/** Body de `POST /users/invitations` (201). Convidar Owner exige ator Owner. */
+export interface InviteUserRequest {
+  email: string;
+  role: Role;
+  display_name?: string;
+}
+
+/** Resposta 201 de `POST /users/invitations` - o convite vale por 7 dias. */
+export interface InviteUserResponse {
+  user_id: string;
+  invitation_id: string;
+  expires_at: string;
+}
+
+/**
+ * Body de `PATCH /users/{id}` - troca de papel. Mexer em Owner (origem ou
+ * destino) exige ator Owner; o backend garante sempre >= 1 Owner ativo (409).
+ */
+export interface UserRolePatchRequest {
+  role: Role;
 }
 
 /**
