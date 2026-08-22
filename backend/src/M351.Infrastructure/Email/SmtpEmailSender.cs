@@ -32,7 +32,18 @@ public class SmtpEmailSender(IOptions<EmailOptions> options, ILogger<SmtpEmailSe
         };
         mail.To.Add(message.To);
 
+        // Attachment não copia o stream: ele é lido no SendMailAsync, então os MemoryStream
+        // precisam viver ATÉ o envio. O mail.Dispose (using acima) descarta os anexos e,
+        // com eles, os streams.
+        foreach (var attachment in message.Attachments ?? [])
+        {
+            mail.Attachments.Add(new Attachment(
+                new MemoryStream(attachment.Content), attachment.FileName, attachment.ContentType));
+        }
+
         await client.SendMailAsync(mail, cancellationToken);
-        logger.LogInformation("E-mail SMTP enviado para {To}", message.To);
+        logger.LogInformation(
+            "E-mail SMTP enviado para {To} com {Anexos} anexo(s)",
+            message.To, message.Attachments?.Count ?? 0);
     }
 }
