@@ -157,7 +157,7 @@ NÃO existem no MVP: endpoint separado de policy/config (`GET .../policy`), endp
 |---|---|---|---|
 | `event_id` | string UUID **v7** | sim | Gerado no agente; ordenável por tempo; chave de idempotência |
 | `seq` | int64 | sim | Sequência monotônica **por device**, persistida no SQLite (`AUTOINCREMENT`); o backend persiste e detecta lacunas |
-| `type` | string | sim | Um dos 18 tipos da tabela 5.3 |
+| `type` | string | sim | Um dos 19 tipos da tabela 5.3 |
 | `occurred_at` | string ISO-8601 **UTC** | sim | Relógio de parede no momento do evento; **imutável** após gravado na fila local (dedupe determinístico entre retries) |
 | `tz_offset_min` | int | sim | Offset local em minutos (ex.: `-180`) |
 | `mono_ms` | int64 | sim | `GetTickCount64` no momento do evento (imune a ajuste de relógio) |
@@ -167,11 +167,11 @@ NÃO existem no MVP: endpoint separado de policy/config (`GET .../policy`), endp
 | `windows_user` | string ou null | quando aplicável | `DOMINIO\usuario` |
 | `data` | objeto | sim (pode ser `{}`) | Campos específicos do tipo |
 
-### 5.3 Tabela canônica de tipos de evento do MVP (única — 18 tipos)
+### 5.3 Tabela canônica de tipos de evento do MVP (única — 19 tipos)
 
 Esta tabela é usada por: agente (emissão), ingestão (validação), pipeline (máquina de estados) e portal (exibição). **`APPS_SNAPSHOT` foi CORTADO do MVP** (sem consumidor + minimização LGPD) — não implementar a coleta nem o tipo.
 
-O 18º tipo (`AGENT_ERROR`) entrou na F5 e é o único acréscimo à tabela original de 17: rollout **agente-primeiro**, porque um ingest anterior a ele apenas ignora o tipo desconhecido (regra no fim desta seção) sem rejeitar o lote.
+Os dois acréscimos à tabela original de 17 entraram na F5: o 18º (`AGENT_ERROR`) e o 19º (`UPDATE_FAILED`). Rollout **agente-primeiro** nos dois casos, porque um ingest anterior a eles apenas ignora o tipo desconhecido (regra no fim desta seção) sem rejeitar o lote.
 
 | Tipo | Emissor | `data` (payload) | Papel no pipeline |
 |---|---|---|---|
@@ -193,6 +193,7 @@ O 18º tipo (`AGENT_ERROR`) entrou na F5 e é o único acréscimo à tabela orig
 | `NOTICE_ACK` | Helper | `notice_version, shown_at` | Evidência de ciência LGPD (Seção 9.4); persistido e consultável por device/usuário |
 | `POLICY_APPLIED` | Serviço | `config_version` | Confirma aplicação de config; auditável |
 | `AGENT_ERROR` | Serviço e Helper | `error_type` (nome do tipo da exceção), `stack_hash` (SHA-256 truncado da pilha), `count` (ocorrências desde o último evento do mesmo `error_type`) — **JAMAIS a `message` crua da exceção**, que pode conter caminho, título de janela ou usuário. Limite de taxa: **máx. 1 evento por `error_type` por hora**, e as ocorrências suprimidas viram o `count` | Neutro no pipeline; falha do agente visível no painel de saúde em vez de morrer no log da máquina |
+| `UPDATE_FAILED` | Serviço | `from_version`, `to_version`, `reason: download\|hash\|signature\|install` — a ETAPA do auto-update que reprovou, **jamais a mensagem crua da exceção**. Não existe evento de sucesso (o sucesso é o `AGENT_START{start_reason:"update"}` da versão nova) nem motivo `rollback` (o agente não desfaz atualização) | Neutro no pipeline; materializado em `devices.last_update_failure_*` e lido pela distribuição de versões da frota (`GET /devices/version-summary`) |
 
 **Regra de ingestão para tipo desconhecido:** ignorar o evento e incrementar métrica (`ingest_unknown_type_total`). **JAMAIS rejeitar o lote inteiro** por causa de um tipo desconhecido — garante compatibilidade quando agente novo falar com backend velho e vice-versa.
 
@@ -307,7 +308,8 @@ Notas do lote: `device_id` NÃO vai no body — o servidor o resolve do device t
     "collection_window": { "mode": "ALWAYS", "days": null, "start": null, "end": null },
     "transparency_url": "https://app.exemplo.com.br/transparencia/acme",
     "notice_text": null,
-    "notice_version": 1
+    "notice_version": 1,
+    "device_transparency_url": "https://app.exemplo.com.br/t/01976f2a-0001-7aaa-b111-000000000001"
   },
   "commands": [
     { "id": "01976f2c-0000-7aaa-b111-00000000c0de", "type": "UNENROLL", "payload": {} }
@@ -319,7 +321,8 @@ Aritmética do exemplo (fórmula da Seção 5.6): 5 recebidos = 3 aceitos + 1 du
 
 Regras do ack:
 - `config` só vem quando o `config_version` enviado pelo agente está desatualizado; caso contrário `config: null`. **A config é entregue EXCLUSIVAMENTE por este canal** (sem endpoint de policy, sem assinatura de config no MVP — TLS + device token bastam). Ao aplicar, o agente emite `POLICY_APPLIED { config_version }`.
-- Objeto `config` completo (10 campos, sempre todos presentes): `heartbeat_sec`, `active_window_poll_sec`, `idle_threshold_sec`, `window_title_policy` (`FULL` | `MASKED_PATTERNS` | `APP_ONLY`), `masked_patterns[]`, `ignored_processes[]`, `collection_window` (`{mode: ALWAYS | BUSINESS_HOURS, days, start, end}`), `transparency_url`, `notice_text`, `notice_version`.
+- Objeto `config` completo (11 campos, sempre todos presentes): `heartbeat_sec`, `active_window_poll_sec`, `idle_threshold_sec`, `window_title_policy` (`FULL` | `MASKED_PATTERNS` | `APP_ONLY`), `masked_patterns[]`, `ignored_processes[]`, `collection_window` (`{mode: ALWAYS | BUSINESS_HOURS, days, start, end}`), `transparency_url`, `notice_text`, `notice_version`, `device_transparency_url`.
+- `device_transparency_url` é a página pública DAQUELE dispositivo (`/t/{token}`, de `devices.transparency_token`): a mesma política da organização MAIS o bloco "Este dispositivo". É o **único** caminho pelo qual o token chega ao agente, e é opcional de propósito: `null` para servidor anterior ao campo ou device sem token, e nesse caso o tray abre o `transparency_url` por slug. A url carrega um segredo de baixo valor: nunca vai para log, nem para query string de telemetria.
 - `notice_text` (F5) é o CORPO do aviso de ciência definido pelo tenant; `null` = o agente usa o texto padrão embutido nele. O enquadramento jurídico ("isto registra a sua ciência, não é um pedido de consentimento" + como ver a coleta em tempo real) é **fixo no agente e sempre concatenado** — o tenant não consegue publicar um aviso que transforme o `NOTICE_ACK` em consentimento. `notice_version` versiona o aviso: bump reexibe na frota (o helper compara com a versão confirmada localmente) e gera novo `NOTICE_ACK`.
 - `commands` no MVP contém **apenas `UNENROLL`** (`ROTATE_TOKEN`, `UPDATE_AGENT`, `PAUSE` são v1.1 — não implementar handlers). Ao receber `UNENROLL`: o agente **para a coleta e DESCARTA a fila local** (revogação definitiva). Sem endpoint de ack de comando: o servidor marca a entrega ao incluir no ack; o comando é idempotente se reentregue.
 - Erros HTTP: `401` token inválido/revogado (tratado como transitório: o agente **mantém a fila** e tenta re-enroll a cada **1 h** com a enrollment key persistida); `413` payload grande demais; `422` body sintaticamente malformado (JSON inválido) ou lote com > 500 eventos (reason `batch_too_large`) — únicos casos de rejeição do lote inteiro; `429`/`503` com `Retry-After` (agente respeita).
@@ -355,7 +358,7 @@ Resposta `201`:
   "device_id": "01976f00-aaaa-7bbb-8ccc-dddddddddddd",
   "device_token": "dt_Jh3K...256-bits-base64url...",
   "config_version": 5,
-  "config": { "...": "objeto config completo, mesmos 10 campos da Seção 5.5" }
+  "config": { "...": "objeto config completo, mesmos 11 campos da Seção 5.5" }
 }
 ```
 
@@ -454,7 +457,7 @@ Aplicado **antes de persistir na fila SQLite** — dado mascarado nunca toca o d
 ### 6.5 Tray, transparência e NOTICE_ACK
 
 - `NotifyIcon` **sempre visível**, tooltip "Monitoramento corporativo ativo — {NomeDaEmpresa}". **Sem opção "Sair"** no menu; sem flag de ocultação (a opção não existe no código).
-- Menu: **"O que está sendo coletado agora"** (janela em tempo real: app ativo, título capturado — ou mascarado/null —, estado ativo/idle, último envio, `config_version` aplicada, device_id) · **"Política de monitoramento"** (abre `transparency_url` da config) · **"Status da conexão"** · **"Sobre"** (versão, device_id).
+- Menu: **"O que está sendo coletado agora"** (janela em tempo real: app ativo, título capturado — ou mascarado/null —, estado ativo/idle, último envio, `config_version` aplicada, device_id) · **"Política de monitoramento"** (abre o `device_transparency_url` da config, a página deste dispositivo, caindo no `transparency_url` por slug quando ele não vem) · **"Status da conexão"** · **"Sobre"** (versão, device_id).
 - **NOTICE_ACK (gate LGPD):** no primeiro logon de cada usuário Windows após a instalação, o helper exibe aviso (toast + janela): *"Esta máquina é monitorada por {Empresa} — clique para ver o que é coletado"*, com link para a janela de transparência e botão **"Entendi"**. O clique emite `NOTICE_ACK{notice_version, shown_at}` — evidência de ciência para a controladora (NÃO é consentimento; é ciência). Persistir localmente que o usuário já confirmou (não reexibir a cada logon); reexibir se `notice_version` mudar. O CORPO do aviso pode ser gerenciado pelo tenant (`notice_text` da config — Seção 5.5); o enquadramento jurídico é **fixo no agente e sempre concatenado**, e `notice_version`/`notice_text` chegam ao helper pelo mesmo caminho do `transparency_url` (config entregue pelo ack e repassada no pipe).
 - `MonitorAgentSession.exe --diag` gera ZIP de suporte (logs + config sanitizada + contadores), sem UI.
 - Item **"Enviar diagnóstico ao suporte"** no menu do tray (F5): pede confirmação declarando o que vai e o que NÃO vai no pacote (só logs redigidos; sem título de janela, usuário ou conteúdo), e o **serviço** — não o helper — empacota o MESMO ZIP do `--diag` e faz o `POST /api/v1/agent/diagnostics` com o device token. Resultado (sucesso/falha) volta ao tray como balão.
@@ -996,7 +999,7 @@ Objetivo: reconstruir o dia de uma pessoa/máquina em 5 segundos de olhar.
 
 ### 8.8 Transparência (`/transparencia/:slug` — rota PÚBLICA)
 
-**Página PÚBLICA por slug do tenant (sem login) no MVP**, renderizada do estado REAL das configs do tenant — exibe apenas a política de coleta vigente, **nenhum dado pessoal**: "O que é coletado" (apps em foco com título conforme a política de títulos configurada, sessões, ociosidade, horários), "O que NUNCA é coletado" (teclas digitadas, capturas de tela, conteúdo de arquivos/e-mails/mensagens, webcam/microfone, localização) e as retenções vigentes. Campos editáveis (pelo admin, em Configurações): finalidade declarada, contato do DPO da controladora, data de vigência. Ações: Visualizar · Imprimir. Complementada pelo **Kit de Transparência em PDF** (artefato estático entregue no onboarding — modelo de comunicado interno + Termo de Ciência). O `transparency_url` da config do agente aponta para esta página (é o link que o tray do agente abre para o funcionário). A versão tokenizada com preview "ver como funcionário" é v1.1.
+**Página PÚBLICA por slug do tenant (sem login) no MVP**, renderizada do estado REAL das configs do tenant — exibe apenas a política de coleta vigente, **nenhum dado pessoal**: "O que é coletado" (apps em foco com título conforme a política de títulos configurada, sessões, ociosidade, horários), "O que NUNCA é coletado" (teclas digitadas, capturas de tela, conteúdo de arquivos/e-mails/mensagens, webcam/microfone, localização) e as retenções vigentes. Campos editáveis (pelo admin, em Configurações): finalidade declarada, contato do DPO da controladora, data de vigência. Ações: Visualizar · Imprimir. Complementada pelo **Kit de Transparência em PDF** (artefato estático entregue no onboarding — modelo de comunicado interno + Termo de Ciência). O `transparency_url` da config do agente aponta para esta página (link divulgável, sem segredo). A F5 antecipou a versão TOKENIZADA por dispositivo (`GET /public/t/{token}`, de `devices.transparency_token`): mesma página mais o bloco "Este dispositivo" (estado da instalação, jamais dado do dia). O token chega ao agente pelo `device_transparency_url` da config e é o que o tray passa a abrir; no portal, o endereço fica em Dispositivos, no menu de ações da linha (`GET /devices/{id}/transparency-link`, **Admin+**, nunca no `DeviceResponse` que o Viewer lê). O preview "ver como funcionário" segue em v1.1.
 
 ### 8.9 Estados vazios e loading (desenhados, não acidentais)
 
@@ -1092,7 +1095,7 @@ Vale para TODA entrega de qualquer fase:
 ### 11.1 Gates de CI (sempre verdes)
 
 1. **Isolamento multi-tenant**: suíte (Testcontainers-Postgres) que cria 2 tenants, popula e verifica que TODO endpoint do portal com IDs do tenant B autenticado no tenant A retorna **404**; e que a ingestão com device token do tenant B jamais grava em A. Gate de merge desde F0.
-2. **Contrato canônico**: testes de contrato validam que agente e backend serializam/aceitam exatamente o envelope 5.2, os 17 tipos 5.3 e o ack 5.5; tipo desconhecido não rejeita lote; lote vazio atualiza `last_seen_at`.
+2. **Contrato canônico**: testes de contrato validam que agente e backend serializam/aceitam exatamente o envelope 5.2, os 19 tipos 5.3 e o ack 5.5; tipo desconhecido não rejeita lote; lote vazio atualiza `last_seen_at`.
 3. Build + testes unitários/integração de backend e portal; `dotnet list package --vulnerable`/dependabot sem críticos.
 
 ### 11.2 Cenários nomeados do pipeline (testes de integração obrigatórios desde F2)

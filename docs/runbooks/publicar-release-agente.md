@@ -63,6 +63,38 @@ docker exec m351-staging-postgres-1 psql -U m351 -d m351_staging \
 O teste fim a fim é observar um agente enrolado baixar e aplicar a versão (o agente
 valida o SHA-256 do download antes de instalar).
 
+## Acompanhar o rollout
+
+Depois de publicar, a leitura é no portal, em **Dispositivos**, no card "Versões do
+agente na frota" (`GET /devices/version-summary`): quantas máquinas estão em cada
+versão e quais falharam ao atualizar nos últimos 7 dias.
+
+Um release saudável vai transferindo máquinas da versão antiga para a nova ao longo
+de ~6 h (a cadência de checagem do agente é 6 h com jitter de até 30 min), sem falhas
+listadas. Quando aparece falha, o motivo diz o que fazer, ele é a ETAPA que reprovou,
+nunca texto livre:
+
+| Motivo no card | Evento | O que investigar |
+|---|---|---|
+| Falha no download do instalador | `download` | O MSI está no volume `releases_data`? A URL do manifesto responde da rede das máquinas? |
+| Instalador com conteúdo divergente do publicado | `hash` | O arquivo do volume foi trocado sem republicar. Republique com `publish-agent-release`. |
+| Assinatura do instalador recusada | `signature` | Só ocorre com `verify_authenticode=true` no install.json: o MSI não está assinado, ou está assinado por outro signatário que não o `expected_signer_cn`. |
+| Instalação não pôde ser iniciada | `install` | A máquina não conseguiu subir o `msiexec` (política de execução, disco, permissão). Nada foi instalado, o agente tenta de novo no próximo ciclo. |
+
+Falha de update NÃO derruba o agente: nada é instalado e a tentativa se repete no
+ciclo seguinte. Uma frota inteira parada na versão antiga com o MESMO motivo é sinal
+de problema no release, não nas máquinas, e o caminho é o rollback abaixo.
+
+Para conferir direto no banco:
+
+```bash
+docker exec m351-staging-postgres-1 psql -U m351 -d m351_staging \
+  -c "SELECT agent_version, count(*) FROM devices WHERE status = 'active' GROUP BY 1 ORDER BY 1;"
+docker exec m351-staging-postgres-1 psql -U m351 -d m351_staging \
+  -c "SELECT hostname, last_update_failure_reason, last_update_target_version, last_update_failure_at
+      FROM devices WHERE last_update_failure_at > now() - interval '7 days' ORDER BY last_update_failure_at DESC;"
+```
+
 ## Rollback
 
 Move o `is_current` para uma versão JÁ publicada, sem redeploy e sem tocar nas máquinas:

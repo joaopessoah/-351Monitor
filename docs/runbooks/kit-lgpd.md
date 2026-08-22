@@ -190,7 +190,16 @@ Tudo (export e exclusão) é registrado na auditoria na mesma transação da ope
 ## 7. Página pública de transparência (por slug)
 
 - Endpoint `GET /api/v1/public/transparencia/{slug}` - **público, sem login e sem cookie**. É o link
-  que o ícone do agente (tray) abre para o funcionário.
+  divulgável da organização, sem segredo nenhum na URL.
+- Endpoint `GET /api/v1/public/t/{token}` - a **mesma página** alcançada pelo token do dispositivo
+  (`devices.transparency_token`), somando o bloco "Este dispositivo": hostname, se a ciência já foi
+  registrada, último contato e status da coleta. **Nunca** dado de uso do dia. É esta a página que o
+  ícone do agente (tray) abre para o funcionário, e ele cai na página por slug quando o dispositivo
+  ainda não tem token.
+- O token chega ao agente pelo campo `device_transparency_url` da config (resposta do enroll e
+  config reentregue no ack), e ao gestor pela tela **Dispositivos** do portal, no menu de ações da
+  linha, em "Link de transparência" - **somente Admin ou acima**. O token é um segredo de baixo
+  valor mas é um segredo: envie o endereço a quem usa a máquina, não o publique.
 - Renderiza o **estado real** das configurações do tenant: a política de título de janela vigente e
   a janela de coleta, ambas descritas em linguagem amigável em pt-BR.
 - Mostra as retenções fixas (90 dias / 12 meses / 24 meses / 24 meses) e a **data da última purga**.
