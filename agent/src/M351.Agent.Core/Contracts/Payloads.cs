@@ -147,6 +147,50 @@ public sealed class AgentErrorData
     [JsonPropertyName("count")] public long Count { get; set; }
 }
 
+/// <summary>
+/// Motivos canônicos de falha do auto-update (UPDATE_FAILED). Lista FECHADA e CATEGORIZADA: o
+/// que viaja é a ETAPA que reprovou, jamais a mensagem crua da exceção — ela pode carregar
+/// caminho de arquivo, url interna ou nome de usuário (mesma regra do AGENT_ERROR).
+///   - download: o MSI não pôde ser baixado do release (rede, 404, disco);
+///   - hash: o SHA-256 do arquivo baixado não confere com o do manifesto (ou não pôde ser calculado);
+///   - signature: a verificação Authenticode recusou o MSI (não assinado, cadeia inválida ou
+///     assinado por outro signatário que não o esperado);
+///   - install: a instalação não pôde SER INICIADA (sentinela .update não gravou, ou o msiexec
+///     não subiu). Não cobre a instalação que roda e falha depois: dali em diante quem manda é o
+///     MSI, e o sintoma no servidor é a máquina que fica na versão antiga.
+/// Não existe motivo "rollback": o agente não desfaz atualização (o MSI faz major-upgrade e nada
+/// reverte), então um motivo que ninguém emite seria contrato morto.
+/// </summary>
+public static class UpdateFailureReasons
+{
+    public const string Download = "download";
+    public const string Hash = "hash";
+    public const string Signature = "signature";
+    public const string Install = "install";
+
+    public static readonly IReadOnlyList<string> All = [Download, Hash, Signature, Install];
+
+    public static bool IsKnown(string? reason) => reason is not null && All.Contains(reason);
+}
+
+/// <summary>
+/// UPDATE_FAILED: uma tentativa de auto-update que NÃO chegou a instalar. Carrega de onde a
+/// máquina saiu, para onde tentava ir e em que ETAPA reprovou — o suficiente para ver na frota
+/// se um release está travando em assinatura, em hash ou em rede, sem nenhum texto livre.
+/// O sucesso não tem evento próprio: é o AGENT_START{start_reason:"update"} da versão nova.
+/// </summary>
+public sealed class UpdateFailedData
+{
+    /// <summary>Versão que está rodando agora (a que continua rodando, já que nada foi instalado).</summary>
+    [JsonPropertyName("from_version")] public string FromVersion { get; set; } = "";
+
+    /// <summary>Versão do manifesto que a tentativa mirava.</summary>
+    [JsonPropertyName("to_version")] public string ToVersion { get; set; } = "";
+
+    /// <summary>Etapa que reprovou (UpdateFailureReasons) — NUNCA a mensagem da exceção.</summary>
+    [JsonPropertyName("reason")] public string Reason { get; set; } = "";
+}
+
 public sealed class AgentTamperData
 {
     /// <summary>helper_killed | helper_killed_repeatedly | pipe_denied</summary>

@@ -101,13 +101,14 @@ public class BatchContractTests
     }
 
     [Fact]
-    public void Os_18_tipos_canonicos_estao_definidos_sem_APPS_SNAPSHOT()
+    public void Os_19_tipos_canonicos_estao_definidos_sem_APPS_SNAPSHOT()
     {
-        Assert.Equal(18, EventTypes.All.Count);
+        Assert.Equal(19, EventTypes.All.Count);
         Assert.DoesNotContain("APPS_SNAPSHOT", EventTypes.All); // cortado do MVP
         Assert.Contains("ACTIVE_WINDOW_CHANGED", EventTypes.All);
         Assert.Contains("POLICY_APPLIED", EventTypes.All);
-        Assert.Contains("AGENT_ERROR", EventTypes.All); // 18º tipo (F5)
+        Assert.Contains("AGENT_ERROR", EventTypes.All);   // 18º tipo (F5)
+        Assert.Contains("UPDATE_FAILED", EventTypes.All); // 19º tipo (vigilância de rollout)
         Assert.Equal(EventTypes.All.Count, EventTypes.All.Distinct().Count());
     }
 
@@ -167,6 +168,40 @@ public class BatchContractTests
         Assert.Equal("timestamp_too_old", data.GetProperty("last_reject_code").GetString());
         Assert.Equal(42, data.GetProperty("working_set_mb").GetInt64());
         Assert.Equal(1_234_567, data.GetProperty("queue_db_bytes").GetInt64());
+    }
+
+    [Fact]
+    public void UPDATE_FAILED_serializa_from_to_e_reason_e_nada_mais()
+    {
+        var factory = TestEvents.Factory();
+        var ev = factory.Create(EventTypes.UpdateFailed, new UpdateFailedData
+        {
+            FromVersion = "1.0.0",
+            ToVersion = "1.1.0",
+            Reason = UpdateFailureReasons.Signature
+        });
+
+        var json = JsonSerializer.Serialize(ev, AgentJsonContext.Default.AgentEvent);
+        using var doc = JsonDocument.Parse(json);
+        var data = doc.RootElement.GetProperty("data");
+
+        var keys = data.EnumerateObject().Select(p => p.Name).OrderBy(x => x).ToList();
+        Assert.Equal(new[] { "from_version", "reason", "to_version" }, keys);
+        Assert.Equal("1.0.0", data.GetProperty("from_version").GetString());
+        Assert.Equal("1.1.0", data.GetProperty("to_version").GetString());
+        Assert.Equal("signature", data.GetProperty("reason").GetString());
+        // contrato de privacidade: nada de mensagem crua da exceção nem caminho de arquivo
+        Assert.False(data.TryGetProperty("message", out _));
+        Assert.False(data.TryGetProperty("path", out _));
+    }
+
+    [Fact]
+    public void Reasons_do_UPDATE_FAILED_sao_lista_fechada_e_categorizada()
+    {
+        Assert.Equal(new[] { "download", "hash", "signature", "install" }, UpdateFailureReasons.All);
+        Assert.True(UpdateFailureReasons.IsKnown("hash"));
+        Assert.False(UpdateFailureReasons.IsKnown("motivo_inventado"));
+        Assert.False(UpdateFailureReasons.IsKnown(null));
     }
 
     [Fact]

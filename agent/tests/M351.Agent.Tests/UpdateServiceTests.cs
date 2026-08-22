@@ -1,6 +1,8 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using M351.Agent.Core;
+using M351.Agent.Core.Contracts;
 using M351.Agent.Core.Logging;
 using M351.Agent.Core.Security;
 using M351.Agent.Core.Storage;
@@ -367,6 +369,216 @@ public class UpdateServiceTests
 
         Assert.False(fired);
         Assert.Empty(handler.Requests); // nem toca no servidor
+    }
+
+    // ---------------------------------------------------------------- UPDATE_FAILED (vigilancia de rollout)
+
+    /// <summary>
+    /// Download que nao completa: UPDATE_FAILED{reason:"download"} com de-para de versao. Antes
+    /// disso a unica pista de um release travando a frota era o contador "desatualizados".
+    /// </summary>
+    [Fact]
+    public async Task Apply_download_falho_emite_UPDATE_FAILED_download()
+    {
+        using var temp = new TempQueue();
+        var (_, client, _) = BuildClient(temp, req =>
+            req.RequestUri!.AbsolutePath.Contains("releases")
+                ? new HttpResponseMessage(HttpStatusCode.NotFound)
+                : Json(HttpStatusCode.OK, ManifestBody("1.1.0", new string('a', 64))));
+
+        var falhas = new List<UpdateFailedData>();
+        var updatesDir = Path.Combine(Path.GetTempPath(), $"m351-upd-{Guid.NewGuid():N}");
+        try
+        {
+            var installer = new UpdateInstaller(client, new NullLogSink(), updatesDir,
+                writeUpdateSentinel: () => { },
+                runInstaller: (_, _) => Task.FromResult(true),
+                reportFailure: falhas.Add);
+
+            var manifest = new UpdateManifest { Version = "1.1.0", Url = MsiUrl, Sha256 = new string('a', 64), MinVersion = "1.0.0" };
+            Assert.False(await installer.ApplyAsync(manifest, CancellationToken.None));
+
+            var falha = Assert.Single(falhas);
+            Assert.Equal(UpdateFailureReasons.Download, falha.Reason);
+            Assert.Equal(AgentVersionInfo.Current, falha.FromVersion);
+            Assert.Equal("1.1.0", falha.ToVersion);
+        }
+        finally
+        {
+            try { Directory.Delete(updatesDir, recursive: true); } catch (Exception) { /* best-effort */ }
+        }
+    }
+
+    /// <summary>SHA-256 divergente: motivo "hash" — o MSI e descartado sem instalar.</summary>
+    [Fact]
+    public async Task Apply_sha256_errado_emite_UPDATE_FAILED_hash()
+    {
+        using var temp = new TempQueue();
+        var msiBytes = Encoding.UTF8.GetBytes("conteudo adulterado");
+        var (_, client, _) = BuildClient(temp, req =>
+            req.RequestUri!.AbsolutePath.Contains("releases")
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(msiBytes) }
+                : Json(HttpStatusCode.OK, ManifestBody("1.1.0", new string('f', 64))));
+
+        var falhas = new List<UpdateFailedData>();
+        var updatesDir = Path.Combine(Path.GetTempPath(), $"m351-upd-{Guid.NewGuid():N}");
+        try
+        {
+            var installer = new UpdateInstaller(client, new NullLogSink(), updatesDir,
+                writeUpdateSentinel: () => { },
+                runInstaller: (_, _) => Task.FromResult(true),
+                reportFailure: falhas.Add);
+
+            var manifest = new UpdateManifest { Version = "1.1.0", Url = MsiUrl, Sha256 = new string('f', 64), MinVersion = "1.0.0" };
+            Assert.False(await installer.ApplyAsync(manifest, CancellationToken.None));
+
+            Assert.Equal(UpdateFailureReasons.Hash, Assert.Single(falhas).Reason);
+        }
+        finally
+        {
+            try { Directory.Delete(updatesDir, recursive: true); } catch (Exception) { /* best-effort */ }
+        }
+    }
+
+    /// <summary>
+    /// Flag de Authenticode LIGADA sobre um arquivo sem assinatura: motivo "signature". E o cenario
+    /// que separa "a rede caiu" de "o release nao esta assinado", que exigem acoes diferentes.
+    /// </summary>
+    [Fact]
+    public async Task Apply_assinatura_recusada_emite_UPDATE_FAILED_signature()
+    {
+        using var temp = new TempQueue();
+        var msiBytes = Encoding.UTF8.GetBytes("nao sou um MSI assinado");
+        var sha = Convert.ToHexString(SHA256.HashData(msiBytes)).ToLowerInvariant();
+
+        var (_, client, _) = BuildClient(temp, req =>
+            req.RequestUri!.AbsolutePath.Contains("releases")
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(msiBytes) }
+                : Json(HttpStatusCode.OK, ManifestBody("1.1.0", sha)));
+
+        var falhas = new List<UpdateFailedData>();
+        var installerRan = false;
+        var updatesDir = Path.Combine(Path.GetTempPath(), $"m351-upd-{Guid.NewGuid():N}");
+        try
+        {
+            var installer = new UpdateInstaller(client, new NullLogSink(), updatesDir,
+                writeUpdateSentinel: () => { },
+                runInstaller: (_, _) => { installerRan = true; return Task.FromResult(true); },
+                verifyAuthenticode: true,
+                reportFailure: falhas.Add);
+
+            var manifest = new UpdateManifest { Version = "1.1.0", Url = MsiUrl, Sha256 = sha, MinVersion = "1.0.0" };
+            Assert.False(await installer.ApplyAsync(manifest, CancellationToken.None));
+
+            Assert.False(installerRan);
+            Assert.Equal(UpdateFailureReasons.Signature, Assert.Single(falhas).Reason);
+        }
+        finally
+        {
+            try { Directory.Delete(updatesDir, recursive: true); } catch (Exception) { /* best-effort */ }
+        }
+    }
+
+    /// <summary>msiexec que nao sobe: motivo "install" (a sentinela orfa continua sendo removida).</summary>
+    [Fact]
+    public async Task Apply_msiexec_que_nao_sobe_emite_UPDATE_FAILED_install()
+    {
+        using var temp = new TempQueue();
+        var msiBytes = Encoding.UTF8.GetBytes("MSI de teste");
+        var sha = Convert.ToHexString(SHA256.HashData(msiBytes)).ToLowerInvariant();
+
+        var (_, client, _) = BuildClient(temp, req =>
+            req.RequestUri!.AbsolutePath.Contains("releases")
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(msiBytes) }
+                : Json(HttpStatusCode.OK, ManifestBody("1.1.0", sha)));
+
+        var falhas = new List<UpdateFailedData>();
+        var sentinelCleared = false;
+        var updatesDir = Path.Combine(Path.GetTempPath(), $"m351-upd-{Guid.NewGuid():N}");
+        try
+        {
+            var installer = new UpdateInstaller(client, new NullLogSink(), updatesDir,
+                writeUpdateSentinel: () => { },
+                runInstaller: (_, _) => Task.FromResult(false),
+                clearUpdateSentinel: () => sentinelCleared = true,
+                reportFailure: falhas.Add);
+
+            var manifest = new UpdateManifest { Version = "1.1.0", Url = MsiUrl, Sha256 = sha, MinVersion = "1.0.0" };
+            Assert.False(await installer.ApplyAsync(manifest, CancellationToken.None));
+
+            Assert.True(sentinelCleared);
+            Assert.Equal(UpdateFailureReasons.Install, Assert.Single(falhas).Reason);
+        }
+        finally
+        {
+            try { Directory.Delete(updatesDir, recursive: true); } catch (Exception) { /* best-effort */ }
+        }
+    }
+
+    /// <summary>
+    /// Update que da certo NAO emite UPDATE_FAILED: o sucesso e o AGENT_START{start_reason:update}
+    /// da versao nova, e um evento de sucesso redundante inflaria a fila a cada release.
+    /// </summary>
+    [Fact]
+    public async Task Apply_bem_sucedido_nao_emite_UPDATE_FAILED()
+    {
+        using var temp = new TempQueue();
+        var msiBytes = Encoding.UTF8.GetBytes("MSI de teste");
+        var sha = Convert.ToHexString(SHA256.HashData(msiBytes)).ToLowerInvariant();
+
+        var (_, client, _) = BuildClient(temp, req =>
+            req.RequestUri!.AbsolutePath.Contains("releases")
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(msiBytes) }
+                : Json(HttpStatusCode.OK, ManifestBody("1.1.0", sha)));
+
+        var falhas = new List<UpdateFailedData>();
+        var updatesDir = Path.Combine(Path.GetTempPath(), $"m351-upd-{Guid.NewGuid():N}");
+        try
+        {
+            var installer = new UpdateInstaller(client, new NullLogSink(), updatesDir,
+                writeUpdateSentinel: () => { },
+                runInstaller: (_, _) => Task.FromResult(true),
+                reportFailure: falhas.Add);
+
+            var manifest = new UpdateManifest { Version = "1.1.0", Url = MsiUrl, Sha256 = sha, MinVersion = "1.0.0" };
+            Assert.True(await installer.ApplyAsync(manifest, CancellationToken.None));
+
+            Assert.Empty(falhas);
+        }
+        finally
+        {
+            try { Directory.Delete(updatesDir, recursive: true); } catch (Exception) { /* best-effort */ }
+        }
+    }
+
+    /// <summary>
+    /// Falha ao ENFILEIRAR o UPDATE_FAILED nao pode derrubar o ciclo: o retry do proximo ciclo vale
+    /// mais que o evento de telemetria.
+    /// </summary>
+    [Fact]
+    public async Task Report_de_UPDATE_FAILED_que_lanca_nao_derruba_o_ciclo()
+    {
+        using var temp = new TempQueue();
+        var (_, client, _) = BuildClient(temp, req =>
+            req.RequestUri!.AbsolutePath.Contains("releases")
+                ? new HttpResponseMessage(HttpStatusCode.NotFound)
+                : Json(HttpStatusCode.OK, ManifestBody("1.1.0", new string('a', 64))));
+
+        var updatesDir = Path.Combine(Path.GetTempPath(), $"m351-upd-{Guid.NewGuid():N}");
+        try
+        {
+            var installer = new UpdateInstaller(client, new NullLogSink(), updatesDir,
+                writeUpdateSentinel: () => { },
+                runInstaller: (_, _) => Task.FromResult(true),
+                reportFailure: _ => throw new IOException("fila indisponivel"));
+
+            var manifest = new UpdateManifest { Version = "1.1.0", Url = MsiUrl, Sha256 = new string('a', 64), MinVersion = "1.0.0" };
+            Assert.False(await installer.ApplyAsync(manifest, CancellationToken.None));
+        }
+        finally
+        {
+            try { Directory.Delete(updatesDir, recursive: true); } catch (Exception) { /* best-effort */ }
+        }
     }
 
     [Fact]
