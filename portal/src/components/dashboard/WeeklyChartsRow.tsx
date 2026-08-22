@@ -32,6 +32,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EChart } from "@/components/charts/EChart";
+import {
+  DeltaBadge,
+  DeviceCountNotice,
+  useComparisonRange,
+} from "@/components/dashboard/comparison";
 
 /** Altura fixa dos gráficos - skeleton/vazio/erro com a mesma geometria. */
 const CHART_H = 280;
@@ -147,6 +152,19 @@ export function WeeklyChartsRow() {
     placeholderData: (prev) => prev,
   });
 
+  // Período de comparação: a semana imediatamente anterior à exibida. Dado
+  // imutável (sempre no passado): mesma queryKey do summary, sem polling.
+  const prevRange = useComparisonRange(range);
+  const prevSummaryQuery = useQuery({
+    queryKey: ["dashboard", "summary", prevRange?.from, prevRange?.to],
+    queryFn: () =>
+      api<DashboardSummaryResponse>(
+        `/dashboard/summary?from=${prevRange?.from ?? ""}&to=${prevRange?.to ?? ""}`,
+      ),
+    enabled: prevRange !== null,
+    placeholderData: (prev) => prev,
+  });
+
   const topAppsQuery = useQuery({
     queryKey: ["dashboard", "top-apps", range?.from, range?.to],
     queryFn: () =>
@@ -169,7 +187,9 @@ export function WeeklyChartsRow() {
     <div className="grid gap-4 lg:grid-cols-2">
       <HorasAtivasCard
         query={summaryQuery}
+        prevQuery={prevSummaryQuery}
         range={range}
+        prevRange={prevRange}
         todayStr={todayStr}
         businessHours={businessHours}
         week={week}
@@ -188,7 +208,9 @@ export function WeeklyChartsRow() {
 
 function HorasAtivasCard({
   query,
+  prevQuery,
   range,
+  prevRange,
   todayStr,
   businessHours,
   week,
@@ -197,7 +219,9 @@ function HorasAtivasCard({
   onRetryMe,
 }: {
   query: UseQueryResult<DashboardSummaryResponse>;
+  prevQuery: UseQueryResult<DashboardSummaryResponse>;
   range: WeekRange | null;
+  prevRange: WeekRange | null;
   todayStr: string | null;
   businessHours: BusinessHours | null;
   week: WeekChoice;
@@ -207,6 +231,7 @@ function HorasAtivasCard({
 }) {
   const [view, setView] = useState<CardView>("chart");
   const data = query.data;
+  const prevData = prevQuery.data;
 
   // 7 dias seg-dom SEMPRE presentes: o endpoint não devolve dias sem linhas,
   // então o portal preenche zeros; dias futuros ficam sem barra.
@@ -226,11 +251,20 @@ function HorasAtivasCard({
     });
   }, [data, range, todayStr]);
 
+  // Segundos ATIVOS por dia da semana anterior, alinhados por posição (o dia i
+  // da semana exibida compara com o dia i da anterior) - null enquanto a
+  // resposta da comparação não chegou.
+  const prevActiveByDay = useMemo<number[] | null>(() => {
+    if (prevRange === null || prevData === undefined) return null;
+    const byDate = new Map(prevData.days.map((d) => [d.date, d.seconds_active]));
+    return Array.from({ length: 7 }, (_, i) => byDate.get(addDays(prevRange.from, i)) ?? 0);
+  }, [prevData, prevRange]);
+
   const empty = data !== undefined && data.days.length === 0;
   const jornadaSec = jornadaSeconds(businessHours);
   const option = useMemo<EChartsOption>(
-    () => buildHorasOption(rows, empty, jornadaSec),
-    [rows, empty, jornadaSec],
+    () => buildHorasOption(rows, empty, jornadaSec, prevActiveByDay),
+    [rows, empty, jornadaSec, prevActiveByDay],
   );
 
   const failed = meBlocked || (query.isError && data === undefined);
@@ -281,8 +315,41 @@ function HorasAtivasCard({
               aria-hidden={view === "table"}
             >
               <EChart option={option} height={CHART_H} ariaHidden={view === "table"} />
+              {prevActiveByDay !== null && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Linha cinza: horas ativas na semana anterior.
+                </p>
+              )}
             </div>
-            {view === "table" && <HorasTable rows={rows} />}
+            {view === "table" && <HorasTable rows={rows} prevActiveByDay={prevActiveByDay} />}
+
+            {/* Totais da semana com o comparativo neutro vs período anterior. */}
+            <div className="mt-3 space-y-1 border-t pt-3 text-sm tabular-nums text-muted-foreground">
+              <p>
+                Ativo na semana: {formatDuration(data.totals.seconds_active)}{" "}
+                <DeltaBadge
+                  current={data.totals.seconds_active}
+                  previous={prevData?.totals.seconds_active ?? null}
+                  previousRange={prevRange}
+                  incomplete={data.totals.data_incomplete || prevData?.totals.data_incomplete === true}
+                />
+              </p>
+              <p>
+                Ocioso na semana: {formatDuration(data.totals.seconds_idle)}{" "}
+                <DeltaBadge
+                  current={data.totals.seconds_idle}
+                  previous={prevData?.totals.seconds_idle ?? null}
+                  previousRange={prevRange}
+                  incomplete={data.totals.data_incomplete || prevData?.totals.data_incomplete === true}
+                />
+              </p>
+              {prevData !== undefined && (
+                <DeviceCountNotice
+                  current={data.totals.device_count}
+                  previous={prevData.totals.device_count}
+                />
+              )}
+            </div>
           </>
         )}
       </div>
@@ -290,15 +357,21 @@ function HorasAtivasCard({
   );
 }
 
-function buildHorasOption(rows: DayRow[], empty: boolean, jornadaSec: number): EChartsOption {
+function buildHorasOption(
+  rows: DayRow[],
+  empty: boolean,
+  jornadaSec: number,
+  prevActiveByDay: number[] | null,
+): EChartsOption {
   const jornadaH = jornadaSec / 3600;
   const dataMaxH = rows.reduce(
     (mx, r) => Math.max(mx, (r.secondsActive + r.secondsIdle) / 3600),
     0,
   );
+  const prevMaxH = (prevActiveByDay ?? []).reduce((mx, s) => Math.max(mx, s / 3600), 0);
   // markLine não entra no cálculo automático do eixo: max explícito garante a
   // linha de referência sempre visível (com 1h de folga acima dela).
-  const yMax = Math.max(Math.ceil(dataMaxH), Math.ceil(jornadaH) + 1);
+  const yMax = Math.max(Math.ceil(dataMaxH), Math.ceil(prevMaxH), Math.ceil(jornadaH) + 1);
   // "-" é o valor vazio do ECharts: dia futuro fica sem barra (não é zero).
   const barValue = (r: DayRow, seconds: number): number | string =>
     r.future ? "-" : Math.round((seconds / 3600) * 100) / 100;
@@ -314,12 +387,21 @@ function buildHorasOption(rows: DayRow[], empty: boolean, jornadaSec: number): E
         const first: { dataIndex: number } | undefined = list[0];
         const row: DayRow | undefined = first !== undefined ? rows[first.dataIndex] : undefined;
         if (row === undefined) return "";
-        if (row.future) return `<strong>${dayLabel(row.date)}</strong><br/>Dia futuro`;
+        const prevLine =
+          prevActiveByDay !== null && first !== undefined
+            ? `Ativo na semana anterior: ${formatDuration(prevActiveByDay[first.dataIndex] ?? 0)}`
+            : null;
+        if (row.future) {
+          const futureLines = [`<strong>${dayLabel(row.date)}</strong>`, "Dia futuro"];
+          if (prevLine !== null) futureLines.push(prevLine);
+          return futureLines.join("<br/>");
+        }
         const lines = [
           `<strong>${dayLabel(row.date)}</strong>`,
           `Ativo: ${formatDuration(row.secondsActive)}`,
           `Ocioso: ${formatDuration(row.secondsIdle)}`,
         ];
+        if (prevLine !== null) lines.push(prevLine);
         if (row.incomplete) lines.push("Dados incompletos neste dia");
         return lines.join("<br/>");
       },
@@ -339,6 +421,23 @@ function buildHorasOption(rows: DayRow[], empty: boolean, jornadaSec: number): E
       splitLine: { lineStyle: { color: COLOR.grid } },
     },
     series: [
+      // Linha fantasma da semana anterior ATRÁS das barras (z abaixo do z=2
+      // default das barras): cor muted, opacidade baixa, sem legenda chamativa.
+      ...(prevActiveByDay !== null && !empty
+        ? [
+            {
+              name: "Ativo na semana anterior",
+              type: "line" as const,
+              z: 1,
+              silent: true,
+              symbol: "circle",
+              symbolSize: 4,
+              data: prevActiveByDay.map((s) => Math.round((s / 3600) * 100) / 100),
+              lineStyle: { color: COLOR.axisText, width: 1.5, opacity: 0.45 },
+              itemStyle: { color: COLOR.axisText, opacity: 0.45 },
+            },
+          ]
+        : []),
       {
         name: "Ativo",
         type: "bar",
@@ -390,8 +489,15 @@ function buildHorasOption(rows: DayRow[], empty: boolean, jornadaSec: number): E
   };
 }
 
-/** Tabela acessível do card de horas - os MESMOS números do gráfico. */
-function HorasTable({ rows }: { rows: DayRow[] }) {
+/** Tabela acessível do card de horas - os MESMOS números do gráfico,
+    incluindo a série da semana anterior quando disponível. */
+function HorasTable({
+  rows,
+  prevActiveByDay,
+}: {
+  rows: DayRow[];
+  prevActiveByDay: number[] | null;
+}) {
   return (
     <div className="overflow-x-auto" style={{ minHeight: CHART_H }}>
       <table className="w-full text-sm" aria-label="Horas ativas por dia, em tabela">
@@ -399,17 +505,25 @@ function HorasTable({ rows }: { rows: DayRow[] }) {
           <tr className="border-b text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
             <th scope="col" className="px-3 py-2">Dia</th>
             <th scope="col" className="px-3 py-2 text-right">Ativo</th>
+            {prevActiveByDay !== null && (
+              <th scope="col" className="px-3 py-2 text-right">Ativo na semana anterior</th>
+            )}
             <th scope="col" className="px-3 py-2 text-right">Ocioso</th>
             <th scope="col" className="px-3 py-2">Observação</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {rows.map((r, i) => (
             <tr key={r.date} className="border-b last:border-b-0">
               <td className="whitespace-nowrap px-3 py-1.5">{dayLabel(r.date)}</td>
               <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
                 {r.future ? "-" : formatDuration(r.secondsActive)}
               </td>
+              {prevActiveByDay !== null && (
+                <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-muted-foreground">
+                  {formatDuration(prevActiveByDay[i] ?? 0)}
+                </td>
+              )}
               <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
                 {r.future ? "-" : formatDuration(r.secondsIdle)}
               </td>

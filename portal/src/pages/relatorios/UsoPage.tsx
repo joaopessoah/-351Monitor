@@ -49,6 +49,7 @@ import {
   useReportRange,
 } from "@/components/reports/filters";
 import { ExportCsvBanner, ExportCsvButton, useCsvExport } from "@/components/reports/ExportCsv";
+import { DeltaBadge, useComparisonRange } from "@/components/dashboard/comparison";
 
 /** page_size máximo do contrato - mais linhas sob a ordenação client-side. */
 const PAGE_SIZE = 100;
@@ -180,6 +181,16 @@ function SortableTh({
   );
 }
 
+/**
+ * Chave de junção entre períodos para a coluna "vs anterior" - APENAS para
+ * app/categoria/dispositivo. Pessoas (device_user) nunca são comparadas.
+ */
+function comparisonKeyOf(groupBy: GroupBy, row: UsageRow): string {
+  if (groupBy === "app") return (row as UsageAppItem).app_id;
+  if (groupBy === "category") return (row as UsageCategoryItem).category_id ?? "uncategorized";
+  return (row as UsageDeviceItem).device_id;
+}
+
 function CategoryDot({
   name,
   color,
@@ -201,12 +212,44 @@ function CategoryDot({
   );
 }
 
+/** Célula da coluna "vs anterior" - "-" enquanto a base não carregou. */
+function ComparisonCell({
+  seconds,
+  rowKey,
+  prevSecondsByKey,
+  prevRange,
+}: {
+  seconds: number;
+  rowKey: string;
+  prevSecondsByKey: Map<string, number> | null;
+  prevRange: { from: string; to: string } | null;
+}) {
+  return (
+    <td className="whitespace-nowrap px-3 py-2 text-right">
+      {prevSecondsByKey === null ? (
+        <span className="text-muted-foreground">-</span>
+      ) : (
+        <DeltaBadge
+          current={seconds}
+          previous={prevSecondsByKey.get(rowKey) ?? null}
+          previousRange={prevRange}
+          showLabel={false}
+        />
+      )}
+    </td>
+  );
+}
+
 export function UsoPage() {
   // Agrupamento, ordenação e página vivem na URL (deep-link do hub de
   // Relatórios) - lidos no mount E escritos de volta a cada interação.
   const [urlState, setUrlState] = useUrlState(USO_CODEC);
   const { groupBy, sort, page } = urlState;
   const [deviceIds, setDeviceIds] = useState<string[]>([]);
+  // Coluna "vs anterior": toggle DESLIGADO por padrão e indisponível no
+  // agrupamento por pessoa (nunca comparar pessoas entre si).
+  const [compareOn, setCompareOn] = useState(false);
+  const compareActive = compareOn && groupBy !== "device_user";
 
   const meQuery = useQuery({
     queryKey: ["me"],
@@ -257,6 +300,44 @@ export function UsoPage() {
   });
   const data = usageQuery.data;
 
+  // Consulta do período imediatamente anterior (mesma duração, mesmos filtros)
+  // para a coluna "vs anterior" - só roda com o toggle ligado.
+  const prevRange = useComparisonRange(range);
+  const prevUsageQuery = useQuery({
+    queryKey: [
+      "reports",
+      "usage",
+      {
+        group_by: groupBy,
+        from: prevRange?.from,
+        to: prevRange?.to,
+        devices: deviceIdsKey,
+        page: 1,
+        page_size: PAGE_SIZE,
+      },
+    ],
+    queryFn: () =>
+      api<UsageReportResponse<UsageRow>>(
+        `/reports/usage?from=${prevRange?.from ?? ""}&to=${prevRange?.to ?? ""}${deviceParam}&group_by=${groupBy}&page=1&page_size=${PAGE_SIZE}`,
+      ),
+    enabled: compareActive && prevRange !== null,
+    placeholderData: (prev, prevQuery) => {
+      const prevParams = prevQuery?.queryKey[2] as { group_by?: GroupBy } | undefined;
+      return prevParams?.group_by === groupBy ? prev : undefined;
+    },
+  });
+
+  // Tempo ativo do período anterior indexado pela chave de junção - null
+  // enquanto a base não carregou (as células mostram "-").
+  const prevSecondsByKey = useMemo<Map<string, number> | null>(() => {
+    if (!compareActive || prevUsageQuery.data === undefined) return null;
+    let items: UsageRow[] = prevUsageQuery.data.items;
+    if (groupBy === "category") items = mergeUncategorizedRows(items as UsageCategoryItem[]);
+    const map = new Map<string, number>();
+    for (const row of items) map.set(comparisonKeyOf(groupBy, row), row.seconds_active);
+    return map;
+  }, [compareActive, prevUsageQuery.data, groupBy]);
+
   // group_by=category: mescla a categoria seedada "Não categorizado" no balde
   // null (mesma regra dos gráficos da AppsPage - sem dupla contagem).
   const baseItems = useMemo<UsageRow[]>(() => {
@@ -295,7 +376,7 @@ export function UsoPage() {
         : groupBy === "device"
           ? ["Dispositivo"]
           : ["Dispositivo", "Usuário"];
-  const colCount = textHeaders.length + numericCols.length;
+  const colCount = textHeaders.length + numericCols.length + (compareActive ? 1 : 0);
 
   const exportMutation = useCsvExport();
   const exportRequest =
@@ -378,6 +459,18 @@ export function UsoPage() {
             }
             onClear={() => setDeviceIds([])}
           />
+          {groupBy !== "device_user" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn("h-9", compareOn && "border-primary/50 bg-primary/10 text-primary")}
+              aria-pressed={compareOn}
+              title="Compara o tempo ativo de cada linha com o período imediatamente anterior, de mesma duração"
+              onClick={() => setCompareOn((v) => !v)}
+            >
+              vs período anterior
+            </Button>
+          )}
           <div className="ml-auto">
             <ExportCsvButton mutation={exportMutation} request={exportRequest} />
           </div>
@@ -420,6 +513,15 @@ export function UsoPage() {
                   {numericCols.map((col) => (
                     <SortableTh key={col.key} col={col} sort={sort} onToggle={toggleSort} />
                   ))}
+                  {compareActive && (
+                    <th
+                      scope="col"
+                      className="px-3 py-2 text-right"
+                      title="Tempo ativo comparado ao período imediatamente anterior, de mesma duração"
+                    >
+                      vs anterior
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -473,6 +575,14 @@ export function UsoPage() {
                           <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
                             {item.device_count}
                           </td>
+                          {compareActive && (
+                            <ComparisonCell
+                              seconds={item.seconds_active}
+                              rowKey={comparisonKeyOf(groupBy, item)}
+                              prevSecondsByKey={prevSecondsByKey}
+                              prevRange={prevRange}
+                            />
+                          )}
                         </tr>
                       );
                     }
@@ -493,6 +603,14 @@ export function UsoPage() {
                             {formatDuration(item.seconds_active)}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{item.app_count}</td>
+                          {compareActive && (
+                            <ComparisonCell
+                              seconds={item.seconds_active}
+                              rowKey={comparisonKeyOf(groupBy, item)}
+                              prevSecondsByKey={prevSecondsByKey}
+                              prevRange={prevRange}
+                            />
+                          )}
                         </tr>
                       );
                     }
@@ -531,6 +649,15 @@ export function UsoPage() {
                         <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
                           {formatDuration(item.seconds_not_work_related)}
                         </td>
+                        {/* compareActive é sempre false em device_user (nunca comparar pessoas). */}
+                        {compareActive && (
+                          <ComparisonCell
+                            seconds={item.seconds_active}
+                            rowKey={comparisonKeyOf(groupBy, item)}
+                            prevSecondsByKey={prevSecondsByKey}
+                            prevRange={prevRange}
+                          />
+                        )}
                       </tr>
                     );
                   })
@@ -566,6 +693,14 @@ export function UsoPage() {
                   </div>
                 )}
               </div>
+            )}
+
+            {/* Nota da base do comparativo: página 1 (top 100) do período anterior. */}
+            {compareActive && prevRange !== null && data !== undefined && (
+              <p className="border-t px-6 py-3 text-xs text-muted-foreground">
+                A comparação considera os {PAGE_SIZE} itens com mais tempo ativo do período
+                anterior, de {ddmm(prevRange.from)} a {ddmm(prevRange.to)}.
+              </p>
             )}
           </div>
         )}

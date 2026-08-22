@@ -60,6 +60,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { EChart } from "@/components/charts/EChart";
 import { CategoryInlineSelect } from "@/components/apps/CategoryInlineSelect";
+import { DeltaBadge, useComparisonRange } from "@/components/dashboard/comparison";
 import {
   DeviceMultiSelect,
   PERIOD_PRESETS,
@@ -246,6 +247,23 @@ export function AppsPage() {
   });
   const chartsData = usageByCategory.data;
 
+  // Comparativo do donut: a MESMA consulta por categoria no período
+  // imediatamente anterior de mesma duração (mesmos devices).
+  const prevRange = useComparisonRange(range);
+  const usageByCategoryPrev = useQuery({
+    queryKey: [
+      "reports",
+      "usage",
+      { group_by: "category", from: prevRange?.from, to: prevRange?.to, devices: deviceIdsKey },
+    ],
+    queryFn: () =>
+      api<UsageReportResponse<UsageCategoryItem>>(
+        `/reports/usage?from=${prevRange?.from ?? ""}&to=${prevRange?.to ?? ""}${deviceParam}&group_by=category&page=1&page_size=${MAX_PAGE_SIZE}`,
+      ),
+    enabled: prevRange !== null,
+    placeholderData: (prev) => prev,
+  });
+
   // Modo da tabela: com filtro de categoria/classificação ativo busca uma
   // única página com os 100 apps de mais tempo e filtra no cliente.
   const tableFilterActive = categoryFilter !== "all" || classificationFilter !== "all";
@@ -312,6 +330,20 @@ export function AppsPage() {
     [classTotals],
   );
   const donutTotal = donutSlices.reduce((s, x) => s + x.value, 0);
+
+  // Baldes do período ANTERIOR na MESMA ordem das fatias do donut - null
+  // enquanto a resposta da comparação não chegou.
+  const prevClassValues = useMemo<number[] | null>(() => {
+    if (usageByCategoryPrev.data === undefined) return null;
+    const totals = { work: 0, neutral: 0, notWork: 0, uncategorized: 0 };
+    for (const item of mergeUncategorizedRows(usageByCategoryPrev.data.items)) {
+      if (item.classification === 1) totals.work += item.seconds_active;
+      else if (item.classification === 0) totals.neutral += item.seconds_active;
+      else if (item.classification === -1) totals.notWork += item.seconds_active;
+      else totals.uncategorized += item.seconds_active;
+    }
+    return [totals.work, totals.neutral, totals.notWork, totals.uncategorized];
+  }, [usageByCategoryPrev.data]);
 
   const categoryBars = useMemo(() => {
     const items = [...mergedCategoryItems].sort((a, b) => b.seconds_active - a.seconds_active);
@@ -510,7 +542,17 @@ export function AppsPage() {
 
       {/* Gráficos do período: donut por classificação + barras por categoria. */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <DonutCard query={usageByCategory} slices={donutSlices} total={donutTotal} range={range} />
+        <DonutCard
+          query={usageByCategory}
+          slices={donutSlices}
+          total={donutTotal}
+          range={range}
+          prev={
+            prevClassValues !== null && prevRange !== null
+              ? { values: prevClassValues, range: prevRange }
+              : null
+          }
+        />
         <CategoryBarsCard query={usageByCategory} items={categoryBars} range={range} />
       </div>
 
@@ -801,11 +843,14 @@ function DonutCard({
   slices,
   total,
   range,
+  prev,
 }: {
   query: UseQueryResult<UsageReportResponse<UsageCategoryItem>>;
   slices: DonutSlice[];
   total: number;
   range: DateRange | null;
+  /** Baldes do período anterior na MESMA ordem das fatias - null sem base. */
+  prev: { values: number[]; range: DateRange } | null;
 }) {
   const [view, setView] = useState<CardView>("chart");
   const data = query.data;
@@ -845,6 +890,26 @@ function DonutCard({
               <ClassificationLegend />
             </div>
             {view === "table" && <DonutTable slices={slices} total={total} />}
+
+            {/* Bloco de resumo do comparativo - FORA do gráfico, cor neutra. */}
+            {prev !== null && !empty && (
+              <div className="mt-3 space-y-1 border-t pt-3 text-xs">
+                <p className="font-medium uppercase tracking-wide text-muted-foreground">
+                  vs período anterior
+                </p>
+                {slices.map((s, i) => (
+                  <p key={s.label} className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">{s.label}</span>
+                    <DeltaBadge
+                      current={s.value}
+                      previous={prev.values[i] ?? null}
+                      previousRange={prev.range}
+                      showLabel={false}
+                    />
+                  </p>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>
