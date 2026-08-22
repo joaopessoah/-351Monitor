@@ -52,6 +52,22 @@ echo "[backup] iniciando pg_dump de ${POSTGRES_DB} -> ${OUT}"
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T postgres \
   pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom > "$OUT"
 
+# -----------------------------------------------------------------------------
+# Integridade do dump ANTES de declarar sucesso: pg_restore --list lê o índice do
+# arquivo custom e falha em dump truncado ou corrompido (disco cheio no meio da
+# escrita, ruído do docker no stdout). Sem esta checagem, um dump inútil seria
+# copiado para o off-site e pingaria "sucesso" no healthchecks, que é exatamente
+# o cenário de "backup que só se descobre quebrado no dia do desastre".
+# O arquivo ruim é REMOVIDO para não se passar por backup válido na pasta.
+# -----------------------------------------------------------------------------
+echo "[backup] verificando a integridade do dump (pg_restore --list)"
+if ! docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T postgres \
+     pg_restore --list > /dev/null < "$OUT"; then
+  echo "[backup] ERRO: dump ilegível ou truncado, removendo ${OUT}"
+  rm -f "$OUT"
+  exit 1
+fi
+
 # Retenção: apaga dumps com mais de RETENTION_DAYS dias
 find "$BACKUP_DIR" -name 'm351_*.dump' -type f -mtime +"$RETENTION_DAYS" -delete
 
