@@ -1,8 +1,10 @@
 using System.Text.Json;
 using Dapper;
+using M351.Api.Agent;
 using M351.Api.Auditing;
 using M351.Api.Contracts;
 using M351.Domain.Entities;
+using M351.Infrastructure;
 using M351.Infrastructure.Reports;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -54,19 +56,8 @@ public class ReportsController(
             return ProblemResponse(StatusCodes.Status400BadRequest,
                 "Parâmetro group_by é obrigatório: app, category, device ou device_user.");
 
-        Guid[]? deviceIds = null;
-        if (!string.IsNullOrWhiteSpace(deviceIdsRaw))
-        {
-            var parts = deviceIdsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            var parsed = new List<Guid>(parts.Length);
-            foreach (var part in parts)
-            {
-                if (!Guid.TryParse(part, out var deviceId))
-                    return ProblemResponse(StatusCodes.Status400BadRequest, "Parâmetro device_ids deve ser uma lista de UUIDs separados por vírgula.");
-                parsed.Add(deviceId);
-            }
-            deviceIds = parsed.Distinct().ToArray();
-        }
+        var malformed = ParseDeviceIds(deviceIdsRaw, out var deviceIds);
+        if (malformed is not null) return malformed;
 
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
@@ -151,19 +142,8 @@ public class ReportsController(
         var invalid = ValidateRange(from, to, out var fromDay, out var toDay);
         if (invalid is not null) return invalid;
 
-        Guid[]? deviceIds = null;
-        if (!string.IsNullOrWhiteSpace(deviceIdsRaw))
-        {
-            var parts = deviceIdsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            var parsed = new List<Guid>(parts.Length);
-            foreach (var part in parts)
-            {
-                if (!Guid.TryParse(part, out var deviceId))
-                    return ProblemResponse(StatusCodes.Status400BadRequest, "Parâmetro device_ids deve ser uma lista de UUIDs separados por vírgula.");
-                parsed.Add(deviceId);
-            }
-            deviceIds = parsed.Distinct().ToArray();
-        }
+        var malformed = ParseDeviceIds(deviceIdsRaw, out var deviceIds);
+        if (malformed is not null) return malformed;
 
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
@@ -222,6 +202,183 @@ public class ReportsController(
             detailJson: JsonSerializer.Serialize(new { from, to, device_ids = deviceIds }));
 
         return Ok(response);
+    }
+
+    /// <summary>
+    /// GET /api/v1/reports/fora-do-horario: painel de ATIVIDADE FORA DO HORÁRIO DE TRABALHO —
+    /// tempo ATIVO somado fora da business_hours da organização, no fuso do tenant, sobre
+    /// activity_intervals (SQL canônico em ForaDoHorarioReportSql, compartilhado com o CSV).
+    /// Alimenta o card da Visão Geral (só os totais) e a aba do relatório de Uso (com a lista
+    /// por dispositivo). Mesma régua de datas dos demais relatórios (máx. 92 dias).
+    ///
+    /// LINHA VERMELHA: é um indicador de EQUILÍBRIO. Não calcula, e não pode passar a calcular,
+    /// hora extra, banco de horas ou adicional noturno, e não usa vocabulário de controle de
+    /// ponto. O disclaimer da Portaria 671/MTE acompanha a tela e o CSV, como na jornada.
+    ///
+    /// Dois estados vazios EXPLICATIVOS, em que a resposta vem sem número de propósito:
+    ///  - business_hours não configurada → status horario_nao_configurado: sem janela declarada
+    ///    não existe "fora dela", e zero seria mentira;
+    ///  - collection_window = BUSINESS_HOURS → status coleta_restrita_ao_horario: fora da janela
+    ///    o agente NÃO coleta, por decisão da própria organização, então zero seria um número
+    ///    falso. A tela explica o motivo em vez de exibir o número.
+    ///
+    /// include_devices (default false) governa a lista por dispositivo: sem ele a resposta é um
+    /// agregado de EQUIPE (o card da Visão Geral), com ele é um recorte pessoal identificável.
+    ///
+    /// Auditoria (DoD 11.3): view_report quando o recorte é pessoal — include_devices=true OU
+    /// device_ids presente — e SÓ quando há número a entregar (status ok). Agregado de equipe
+    /// não audita, mesma régua condicional do GET /reports/usage.
+    /// </summary>
+    [HttpGet("fora-do-horario")]
+    [AuditRead] // DoD 11.3: view_report CONDICIONAL (include_devices/device_ids) via AuditReadFilter
+    public async Task<IActionResult> ForaDoHorario(
+        [FromQuery(Name = "from")] string? from,
+        [FromQuery(Name = "to")] string? to,
+        [FromQuery(Name = "device_ids")] string? deviceIdsRaw,
+        [FromQuery(Name = "include_devices")] bool includeDevices = false,
+        [FromQuery(Name = "page")] int page = 1,
+        [FromQuery(Name = "page_size")] int pageSize = DefaultPageSize,
+        CancellationToken ct = default)
+    {
+        var invalid = ValidateRange(from, to, out _, out _);
+        if (invalid is not null) return invalid;
+
+        var malformed = ParseDeviceIds(deviceIdsRaw, out var deviceIds);
+        if (malformed is not null) return malformed;
+
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+
+        var tenantId = Auth.CurrentUser.TenantId(User);
+
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+
+        // mesmo gate do usage/jornada: id inexistente OU de outro tenant → 404 (nunca 403)
+        if (deviceIds is { Length: > 0 })
+        {
+            var found = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                "SELECT count(*)::int FROM devices WHERE tenant_id = @TenantId AND id = ANY(@DeviceIds)",
+                new { TenantId = tenantId, DeviceIds = deviceIds }, cancellationToken: ct));
+            if (found != deviceIds.Length) return NotFoundProblem();
+        }
+
+        var org = await connection.QuerySingleOrDefaultAsync<ForaDoHorarioOrgRow>(new CommandDefinition(
+            """
+            SELECT o.timezone,
+                   o.business_hours::text AS business_hours,
+                   c.collection_window::text AS collection_window
+            FROM organizations o
+            LEFT JOIN tenant_agent_configs c ON c.tenant_id = o.id
+            WHERE o.id = @TenantId
+            """,
+            new { TenantId = tenantId }, cancellationToken: ct));
+        if (org is null) return NotFoundProblem();
+
+        // a janela vem do MESMO parser usado pelos alertas de frota e pelo health-summary
+        var configured = BusinessHoursWindow.TryParse(org.BusinessHours, out var schedule);
+        var collectionMode = AgentConfigService.ParseCollectionWindow(org.CollectionWindow).Mode;
+
+        var window = configured
+            ? new ForaDoHorarioWindowResponse(
+                schedule!.IsoDays,
+                schedule.Start.ToString("HH\\:mm"),
+                schedule.End.ToString("HH\\:mm"))
+            : null;
+
+        // estados vazios EXPLICATIVOS: nenhuma consulta, nenhum número (ver o resumo acima)
+        if (!configured)
+        {
+            return Ok(new ForaDoHorarioResponse(
+                ForaDoHorarioStatus.HorarioNaoConfigurado, org.Timezone, null, collectionMode,
+                null, [], 0, page, pageSize));
+        }
+        if (collectionMode == "BUSINESS_HOURS")
+        {
+            return Ok(new ForaDoHorarioResponse(
+                ForaDoHorarioStatus.ColetaRestritaAoHorario, org.Timezone, window, collectionMode,
+                null, [], 0, page, pageSize));
+        }
+
+        var args = new
+        {
+            TenantId = tenantId,
+            From = from,
+            To = to,
+            FilterDevices = deviceIds is { Length: > 0 },
+            DeviceIds = deviceIds ?? [],
+            Timezone = org.Timezone,
+            BusinessDays = schedule!.IsoDays,
+            BusinessStart = schedule.Start.ToString("HH\\:mm"),
+            BusinessEnd = schedule.End.ToString("HH\\:mm"),
+            Limit = pageSize,
+            Offset = (page - 1) * pageSize,
+        };
+
+        var totals = await connection.QuerySingleAsync<ForaDoHorarioTotalsRow>(new CommandDefinition(
+            ForaDoHorarioReportSql.Totals, args, cancellationToken: ct));
+
+        var items = new List<ForaDoHorarioItemResponse>();
+        if (includeDevices)
+        {
+            items = (await connection.QueryAsync<ForaDoHorarioRow>(new CommandDefinition(
+                $"{ForaDoHorarioReportSql.Rows}\nLIMIT @Limit OFFSET @Offset",
+                args, cancellationToken: ct)))
+                .Select(r => new ForaDoHorarioItemResponse(
+                    r.DeviceId, r.DeviceName, r.SecondsActive, r.SecondsOutside,
+                    r.SecondsBefore, r.SecondsAfter, r.SecondsNonBusinessDay,
+                    r.DaysWithActivityOutside))
+                .ToList();
+        }
+
+        var response = new ForaDoHorarioResponse(
+            ForaDoHorarioStatus.Ok, org.Timezone, window, collectionMode,
+            new ForaDoHorarioTotalsResponse(
+                totals.SecondsActive, totals.SecondsOutside, totals.SecondsBefore,
+                totals.SecondsAfter, totals.SecondsNonBusinessDay,
+                totals.DevicesWithActivityOutside),
+            items, totals.DevicesWithActivityOutside, page, pageSize);
+
+        // DoD 11.3: só o recorte PESSOAL audita (lista por dispositivo ou filtro por device),
+        // no mesmo padrão condicional do GET /reports/usage. Gravação consolidada no
+        // AuditReadFilter (após o 2xx, com actor_ip).
+        if (includeDevices || deviceIds is { Length: > 0 })
+        {
+            readAudit.Record(tenantId, AuditActions.ViewReport,
+                Auth.CurrentUser.UserId(User),
+                targetType: deviceIds is { Length: 1 } ? "device" : "team",
+                targetId: deviceIds is { Length: 1 } ? deviceIds[0] : null,
+                detailJson: JsonSerializer.Serialize(new
+                {
+                    from,
+                    to,
+                    report = "fora_do_horario",
+                    device_ids = deviceIds,
+                }));
+        }
+
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// device_ids=uuid,uuid,... compartilhado pelos relatórios: null quando ausente, 400
+    /// ProblemDetails quando algum item não é UUID. Duplicatas são colapsadas.
+    /// </summary>
+    private ObjectResult? ParseDeviceIds(string? deviceIdsRaw, out Guid[]? deviceIds)
+    {
+        deviceIds = null;
+        if (string.IsNullOrWhiteSpace(deviceIdsRaw)) return null;
+
+        var parts = deviceIdsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var parsed = new List<Guid>(parts.Length);
+        foreach (var part in parts)
+        {
+            if (!Guid.TryParse(part, out var deviceId))
+                return ProblemResponse(StatusCodes.Status400BadRequest, "Parâmetro device_ids deve ser uma lista de UUIDs separados por vírgula.");
+            parsed.Add(deviceId);
+        }
+
+        deviceIds = parsed.Distinct().ToArray();
+        return null;
     }
 
     // ------------------------------------------------------------ group_by=app
@@ -476,4 +633,25 @@ public class ReportsController(
         long SecondsIdle,
         long SecondsLocked,
         int DaysWithData);
+
+    /// <summary>Fuso + janela declarada + modo da janela de coleta, numa consulta só.</summary>
+    private sealed record ForaDoHorarioOrgRow(string Timezone, string? BusinessHours, string? CollectionWindow);
+
+    private sealed record ForaDoHorarioTotalsRow(
+        long SecondsActive,
+        long SecondsOutside,
+        long SecondsBefore,
+        long SecondsAfter,
+        long SecondsNonBusinessDay,
+        int DevicesWithActivityOutside);
+
+    private sealed record ForaDoHorarioRow(
+        Guid DeviceId,
+        string DeviceName,
+        long SecondsActive,
+        long SecondsOutside,
+        long SecondsBefore,
+        long SecondsAfter,
+        long SecondsNonBusinessDay,
+        int DaysWithActivityOutside);
 }

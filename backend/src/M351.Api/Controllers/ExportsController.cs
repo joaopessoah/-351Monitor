@@ -1,10 +1,12 @@
 using System.Text.Json;
 using Dapper;
+using M351.Api.Agent;
 using M351.Api.Auth;
 using M351.Api.Contracts;
 using M351.Domain;
 using M351.Domain.Entities;
 using M351.Api.Services;
+using M351.Infrastructure;
 using M351.Infrastructure.Exports;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -19,7 +21,7 @@ namespace M351.Api.Controllers;
 /// API+worker em staging — infra/docker-compose.staging.yml).
 ///
 /// Regras e decisões documentadas:
-///  - kinds criados AQUI: usage_csv | jornada_csv. Pacotes DSR/offboarding
+///  - kinds criados AQUI: usage_csv | jornada_csv | fora_horario_csv. Pacotes DSR/offboarding
 ///    (dsr_subject/dsr_device/tenant_full) NÃO nascem deste POST genérico (→ 400): são criados
 ///    pelos endpoints /privacy/* (F4.5). A LISTAGEM e o DOWNLOAD os servem aqui — o download de
 ///    pacote DSR é application/zip (.zip) e expira em 72h, não os 7d do CSV de relatório;
@@ -30,7 +32,11 @@ namespace M351.Api.Controllers;
 ///    403 — Princípio 4: não confirmar a existência). Um Viewer jamais alcança um pacote DSR;
 ///  - params validados com os MESMOS validadores dos endpoints de leitura (régua de datas
 ///    do dashboard, group_by do usage, gate 404 de device_ids cross-tenant); group_by em
-///    jornada_csv → 400 (não se aplica — decisão p/ silêncio da spec);
+///    jornada_csv/fora_horario_csv → 400 (não se aplica — decisão p/ silêncio da spec);
+///  - fora_horario_csv exige a organização com horário de trabalho configurado e coleta
+///    contínua: sem janela declarada, ou com collection_window = BUSINESS_HOURS, o pedido vira
+///    409 explicativo (mesma régua dos estados vazios do GET /reports/fora-do-horario — um CSV
+///    de zeros seria lido como "ninguém trabalha fora do horário", que é falso);
 ///  - GET /exports lista os últimos 30 dias DO TENANT, desc, máx. 100 — trilha "quem gerou,
 ///    quando, com que filtros" (spec linha 949): exports de relatório (CSV) para todos os papéis;
 ///    pacotes DSR só para o papel que poderia criá-los;
@@ -46,7 +52,7 @@ public class ExportsController(
     IOptions<ExportOptions> exportOptions,
     TimeProvider clock) : ApiControllerBase
 {
-    private static readonly string[] ValidKinds = ["usage_csv", "jornada_csv"];
+    private static readonly string[] ValidKinds = ["usage_csv", "jornada_csv", "fora_horario_csv"];
 
     private const string ItemSql = """
         SELECT j.id, j.kind, j.status, j.created_at, j.params::text AS params_json,
@@ -62,7 +68,7 @@ public class ExportsController(
     {
         if (body?.Kind is null || !ValidKinds.Contains(body.Kind))
             return ProblemResponse(StatusCodes.Status400BadRequest,
-                "Parâmetro kind deve ser usage_csv ou jornada_csv. "
+                "Parâmetro kind deve ser usage_csv, jornada_csv ou fora_horario_csv. "
                 + "Pacotes DSR (dsr_subject/dsr_device/tenant_full) são criados pelos endpoints /privacy/*.");
 
         if (body.Params is null)
@@ -78,9 +84,9 @@ public class ExportsController(
             (body.Params.GroupBy is null || !ReportsController.ValidGroupBys.Contains(body.Params.GroupBy)))
             return ProblemResponse(StatusCodes.Status400BadRequest,
                 "Parâmetro group_by é obrigatório para usage_csv: app, category, device ou device_user.");
-        if (body.Kind == "jornada_csv" && body.Params.GroupBy is not null)
+        if (body.Kind is "jornada_csv" or "fora_horario_csv" && body.Params.GroupBy is not null)
             return ProblemResponse(StatusCodes.Status400BadRequest,
-                "Parâmetro group_by não se aplica a jornada_csv.");
+                $"Parâmetro group_by não se aplica a {body.Kind}.");
 
         Guid[]? deviceIds = null;
         if (body.Params.DeviceIds is { Length: > 0 })
@@ -107,6 +113,34 @@ public class ExportsController(
                 "SELECT count(*)::int FROM devices WHERE tenant_id = @TenantId AND id = ANY(@DeviceIds)",
                 new { TenantId = tenantId, DeviceIds = deviceIds }, cancellationToken: ct));
             if (found != deviceIds.Length) return NotFoundProblem();
+        }
+
+        // fora_horario_csv depende da configuração da ORGANIZAÇÃO, não do pedido: sem janela
+        // declarada não existe "fora dela", e com a coleta restrita ao horário de trabalho não
+        // há o que somar fora dele (por design do agente). Os dois casos viram 409 explicativo
+        // — nunca um CSV cheio de zeros, que o gestor leria como "ninguém trabalha fora do
+        // horário". É a MESMA régua dos estados vazios do GET /reports/fora-do-horario.
+        if (body.Kind == "fora_horario_csv")
+        {
+            var config = await connection.QuerySingleAsync<ForaDoHorarioConfigRow>(new CommandDefinition(
+                """
+                SELECT o.business_hours::text AS business_hours,
+                       c.collection_window::text AS collection_window
+                FROM organizations o
+                LEFT JOIN tenant_agent_configs c ON c.tenant_id = o.id
+                WHERE o.id = @TenantId
+                """,
+                new { TenantId = tenantId }, cancellationToken: ct));
+
+            if (!BusinessHoursWindow.TryParse(config.BusinessHours, out _))
+                return ProblemResponse(StatusCodes.Status409Conflict,
+                    "Horário de trabalho não configurado.",
+                    detail: "Defina o horário de trabalho da organização em Configurações para apurar atividade fora dele.");
+
+            if (AgentConfigService.ParseCollectionWindow(config.CollectionWindow).Mode == "BUSINESS_HOURS")
+                return ProblemResponse(StatusCodes.Status409Conflict,
+                    "Coleta restrita ao horário de trabalho.",
+                    detail: "A organização escolheu coletar apenas dentro do horário de trabalho, então não há atividade registrada fora dele.");
         }
 
         // params NORMALIZADOS (snake_case, sem nulos) — é o que o worker lê e o que a
@@ -288,9 +322,17 @@ public class ExportsController(
         using var doc = JsonDocument.Parse(row.ParamsJson);
         var from = doc.RootElement.TryGetProperty("from", out var f) ? f.GetString() : null;
         var to = doc.RootElement.TryGetProperty("to", out var t) ? t.GetString() : null;
-        var prefix = row.Kind == "jornada_csv" ? "jornada" : "uso";
+        var prefix = row.Kind switch
+        {
+            "jornada_csv" => "jornada",
+            "fora_horario_csv" => "fora-do-horario",
+            _ => "uso",
+        };
         return $"{prefix}_{from}_{to}.csv";
     }
+
+    /// <summary>Configuração da org que decide se fora_horario_csv pode ser gerado.</summary>
+    private sealed record ForaDoHorarioConfigRow(string? BusinessHours, string? CollectionWindow);
 
     private sealed record JobRow(
         Guid Id,
