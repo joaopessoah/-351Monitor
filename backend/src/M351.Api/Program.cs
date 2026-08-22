@@ -35,6 +35,10 @@ if (!string.IsNullOrWhiteSpace(sentryDsn))
     });
 }
 
+// Não anunciar o servidor: suprime o header "Server: Kestrel" das respostas (a borda
+// também remove Server/Via, ver o bloco header do infra/caddy/Caddyfile)
+builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
+
 builder.Services.AddM351Infrastructure(builder.Configuration);
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.Configure<PortalOptions>(builder.Configuration.GetSection(PortalOptions.SectionName));

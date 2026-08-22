@@ -9,6 +9,30 @@
 {$STAGING_DOMAIN} {
 	encode zstd gzip
 
+	# Headers de segurança na borda (valem para a API e para a SPA do portal)
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		# style-src 'unsafe-inline': o portal usa Tailwind e o ECharts injeta styles
+		# inline em runtime; as fontes são self-hosted em /fonts, cobertas pelo
+		# default-src 'self'
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'"
+		# Staging não deve ser indexado. AO MIGRAR para o domínio de produção,
+		# rever este X-Robots-Tag e o /robots.txt abaixo.
+		X-Robots-Tag noindex
+		# Não anunciar servidor nem proxies intermediários
+		-Server
+		-Via
+	}
+
+	# Staging fora dos buscadores (rever junto com o X-Robots-Tag na produção)
+	respond /robots.txt <<ROBOTS
+		User-agent: *
+		Disallow: /
+		ROBOTS 200
+
 	# API + SPA (o ASP.NET Core serve o portal de wwwroot)
 	reverse_proxy api:8080
 
