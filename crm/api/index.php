@@ -7,6 +7,7 @@
  * Exemplos:
  *   curl -H "Authorization: Bearer $T" ".../crm/api/index.php?r=leads&status=novo"
  *   curl -H "Authorization: Bearer $T" -X POST -d '{"lead_id":1,"type":"demo","summary":"Demo feita"}' ".../crm/api/index.php?r=interactions"
+ *   (type=email aceita "email_seq":1..5 — agenda sozinho a tarefa da proxima etapa)
  */
 
 require dirname(__DIR__) . '/lib/bootstrap.php';
@@ -125,7 +126,8 @@ try {
             $out['cnpj_checked_at'] = api_dt($l['cnpj_checked_at']);
             $out['contacts'] = array_map(fn ($c) => [
                 'id' => (int) $c['id'], 'name' => $c['name'], 'cargo' => $c['cargo'],
-                'email' => $c['email'], 'whatsapp' => $c['whatsapp'], 'linkedin' => $c['linkedin'],
+                'email' => $c['email'], 'whatsapp' => $c['whatsapp'], 'phone' => $c['phone'] ?? null,
+                'linkedin' => $c['linkedin'], 'notes' => $c['notes'] ?? null,
                 'principal' => (bool) $c['is_principal'], 'decisor' => (bool) $c['is_decisor'],
             ], contacts_of($id));
             $out['interactions'] = array_map(fn ($i) => [
@@ -316,8 +318,13 @@ try {
             if ($oc === false) {
                 api_err(422, 'invalid', 'occurred_at inválido (use YYYY-MM-DD HH:MM).');
             }
-            $id = interaction_add((int) ($body['lead_id'] ?? 0), (string) ($body['type'] ?? ''), (string) ($body['summary'] ?? ''), $oc, null);
-            api_out(200, ['id' => $id]);
+            $leadId = (int) ($body['lead_id'] ?? 0);
+            $tipo = (string) ($body['type'] ?? '');
+            // email_seq (1 a 5) liga a interacao a cadencia e agenda a proxima tarefa
+            $seq = $tipo === 'email' ? (int) ($body['email_seq'] ?? 0) : 0;
+            $id = interaction_add($leadId, $tipo, (string) ($body['summary'] ?? ''), $oc, null, $seq > 0 ? $seq : null);
+            $due = $seq > 0 ? cadencia_email_agendar($leadId, $seq, null, $oc) : null;
+            api_out(200, ['id' => $id, 'next_task_due_at' => $due]);
         }
         case 'GET tasks': {
             $due = in_enum($_GET['due'] ?? null, ['hoje', 'atrasadas', 'abertas'], 'abertas');

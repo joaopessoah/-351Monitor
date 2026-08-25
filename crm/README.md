@@ -104,6 +104,40 @@ curl -s -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json
 - CNPJ recém-emitido pode demorar a aparecer nas bases públicas (dumps mensais da RFB).
 - Import CSV: coluna opcional `cnpj` no fim (`empresa;contato;email;whatsapp;estacoes;origem;observacoes;cnpj`).
 
+## Quadro de tarefas (board.php)
+
+Kanban do trabalho do time, separado do Kanban do funil (`kanban.php`, que move *leads*).
+
+**O card é a tarefa.** Não existe tabela de cards: `tasks` ganhou `column_id`, `sort_order`
+e `description`. Por isso o botão ✓ do dashboard, a tarefa no detalhe do lead e o card do
+quadro são o mesmo registro — a coluna marcada com `is_done = 1` é a que grava `done_at`.
+Sempre existe exatamente uma; trocar qual é reconcilia o estado das tarefas em transação.
+
+**Arrastar.** É o único `fetch` de tela do CRM. O JS move o card no DOM primeiro e manda
+para `board.php?r=move` a **ordem completa dos ids da coluna de destino**; o servidor
+renumera de 1 a N numa transação (sem posição fracionária, sem rebalanceamento depois).
+Se a resposta falhar, o card volta para a posição exata de onde saiu. O corpo vai como
+`x-www-form-urlencoded` de propósito: assim `$_POST` popula e o `csrf_check()` de sempre vale.
+
+**Sem JavaScript** cada card mostra um `<select>` “mover para” que posta como qualquer outro
+form (`.board.has-dnd .board-card form { display: none }` some com ele quando o arrasto sobe).
+
+Tarefas geradas pela cadência de e-mail ficam ocultas por padrão — com 30 leads ativos são
+dezenas de cards automáticos. O filtro “Mostrar cadência” liga. A coluna de conclusão mostra
+só os últimos 30 dias, senão cresce para sempre.
+
+As colunas (nome, cor, ordem, qual conclui) são editadas em **Configurações**. Não dá para
+apagar a coluna de conclusão nem a última que sobrou; apagar qualquer outra exige escolher
+para onde os cards dela vão.
+
+## Testes
+
+`php crm/tests/run.php` — suítes das funções puras (dias úteis da cadência, modelos de
+e-mail e o link mailto, parser das migrations, regressões de code review). Não tocam no
+banco nem sobem servidor: os stubs de `rows/q/scalar/row` estouram de propósito, o que
+também exercita o caminho "migration ainda não aplicada". Rode antes de subir para a
+Hostinger — a hospedagem compartilhada não é lugar de descobrir erro de sintaxe.
+
 ## Segurança e LGPD (resumo)
 
 - Login com rate limit (8/15min por IP), senha `password_hash()`, troca forçada no 1º acesso,
@@ -111,5 +145,9 @@ curl -s -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json
 - `/crm/` fora de índices: `robots.txt` + `X-Robots-Tag: noindex`.
 - Intake público com honeypot, time-trap, limite 5/h e 20/dia por IP; IPs de envio ficam 90 dias
   no `intake_log` (poda automática) — retenção declarada na política de privacidade do site.
-- Leads sem avanço: eliminar em até 12 meses (botão "Excluir lead" no detalhe — CASCADE apaga
-  interações, tarefas e histórico).
+- Leads sem avanço: eliminar em até 12 meses. **Não há botão de excluir na tela** (decisão de
+  produto) — a limpeza é feita pelo phpMyAdmin; `lead_delete()` continua em `lib/model.php` para
+  quem precisar do caminho programático (CASCADE apaga interações, tarefas e histórico).
+- Opt-out ("não me contacte"): marcar no detalhe do lead. O registro é **mantido** de propósito —
+  é a lista de supressão que impede o contato de voltar pela fila, pelo import ou pelo site
+  (`lead_create()` herda o flag do duplicado). Marcar encerra as tarefas abertas e bloqueia a cadência.

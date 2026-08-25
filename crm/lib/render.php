@@ -41,9 +41,25 @@ const INTERACTION_LABELS = [
     'outro'    => 'Outro',
 ];
 
+
+/** Etapas da cadencia de e-mail (interaction.email_seq). */
+const CADENCIA_EMAIL_LABELS = [
+    1 => 'Primeiro e-mail',
+    2 => 'Segundo e-mail',
+    3 => 'Terceiro e-mail',
+    4 => 'Quarto e-mail',
+    5 => 'Quinto e-mail',
+];
+
 function fmt_dt(?string $dt): string
 {
     return $dt ? date('d/m/Y H:i', strtotime($dt)) : '—';
+}
+
+/** DATETIME do banco -> value de input datetime-local. */
+function dtlocal_value(?string $dt): string
+{
+    return $dt ? date('Y-m-d\TH:i', strtotime($dt)) : '';
 }
 
 function fmt_date(?string $dt): string
@@ -68,13 +84,65 @@ function status_badge(string $status): string
     return '<span class="badge badge-' . esc($status) . '">' . esc(STATUS_LABELS[$status] ?? $status) . '</span>';
 }
 
-/** Link wa.me a partir do fone normalizado (só dígitos com DDI). */
+/** 5511999998888 -> (11) 99999-8888. Devolve o que veio se nao reconhecer. */
+function fmt_fone(?string $d): string
+{
+    $d = preg_replace('/\D+/', '', (string) $d);
+    if (str_starts_with($d, '55') && (strlen($d) === 12 || strlen($d) === 13)) {
+        $d = substr($d, 2);
+    }
+    if (strlen($d) === 11) {
+        return '(' . substr($d, 0, 2) . ') ' . substr($d, 2, 5) . '-' . substr($d, 7);
+    }
+    if (strlen($d) === 10) {
+        return '(' . substr($d, 0, 2) . ') ' . substr($d, 2, 4) . '-' . substr($d, 6);
+    }
+    return $d;
+}
+
+/** Link wa.me a partir do fone normalizado (so digitos com DDI). */
 function wa_link(?string $whatsapp): string
 {
     if (!$whatsapp) {
         return '—';
     }
-    return '<a href="https://wa.me/' . esc($whatsapp) . '" target="_blank" rel="noopener">' . esc($whatsapp) . '</a>';
+    return '<a href="https://wa.me/' . esc($whatsapp) . '" target="_blank" rel="noopener">'
+        . esc(fmt_fone($whatsapp)) . '</a>';
+}
+
+/** Telefone fixo: link tel: (disca no softphone/celular pareado). */
+function tel_link(?string $phone): string
+{
+    if (!$phone) {
+        return '—';
+    }
+    return '<a href="tel:+' . esc($phone) . '">' . esc(fmt_fone($phone)) . '</a>';
+}
+
+/**
+ * E-mail como link mailto:, opcionalmente com assunto e corpo do modelo da
+ * cadencia — abre o Outlook (ou o app de e-mail padrao) ja preenchido.
+ * Corpo em texto puro, cortado em 1500 chars para nao estourar a URL.
+ *
+ * @param array{assunto: string, corpo: string}|null $modelo
+ */
+function mailto_link(?string $email, ?array $modelo = null, string $titulo = ''): string
+{
+    if (!$email) {
+        return '—';
+    }
+    // '?' e '&' sao atext valido em local-part, entao o endereco tambem
+    // precisa ser codificado - senao da para injetar bcc no link.
+    $href = 'mailto:' . str_replace('%40', '@', rawurlencode($email));
+    if ($modelo !== null) {
+        $href .= '?subject=' . rawurlencode($modelo['assunto'])
+            // Normaliza para CRLF de forma idempotente: o textarea do settings.php
+            // ja envia \r\n, e um str_replace ingenuo viraria \r\r\n no Outlook.
+            . '&body=' . rawurlencode(mb_substr(
+                preg_replace('/\r\n|\r|\n/', "\r\n", $modelo['corpo']), 0, 1500));
+    }
+    return '<a href="' . esc($href) . '"' . ($titulo !== '' ? ' title="' . esc($titulo) . '"' : '') . '>'
+        . esc($email) . '</a>';
 }
 
 function page_header(string $title, string $active, array $user): void
@@ -85,6 +153,7 @@ function page_header(string $title, string $active, array $user): void
         'index.php'    => 'Dashboard',
         'leads.php'    => 'Leads',
         'kanban.php'   => 'Kanban',
+        'board.php'    => 'Quadro',
         'fila.php'     => 'Fila',
         'import.php'   => 'Importar',
         'settings.php' => 'Configurações',

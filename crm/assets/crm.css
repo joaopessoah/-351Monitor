@@ -304,6 +304,79 @@ code { background: var(--surface-2); border: 1px solid var(--border); border-rad
 .lead-head h1 { margin: 0; font-size: 1.4rem; }
 .dup-banner { border: 1px solid rgba(232, 115, 127, 0.45); background: rgba(232, 115, 127, 0.1); color: var(--danger); border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 16px; font-size: 0.9rem; }
 
+/* ---------- Opt-out, cadencia de e-mail e edicao de contato ---------- */
+/* .field e display:flex, entao o [hidden] do browser precisa de reforco. */
+.field[hidden] { display: none; }
+.nc-banner { border: 1px solid rgba(232, 115, 127, 0.6); background: rgba(232, 115, 127, 0.14); color: var(--danger); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 16px; font-size: 0.9rem; }
+.nc-banner strong { color: var(--danger); text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.82rem; }
+.badge-nc { color: var(--danger); border-color: rgba(232, 115, 127, 0.6); background: rgba(232, 115, 127, 0.16); }
+.seq-hint { display: inline-block; margin-left: 6px; font-size: 0.72rem; font-weight: 700; color: var(--green); background: var(--green-soft); border-radius: 999px; padding: 1px 7px; vertical-align: middle; }
+.seq-hint-fim { color: var(--ink-3); background: var(--surface-2); }
+.table tr.row-edit td { background: var(--surface-2); padding: 16px; }
+.table tr.row-edit .form-grid { margin-bottom: 12px; }
+
+.tpl { border: 1px solid var(--border-soft); border-radius: var(--radius-sm); padding: 12px 14px; margin-top: 12px; background: var(--bg-soft); }
+.tpl > summary { cursor: pointer; font-weight: 600; color: var(--ink); list-style: revert; }
+.tpl > summary::marker { color: var(--ink-3); }
+.tpl[open] > summary { margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border-soft); }
+.tpl textarea { min-height: 220px; font-family: var(--font-body); line-height: 1.55; }
+.tpl code, .cad-chaves code { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: 6px; padding: 1px 6px; font-size: 0.8rem; color: var(--green); }
+
+/* ---------- Quadro de tarefas (board) ---------- */
+.board-filtros { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn.is-on { color: var(--green); border-color: rgba(182, 255, 60, 0.45); background: var(--green-soft); }
+
+.board-novo { margin-bottom: 16px; }
+.board-novo .task-quick { margin-top: 0; }
+.board-novo select { min-width: 150px; }
+
+/* Faixa de cor no topo da coluna: identifica a coluna sem depender do nome.
+   A cor mora num custom property para servir a faixa e ao chip do settings. */
+.bcol-cinza { --bcol: var(--ink-3); }
+.bcol-azul { --bcol: var(--blue); }
+.bcol-verde { --bcol: var(--green); }
+.bcol-laranja { --bcol: var(--warn); }
+.bcol-vermelho { --bcol: var(--danger); }
+.bcol-roxo { --bcol: #B08CE8; }
+.board .kanban-col { border-top: 3px solid var(--bcol, var(--border)); }
+
+/* Area de soltar: precisa de altura propria, senao coluna vazia nao recebe card. */
+.board-drop { min-height: 60px; border-radius: var(--radius-sm); transition: background 0.12s ease; }
+.board-drop.is-over { background: var(--green-soft); outline: 1px dashed rgba(182, 255, 60, 0.45); outline-offset: 2px; }
+.board-vazia { text-align: center; margin: 4px 0 0; }
+
+.board-card { position: relative; }
+.board-card .kc-lead { display: block; font-size: 0.78rem; color: var(--ink-2); margin-top: 4px; }
+.board-card.is-overdue { border-color: rgba(245, 168, 84, 0.45); }
+.board-card.is-dragging { opacity: 0.4; }
+.board-card.is-saving { opacity: 0.6; pointer-events: none; }
+.badge-cad { color: var(--ink-3); border-color: var(--border); background: var(--surface-2); margin-top: 6px; }
+
+/* Com o arrasto ativo o select vira redundancia visual, mas NAO pode sumir do
+   foco: e a unica forma de mover card pelo teclado. Escondido a la visually-
+   hidden, reaparece inteiro quando recebe foco via Tab. */
+.board.has-dnd .board-card { cursor: grab; }
+.board.has-dnd .board-card:active { cursor: grabbing; }
+.board.has-dnd .board-card form {
+  position: absolute; width: 1px; height: 1px; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.board.has-dnd .board-card form:focus-within {
+  position: static; width: auto; height: auto; margin: 8px 0 0;
+  overflow: visible; clip-path: none; white-space: normal;
+}
+.board-card.is-oculto { display: none; }
+.board-mover { margin-top: 6px; }
+
+.board-detalhe { margin-top: 20px; }
+.board-detalhe textarea { min-height: 160px; font-family: var(--font-body); line-height: 1.55; }
+.board-excluir { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-soft); }
+
+/* Colunas em Configuracoes */
+.bcol-linha { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
+.bcol-linha input[type="text"] { flex: 1; min-width: 130px; }
+.bcol-linha .bcol-chip { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; background: var(--bcol, var(--ink-3)); }
+
 /* ---------- Import preview ---------- */
 .import-ok { color: var(--green); }
 .import-invalida { color: var(--danger); }

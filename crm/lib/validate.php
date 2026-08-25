@@ -38,6 +38,12 @@ function norm_whatsapp(?string $s)
  * CNPJ: 14 posições — desde jul/2026 as 12 primeiras podem ser alfanuméricas,
  * os 2 dígitos verificadores continuam numéricos (valor do char = ASCII - 48).
  */
+/** Telefone fixo: mesma normalizacao do WhatsApp, sem a semantica do wa.me. */
+function norm_phone(?string $s)
+{
+    return norm_whatsapp($s);
+}
+
 function norm_cnpj(?string $s)
 {
     $c = strtoupper(preg_replace('/[^0-9A-Za-z]+/', '', (string) $s));

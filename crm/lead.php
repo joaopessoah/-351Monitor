@@ -1,7 +1,8 @@
 <?php
 /**
  * Lead: criação (sem id) e detalhe (com id) — dados, status com motivo de perda,
- * próxima ação, interações, tarefas, timeline e exclusão (LGPD).
+ * próxima ação, interações com cadência de e-mail, tarefas, contatos,
+ * timeline e opt-out ("não contactar").
  */
 
 require __DIR__ . '/lib/bootstrap.php';
@@ -70,6 +71,38 @@ function lead_form_validate(array $in): array
     return [$d, $errors];
 }
 
+/**
+ * Campos do form de contato já normalizados. $p é o prefixo dos names:
+ * 'c_' no form de adicionar, 'e_' na linha em edição.
+ */
+function contact_form_input(string $p): array
+{
+    $email = norm_email($_POST[$p . 'email'] ?? '');
+    if ($email === false) {
+        throw new InvalidArgumentException('E-mail do contato inválido.');
+    }
+    $fone = norm_whatsapp($_POST[$p . 'whatsapp'] ?? '');
+    if ($fone === false) {
+        throw new InvalidArgumentException('WhatsApp do contato inválido — use DDD + número.');
+    }
+    $tel = norm_phone($_POST[$p . 'phone'] ?? '');
+    if ($tel === false) {
+        throw new InvalidArgumentException('Telefone fixo inválido — use DDD + número.');
+    }
+    $li = norm_url($_POST[$p . 'linkedin'] ?? '');
+    if ($li === false) {
+        throw new InvalidArgumentException('LinkedIn do contato inválido.');
+    }
+    return [
+        'name'     => (string) ($_POST[$p . 'name'] ?? ''),
+        'cargo'    => $_POST[$p . 'cargo'] ?? null,
+        'email'    => $email,
+        'whatsapp' => $fone,
+        'phone'    => $tel,
+        'linkedin' => $li,
+    ];
+}
+
 $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 $errors = [];
 $old = [];
@@ -127,38 +160,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $old = $_POST;
         } elseif ($action === 'contact_add' && $id > 0) {
-            $email = norm_email($_POST['c_email'] ?? '');
-            if ($email === false) {
-                throw new InvalidArgumentException('E-mail do contato inválido.');
-            }
-            $fone = norm_whatsapp($_POST['c_whatsapp'] ?? '');
-            if ($fone === false) {
-                throw new InvalidArgumentException('WhatsApp do contato inválido.');
-            }
-            $li = norm_url($_POST['c_linkedin'] ?? '');
-            if ($li === false) {
-                throw new InvalidArgumentException('LinkedIn do contato inválido.');
-            }
-            contact_add($id, [
-                'name'         => (string) ($_POST['c_name'] ?? ''),
-                'cargo'        => $_POST['c_cargo'] ?? null,
-                'email'        => $email,
-                'whatsapp'     => $fone,
-                'linkedin'     => $li,
-                'is_principal' => !empty($_POST['c_principal']),
-            ]);
+            contact_add($id, contact_form_input('c_') + ['is_principal' => !empty($_POST['c_principal'])]);
             flash_set('ok', 'Contato adicionado.');
             redirect('lead.php?id=' . $id);
+        } elseif ($action === 'contact_update' && $id > 0) {
+            contact_update((int) ($_POST['contact_id'] ?? 0), contact_form_input('e_'), $id);
+            flash_set('ok', 'Contato atualizado.');
+            redirect('lead.php?id=' . $id);
         } elseif ($action === 'contact_delete' && $id > 0) {
-            contact_delete((int) ($_POST['contact_id'] ?? 0));
+            contact_delete((int) ($_POST['contact_id'] ?? 0), $id);
             flash_set('ok', 'Contato removido.');
             redirect('lead.php?id=' . $id);
         } elseif ($action === 'contact_principal' && $id > 0) {
-            contact_set_principal((int) ($_POST['contact_id'] ?? 0));
+            contact_set_principal((int) ($_POST['contact_id'] ?? 0), $id);
             flash_set('ok', 'Contato principal atualizado.');
             redirect('lead.php?id=' . $id);
         } elseif ($action === 'contact_decisor' && $id > 0) {
-            contact_toggle_decisor((int) ($_POST['contact_id'] ?? 0));
+            contact_toggle_decisor((int) ($_POST['contact_id'] ?? 0), $id);
             redirect('lead.php?id=' . $id);
         } elseif ($action === 'status' && $id > 0) {
             lead_set_status($id, (string) ($_POST['status'] ?? ''), $_POST['lost_reason'] ?? null, $userId);
@@ -180,8 +198,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($oc === false) {
                 throw new InvalidArgumentException('Data/hora da interação inválida.');
             }
-            interaction_add($id, (string) ($_POST['type'] ?? ''), (string) ($_POST['summary'] ?? ''), $oc, $userId);
-            flash_set('ok', 'Interação registrada.');
+            $tipo = (string) ($_POST['type'] ?? '');
+            $seq = $tipo === 'email' ? (int) ($_POST['email_seq'] ?? 0) : 0;
+            interaction_add($id, $tipo, (string) ($_POST['summary'] ?? ''), $oc, $userId, $seq > 0 ? $seq : null);
+            if ($seq > 0) {
+                $due = cadencia_email_agendar($id, $seq, $userId, $oc);
+                flash_set('ok', (CADENCIA_EMAIL_LABELS[$seq] ?? 'E-mail') . ' registrado. ' . ($due === null
+                    ? 'Lead em “não contactar” — nenhuma tarefa criada.'
+                    : 'Tarefa criada para ' . fmt_date($due) . '.'));
+            } else {
+                flash_set('ok', 'Interação registrada.');
+            }
             redirect('lead.php?id=' . $id);
         } elseif ($action === 'task' && $id > 0) {
             $due = norm_dtlocal($_POST['due_at'] ?? '');
@@ -199,14 +226,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             lead_enrich_cnpj($id);
             flash_set('ok', 'Dados da Receita atualizados.');
             redirect('lead.php?id=' . $id);
-        } elseif ($action === 'delete' && $id > 0) {
-            lead_delete($id);
-            flash_set('ok', 'Lead excluído definitivamente.');
-            redirect('leads.php');
+        } elseif ($action === 'no_contact' && $id > 0) {
+            $on = ($_POST['on'] ?? '') === '1';
+            lead_set_no_contact($id, $on, $_POST['motivo'] ?? null);
+            flash_set('ok', $on
+                ? 'Lead marcado como “não contactar”. Tarefas abertas encerradas.'
+                : 'Marcação de “não contactar” removida.');
+            redirect('lead.php?id=' . $id);
         }
     } catch (InvalidArgumentException $e) {
         flash_set('erro', $e->getMessage());
-        redirect('lead.php' . ($id > 0 ? '?id=' . $id : ''));
+        // Erro na edicao inline volta com a linha aberta, senao o que foi
+        // digitado some junto com a linha.
+        $volta = 'lead.php' . ($id > 0 ? '?id=' . $id : '');
+        if ($id > 0 && ($_POST['action'] ?? '') === 'contact_update') {
+            $volta .= '&edit_contact=' . (int) ($_POST['contact_id'] ?? 0) . '#contatos';
+        }
+        redirect($volta);
     }
 }
 
@@ -230,11 +266,6 @@ $v = function (string $key, $default = '') use ($old, $lead) {
     }
     return (string) $default;
 };
-/** DATETIME do banco → value de input datetime-local. */
-function dtlocal_value(?string $dt): string
-{
-    return $dt ? date('Y-m-d\TH:i', strtotime($dt)) : '';
-}
 
 page_header($isNew ? 'Novo lead' : $lead['company'], 'leads.php', $user);
 
@@ -296,6 +327,7 @@ if ($errors) {
     <h1><?= esc($lead['company']) ?></h1>
     <?= status_badge($lead['status']) ?>
     <?php if ($lead['duplicate_of_lead_id']): ?><span class="badge badge-dup">Duplicado</span><?php endif; ?>
+    <?php if (!empty($lead['no_contact'])): ?><span class="badge badge-nc">Não contactar</span><?php endif; ?>
   </div>
   <p class="muted">Criado em <?= esc(fmt_dt($lead['created_at'])) ?> via <?= esc($lead['created_via']) ?>
     · origem <?= esc(SOURCE_LABELS[$lead['source']] ?? $lead['source']) ?>
@@ -304,6 +336,12 @@ if ($errors) {
     <?php if ($lead['utm_source']): ?> · UTM: <?= esc($lead['utm_source']) ?>/<?= esc($lead['utm_medium'] ?? '-') ?>/<?= esc($lead['utm_campaign'] ?? '-') ?><?php endif; ?>
     <?php if ($lead['status'] === 'perdido' && $lead['lost_reason']): ?> · <strong>Motivo da perda:</strong> <?= esc($lead['lost_reason']) ?><?php endif; ?>
   </p>
+  <?php if (!empty($lead['no_contact'])): ?>
+    <div class="nc-banner"><strong>Não contactar.</strong>
+      Pediu para não receber contato em <?= esc(fmt_date($lead['no_contact_at'])) ?>.
+      <?php if (!empty($lead['no_contact_reason'])): ?>Motivo: <?= esc($lead['no_contact_reason']) ?>.<?php endif; ?>
+      Fora da cadência, sem tarefas e fora da fila de prospecção.</div>
+  <?php endif; ?>
   <?php if ($lead['duplicate_of_lead_id']): ?>
     <div class="dup-banner">Possível duplicado do lead
       <a href="lead.php?id=<?= (int) $lead['duplicate_of_lead_id'] ?>">#<?= (int) $lead['duplicate_of_lead_id'] ?></a>.
@@ -489,27 +527,95 @@ if ($errors) {
     </div>
 
     <div class="card">
-      <h2 class="card-title">Zona de risco</h2>
-      <form method="post" data-confirm="Excluir DEFINITIVAMENTE este lead e todo o histórico? Não dá para desfazer.">
-        <?= csrf_field() ?>
-        <input type="hidden" name="action" value="delete">
-        <button class="btn btn-danger" type="submit">Excluir lead (LGPD)</button>
-      </form>
+      <h2 class="card-title">Não contactar</h2>
+      <?php if (empty($lead['no_contact'])): ?>
+        <p class="muted">Se a pessoa pedir para não receber mais contato, marque aqui: o lead sai da cadência,
+          as tarefas abertas são encerradas e ele não volta pela fila de prospecção nem por uma nova entrada.</p>
+        <form method="post" class="form-stack"
+              data-confirm="Marcar como “não contactar”? As tarefas abertas deste lead serão encerradas.">
+          <?= csrf_field() ?>
+          <input type="hidden" name="action" value="no_contact">
+          <input type="hidden" name="on" value="1">
+          <div class="field">
+            <label for="nc_motivo">Motivo <span class="muted">(opcional)</span></label>
+            <input id="nc_motivo" name="motivo" type="text" maxlength="255"
+                   placeholder="Ex.: respondeu SAIR ao segundo e-mail">
+          </div>
+          <button class="btn btn-danger" type="submit">Pediu para não ser contactado</button>
+        </form>
+      <?php else: ?>
+        <p class="muted">Marcado em <?= esc(fmt_dt($lead['no_contact_at'])) ?>.
+          <?php if (!empty($lead['no_contact_reason'])): ?>Motivo: <?= esc($lead['no_contact_reason']) ?>.<?php endif; ?>
+          O registro fica guardado justamente para conseguir honrar o pedido.</p>
+        <form method="post" data-confirm="Desmarcar? Só faça isso se a marcação foi engano.">
+          <?= csrf_field() ?>
+          <input type="hidden" name="action" value="no_contact">
+          <input type="hidden" name="on" value="0">
+          <button class="btn btn-ghost" type="submit">Desmarcar — foi engano</button>
+        </form>
+      <?php endif; ?>
     </div>
   </div>
   <?php endif; ?>
 </div>
 
 <?php if (!$isNew): ?>
-  <div class="card">
+  <div class="card" id="contatos">
     <h2 class="card-title">Contatos <span class="muted">(o principal alimenta a lista e o dedupe)</span></h2>
-    <?php $contatos = contacts_of($id); ?>
+    <?php
+      $contatos = contacts_of($id);
+      $editId = isset($_GET['edit_contact']) ? (int) $_GET['edit_contact'] : 0;
+      $proxSeqMail = cadencia_email_proximo($id);
+      $cadenciaFim = cadencia_email_encerrada($id);
+      $podeContatar = empty($lead['no_contact']);
+    ?>
     <?php if ($contatos): ?>
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>Nome</th><th>Cargo</th><th>E-mail</th><th>WhatsApp</th><th>LinkedIn</th><th></th><th></th></tr></thead>
+          <thead><tr><th>Nome</th><th>Cargo</th><th>E-mail</th><th>WhatsApp</th><th>Fixo</th><th>LinkedIn</th><th></th><th></th></tr></thead>
           <tbody>
             <?php foreach ($contatos as $c): ?>
+              <?php if ((int) $c['id'] === $editId): ?>
+              <tr class="row-edit">
+                <td colspan="8">
+                  <form method="post" class="form-stack">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="contact_update">
+                    <input type="hidden" name="contact_id" value="<?= (int) $c['id'] ?>">
+                    <div class="form-grid">
+                      <div class="field">
+                        <label for="e_name">Nome *</label>
+                        <input id="e_name" name="e_name" type="text" maxlength="120" required value="<?= esc($c['name']) ?>">
+                      </div>
+                      <div class="field">
+                        <label for="e_cargo">Cargo</label>
+                        <input id="e_cargo" name="e_cargo" type="text" maxlength="80" value="<?= esc($c['cargo']) ?>">
+                      </div>
+                      <div class="field">
+                        <label for="e_email">E-mail</label>
+                        <input id="e_email" name="e_email" type="email" maxlength="190" value="<?= esc($c['email']) ?>">
+                      </div>
+                      <div class="field">
+                        <label for="e_whatsapp">WhatsApp</label>
+                        <input id="e_whatsapp" name="e_whatsapp" type="tel" maxlength="20" value="<?= esc(fmt_fone($c['whatsapp'])) ?>">
+                      </div>
+                      <div class="field">
+                        <label for="e_phone">Telefone fixo</label>
+                        <input id="e_phone" name="e_phone" type="tel" maxlength="20" value="<?= esc(fmt_fone($c['phone'] ?? '')) ?>">
+                      </div>
+                      <div class="field">
+                        <label for="e_linkedin">LinkedIn</label>
+                        <input id="e_linkedin" name="e_linkedin" type="text" maxlength="190" value="<?= esc($c['linkedin']) ?>">
+                      </div>
+                    </div>
+                    <div class="form-actions">
+                      <button class="btn btn-primary btn-sm" type="submit">Salvar contato</button>
+                      <a class="btn btn-ghost btn-sm" href="lead.php?id=<?= (int) $id ?>">Cancelar</a>
+                    </div>
+                  </form>
+                </td>
+              </tr>
+              <?php else: ?>
               <tr>
                 <td>
                   <?= esc($c['name']) ?>
@@ -519,10 +625,23 @@ if ($errors) {
                   <?= esc($c['cargo'] ?: '—') ?>
                   <?php if ($c['is_decisor']): ?><span class="badge badge-decisor">★ Decisor</span><?php endif; ?>
                 </td>
-                <td><?= esc($c['email'] ?: '—') ?></td>
+                <td>
+                  <?php if (!$c['email']): ?>—
+                  <?php elseif ($podeContatar && !$cadenciaFim): ?>
+                    <?= mailto_link($c['email'], cadencia_email_modelo($proxSeqMail, $lead, $c, $user['name']),
+                          'Abre o e-mail já com o modelo do ' . mb_strtolower(CADENCIA_EMAIL_LABELS[$proxSeqMail])
+                          . ' (cadência do lead, não deste contato)') ?>
+                    <span class="seq-hint" title="Próximo e-mail da cadência do lead"><?= (int) $proxSeqMail ?>º</span>
+                  <?php elseif ($podeContatar): ?>
+                    <?= mailto_link($c['email'], null, 'Cadência dos 5 e-mails concluída — sem modelo automático') ?>
+                    <span class="seq-hint seq-hint-fim" title="Os 5 e-mails já saíram">fim</span>
+                  <?php else: ?><?= esc($c['email']) ?><?php endif; ?>
+                </td>
                 <td><?= wa_link($c['whatsapp']) ?></td>
+                <td><?= tel_link($c['phone'] ?? null) ?></td>
                 <td><?php if ($c['linkedin']): ?><a href="<?= esc($c['linkedin']) ?>" target="_blank" rel="noopener">perfil ↗</a><?php else: ?>—<?php endif; ?></td>
                 <td>
+                  <a class="btn btn-ghost btn-sm" href="lead.php?id=<?= (int) $id ?>&amp;edit_contact=<?= (int) $c['id'] ?>#contatos">Editar</a>
                   <form method="post" class="inline-form"><?= csrf_field() ?>
                     <input type="hidden" name="action" value="contact_decisor">
                     <input type="hidden" name="contact_id" value="<?= (int) $c['id'] ?>">
@@ -544,6 +663,7 @@ if ($errors) {
                   </form>
                 </td>
               </tr>
+              <?php endif; ?>
             <?php endforeach; ?>
           </tbody>
         </table>
@@ -572,6 +692,10 @@ if ($errors) {
           <input id="c_whatsapp" name="c_whatsapp" type="tel" maxlength="20" placeholder="(11) 99999-9999">
         </div>
         <div class="field">
+          <label for="c_phone">Telefone fixo</label>
+          <input id="c_phone" name="c_phone" type="tel" maxlength="20" placeholder="(11) 3333-4444">
+        </div>
+        <div class="field">
           <label for="c_linkedin">LinkedIn</label>
           <input id="c_linkedin" name="c_linkedin" type="text" maxlength="190" placeholder="linkedin.com/in/fulano">
         </div>
@@ -598,6 +722,15 @@ if ($errors) {
             <select id="int-type" name="type">
               <?php foreach (INTERACTION_TYPES as $t): ?>
                 <option value="<?= esc($t) ?>"><?= esc(INTERACTION_LABELS[$t]) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div class="field" id="int-email-seq-wrap" hidden>
+            <label for="int-email-seq">Qual e-mail</label>
+            <?php $proxSeq = cadencia_email_proximo($id); ?>
+            <select id="int-email-seq" name="email_seq">
+              <?php foreach (CADENCIA_EMAIL_LABELS as $n => $rot): ?>
+                <option value="<?= (int) $n ?>"<?= $n === $proxSeq ? ' selected' : '' ?>><?= esc($rot) ?></option>
               <?php endforeach; ?>
             </select>
           </div>

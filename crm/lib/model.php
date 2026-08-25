@@ -14,7 +14,8 @@ const LEAD_STATUSES     = ['novo', 'contato_feito', 'demo_agendada', 'demo_reali
 const LEAD_SOURCES      = ['site', 'whatsapp', 'email', 'indicacao', 'lista_50', 'prospeccao', 'outro'];
 const LEAD_PLANS        = ['essencial', 'pro', 'indefinido'];
 const INTERACTION_TYPES = ['whatsapp', 'email', 'ligacao', 'demo', 'reuniao', 'outro'];
-const DEMO_META_MES     = 10; // meta comercial: 10 demos/mês (docs/CONSIDERACOES-E-DECISOES.md:343)
+const DEMO_META_MES     = 10;
+const TASK_KIND_CADENCIA = 'cadencia_email'; // tarefa gerada pela cadencia de e-mail // meta comercial: 10 demos/mês (docs/CONSIDERACOES-E-DECISOES.md:343)
 
 /* ---------- Leads ---------- */
 
@@ -100,6 +101,10 @@ function lead_create(array $d, ?int $userId, string $via): array
         db()->rollBack();
         throw $e;
     }
+    // Opt-out e herdado de QUALQUER registro irmao marcado, nao so do que o
+    // dedupe elegeu: quem pediu para nao ser contactado nao volta ao radar
+    // por uma entrada nova (site, CSV, API ou fila).
+    lead_no_contact_herdar($id, $d['email'] ?? null, $d['whatsapp'] ?? null, $d['cnpj'] ?? null);
     // Contato principal vira registro estruturado (com cargo, quando conhecido)
     if (!empty($d['contact_name']) || !empty($d['email']) || !empty($d['whatsapp'])) {
         contact_add($id, [
@@ -163,10 +168,98 @@ function lead_set_status(int $id, string $to, ?string $lostReason, ?int $userId)
     }
 }
 
-/** Eliminação definitiva (LGPD): CASCADE remove interações, tarefas e histórico. */
+/**
+ * Eliminação definitiva (LGPD): CASCADE remove interações, tarefas e histórico.
+ * Sem botão na tela por decisão de produto — a limpeza dos 12 meses é feita
+ * pelo phpMyAdmin. Mantida aqui para não fechar a porta programática.
+ */
 function lead_delete(int $id): void
 {
     q('DELETE FROM leads WHERE id = ?', [$id]);
+}
+
+
+/* ---------- Opt-out: "nao me contacte" (lista de supressao) ---------- */
+
+/** Lead pediu para não ser contactado? Tolerante à migration 009 ausente. */
+function lead_no_contact(int $leadId): bool
+{
+    try {
+        return (int) scalar('SELECT no_contact FROM leads WHERE id = ?', [$leadId]) === 1;
+    } catch (Throwable $e) {
+        return false; // migration 009 ainda não aplicada
+    }
+}
+
+/**
+ * Marca/desmarca o opt-out. Ao marcar, encerra as tarefas abertas do lead:
+ * não faz sentido seguir sendo cobrado por quem pediu para sair.
+ */
+function lead_set_no_contact(int $leadId, bool $on, ?string $motivo = null): void
+{
+    if (scalar('SELECT id FROM leads WHERE id = ?', [$leadId]) === null) {
+        throw new InvalidArgumentException('Lead não encontrado.');
+    }
+    if ($on) {
+        // Zera tambem a proxima acao: senao o lead segue aparecendo nos
+        // follow-ups do dashboard depois de pedir para nao ser contactado.
+        q('UPDATE leads SET no_contact = 1, no_contact_at = NOW(), no_contact_reason = ?,
+                 next_action_at = NULL, next_action_note = NULL WHERE id = ?',
+            [norm_text((string) $motivo, 255) ?: null, $leadId]);
+        q('UPDATE tasks SET done_at = NOW() WHERE lead_id = ? AND done_at IS NULL', [$leadId]);
+    } else {
+        q('UPDATE leads SET no_contact = 0, no_contact_at = NULL, no_contact_reason = NULL WHERE id = ?', [$leadId]);
+    }
+}
+
+/**
+ * Marca o lead novo se QUALQUER registro que compartilhe e-mail, WhatsApp ou
+ * CNPJ ja estiver em opt-out - inclusive pelos contatos adicionais. Olhar so o
+ * duplicado eleito pelo dedupe (o mais antigo) deixava o marcado voltar.
+ */
+function lead_no_contact_herdar(int $novoId, ?string $email, ?string $whatsapp, ?string $cnpj): void
+{
+    $conds = [];
+    $lc = [];
+    $ids = [];
+    if ($email !== null && $email !== '') {
+        $conds[] = 'l.email = ?';
+        $lc[] = 'lc.email = ?';
+        $ids[] = $email;
+    }
+    if ($whatsapp !== null && $whatsapp !== '') {
+        $conds[] = 'l.whatsapp = ?';
+        $lc[] = 'lc.whatsapp = ?';
+        $ids[] = $whatsapp;
+    }
+    if ($cnpj !== null && $cnpj !== '') {
+        $conds[] = 'l.cnpj = ?';
+        $ids[] = $cnpj;
+    }
+    if (!$conds) {
+        return;
+    }
+    $sql = 'SELECT l.no_contact_at, l.no_contact_reason FROM leads l
+            WHERE l.no_contact = 1 AND l.id <> ? AND ((' . implode(' OR ', $conds) . ')';
+    $params = array_merge([$novoId], $ids);
+    if ($lc) {
+        $sql .= ' OR EXISTS (SELECT 1 FROM lead_contacts lc WHERE lc.lead_id = l.id
+                             AND (' . implode(' OR ', $lc) . '))';
+        // os parametros de lead_contacts sao os mesmos, na mesma ordem
+        foreach ($lc as $i => $_) {
+            $params[] = $ids[$i];
+        }
+    }
+    $sql .= ') ORDER BY l.no_contact_at LIMIT 1';
+    try {
+        $p = row($sql, $params);
+        if ($p !== null) {
+            q('UPDATE leads SET no_contact = 1, no_contact_at = ?, no_contact_reason = ? WHERE id = ?',
+                [$p['no_contact_at'], $p['no_contact_reason'], $novoId]);
+        }
+    } catch (Throwable $e) {
+        // migration 009 ainda nao aplicada
+    }
 }
 
 /**
@@ -248,7 +341,7 @@ function lead_timeline(int $leadId): array
 
 /* ---------- Interações e tarefas ---------- */
 
-function interaction_add(int $leadId, string $type, string $summary, ?string $occurredAt, ?int $userId): int
+function interaction_add(int $leadId, string $type, string $summary, ?string $occurredAt, ?int $userId, ?int $emailSeq = null): int
 {
     if (!in_array($type, INTERACTION_TYPES, true)) {
         throw new InvalidArgumentException('Tipo de interação inválido.');
@@ -260,12 +353,18 @@ function interaction_add(int $leadId, string $type, string $summary, ?string $oc
     if (scalar('SELECT id FROM leads WHERE id = ?', [$leadId]) === null) {
         throw new InvalidArgumentException('Lead não encontrado.');
     }
-    q('INSERT INTO interactions (lead_id, user_id, type, summary, occurred_at) VALUES (?,?,?,?,?)',
-        [$leadId, $userId, $type, $summary, $occurredAt ?: date('Y-m-d H:i:s')]);
+    // A etapa so existe para e-mail (1º ao 5º da cadencia).
+    if ($type !== 'email') {
+        $emailSeq = null;
+    } elseif ($emailSeq !== null && ($emailSeq < 1 || $emailSeq > CADENCIA_EMAIL_PASSOS)) {
+        throw new InvalidArgumentException('Etapa do e-mail inválida (1 a ' . CADENCIA_EMAIL_PASSOS . ').');
+    }
+    q('INSERT INTO interactions (lead_id, user_id, type, email_seq, summary, occurred_at) VALUES (?,?,?,?,?,?)',
+        [$leadId, $userId, $type, $emailSeq, $summary, $occurredAt ?: date('Y-m-d H:i:s')]);
     return last_id();
 }
 
-function task_add(?int $leadId, string $title, string $dueAt, ?int $assignedTo, ?int $createdBy): int
+function task_add(?int $leadId, string $title, string $dueAt, ?int $assignedTo, ?int $createdBy, string $kind = 'manual'): int
 {
     $title = trim($title);
     if ($title === '') {
@@ -274,16 +373,45 @@ function task_add(?int $leadId, string $title, string $dueAt, ?int $assignedTo, 
     if ($leadId !== null && scalar('SELECT id FROM leads WHERE id = ?', [$leadId]) === null) {
         throw new InvalidArgumentException('Lead não encontrado.');
     }
-    q('INSERT INTO tasks (lead_id, title, due_at, assigned_to, created_by) VALUES (?,?,?,?,?)',
-        [$leadId, $title, $dueAt, $assignedTo, $createdBy]);
-    return last_id();
+    if ($leadId !== null && lead_no_contact($leadId)) {
+        throw new InvalidArgumentException('Lead marcado como “não contactar” — não dá para abrir tarefa.');
+    }
+    // Sem a migration 010 as colunas do quadro nao existem: cai no INSERT
+    // antigo para nao derrubar dashboard, lead e cadencia no meio do deploy.
+    $col = board_column_entrada();
+    if ($col === null) {
+        q('INSERT INTO tasks (lead_id, title, kind, due_at, assigned_to, created_by) VALUES (?,?,?,?,?,?)',
+            [$leadId, $title, $kind, $dueAt, $assignedTo, $createdBy]);
+        return last_id();
+    }
+    // Toda tarefa nasce na coluna de entrada, no topo da pilha. Em transacao
+    // para duas criacoes simultaneas nao empatarem em sort_order = 1.
+    $colId = (int) $col['id'];
+    db()->beginTransaction();
+    try {
+        q('UPDATE tasks SET sort_order = sort_order + 1 WHERE column_id = ?', [$colId]);
+        q('INSERT INTO tasks (lead_id, title, kind, column_id, sort_order, due_at, assigned_to, created_by)
+           VALUES (?,?,?,?,1,?,?,?)',
+            [$leadId, $title, $kind, $colId, $dueAt, $assignedTo, $createdBy]);
+        $id = last_id();
+        db()->commit();
+    } catch (Throwable $e) {
+        db()->rollBack();
+        throw $e;
+    }
+    return $id;
 }
 
 function task_done(int $id): void
 {
     q('UPDATE tasks SET done_at = NOW() WHERE id = ? AND done_at IS NULL', [$id]);
+    // O botao de concluir do dashboard e do lead tambem move o card, senao ele
+    // fica aberto no quadro por 30 dias e depois some sem nunca chegar em Feito.
+    $done = board_column_done();
+    if ($done !== null) {
+        q('UPDATE tasks SET column_id = ? WHERE id = ?', [(int) $done['id'], $id]);
+    }
 }
-
 /** Tarefas abertas: 'hoje', 'atrasadas' ou 'abertas' (todas). */
 function tasks_lista(string $which): array
 {
@@ -295,7 +423,462 @@ function tasks_lista(string $which): array
     };
 }
 
-/* ---------- Métricas do dashboard ---------- */
+
+/* ---------- Cadencia de e-mail ---------- */
+
+/**
+ * Soma N dias uteis (seg-sex) e devolve 'Y-m-d'. O resultado nunca cai em
+ * fim de semana, mesmo com $days = 0. Feriados nao sao considerados.
+ */
+function business_days_add(string $from, int $days): string
+{
+    $d = new DateTimeImmutable($from);
+    for ($n = max(0, $days); $n > 0; $n--) {
+        do {
+            $d = $d->modify('+1 day');
+        } while ((int) $d->format('N') > 5);
+    }
+    while ((int) $d->format('N') > 5) {
+        $d = $d->modify('+1 day');
+    }
+    return $d->format('Y-m-d');
+}
+
+/**
+ * Vencimento: N dias uteis a partir de $de (default hoje), na hora configurada.
+ * Registrar hoje um e-mail enviado na semana passada tem que contar da data do
+ * e-mail; se isso ja venceu, o piso e hoje para a tarefa nao nascer no passado.
+ */
+function cadencia_due_at(int $businessDays, ?string $de = null): string
+{
+    $hora = max(0, min(23, setting_int('cadencia_hora')));
+    $base = $de !== null && $de !== '' ? date('Y-m-d', strtotime($de)) : date('Y-m-d');
+    $dia = business_days_add($base, $businessDays);
+    if ($dia < date('Y-m-d')) {
+        $dia = business_days_add(date('Y-m-d'), 0);
+    }
+    return $dia . sprintf(' %02d:00:00', $hora);
+}
+
+/** Maior etapa de e-mail ja registrada no lead (0 = nenhum). */
+function cadencia_email_ultimo(int $leadId): int
+{
+    try {
+        return (int) scalar(
+            "SELECT COALESCE(MAX(email_seq), 0) FROM interactions WHERE lead_id = ? AND type = 'email'",
+            [$leadId]
+        );
+    } catch (Throwable $e) {
+        return 0; // migration 007 ainda não aplicada
+    }
+}
+
+/** Etapa sugerida no formulario: a proxima da sequencia, travada no 5o. */
+function cadencia_email_proximo(int $leadId): int
+{
+    return min(CADENCIA_EMAIL_PASSOS, cadencia_email_ultimo($leadId) + 1);
+}
+
+/**
+ * Os 5 e-mails ja sairam? Nesse caso nao ha 'proximo' modelo para o mailto -
+ * seguir sugerindo o 5o faria o link abrir a despedida para sempre.
+ */
+function cadencia_email_encerrada(int $leadId): bool
+{
+    return cadencia_email_ultimo($leadId) >= CADENCIA_EMAIL_PASSOS;
+}
+
+/**
+ * Fecha a tarefa de cadencia aberta do lead e agenda a proxima.
+ * @return string|null vencimento da tarefa criada; null se o lead esta em opt-out
+ */
+function cadencia_email_agendar(int $leadId, int $seq, ?int $userId, ?string $ocorridaEm = null): ?string
+{
+    $seq = max(1, min(CADENCIA_EMAIL_PASSOS, $seq));
+    // Uma tarefa de cadência aberta por lead: a anterior fecha sozinha.
+    q('UPDATE tasks SET done_at = NOW() WHERE lead_id = ? AND kind = ? AND done_at IS NULL',
+        [$leadId, TASK_KIND_CADENCIA]);
+    if (lead_no_contact($leadId)) {
+        return null;
+    }
+    $titulo = $seq >= CADENCIA_EMAIL_PASSOS
+        ? 'Cadência esgotada — retomar contato'
+        : (CADENCIA_EMAIL_LABELS[$seq + 1] ?? 'Próximo e-mail') . ' — cobrar retorno';
+    $due = cadencia_due_at(setting_int('cadencia_email_' . $seq), $ocorridaEm);
+    task_add($leadId, $titulo, $due, $userId, $userId, TASK_KIND_CADENCIA);
+    return $due;
+}
+
+/**
+ * Modelo do No e-mail com as chaves ja substituidas, pronto para o mailto.
+ * @return array{assunto: string, corpo: string}
+ */
+function cadencia_email_modelo(int $seq, array $lead, ?array $contato, ?string $meuNome): array
+{
+    $seq = max(1, min(CADENCIA_EMAIL_PASSOS, $seq));
+    $empresa = (string) ($lead['company'] ?? '');
+    $nome = trim((string) ($contato['name'] ?? $lead['contact_name'] ?? ''));
+    $partes = $nome !== '' ? preg_split('/\s+/', $nome) : [];
+    $vars = [
+        '{empresa}'       => $empresa,
+        '{contato}'       => $nome !== '' ? $nome : $empresa,
+        '{primeiro_nome}' => $partes ? $partes[0] : $empresa,
+        '{cargo}'         => (string) ($contato['cargo'] ?? ''),
+        '{estacoes}'      => isset($lead['estimated_devices']) && $lead['estimated_devices'] !== null
+            ? (string) (int) $lead['estimated_devices'] : 'suas',
+        '{meu_nome}'      => (string) ($meuNome ?? ''),
+    ];
+    return [
+        'assunto' => strtr(setting_str('cadencia_email_assunto_' . $seq), $vars),
+        'corpo'   => strtr(setting_str('cadencia_email_corpo_' . $seq), $vars),
+    ];
+}
+
+/* ---------- Quadro de tarefas (board) ---------- */
+
+/** Cores aceitas nas colunas do quadro (viram a classe .bcol-<cor>). */
+const BOARD_CORES = ['cinza', 'azul', 'verde', 'laranja', 'vermelho', 'roxo'];
+
+/** Colunas do quadro, na ordem. Vazio quando a migration 010 nao rodou. */
+function board_columns(bool $refresh = false): array
+{
+    static $cache = null;
+    if ($refresh) {
+        $cache = null;
+    }
+    if ($cache !== null) {
+        return $cache;
+    }
+    try {
+        $cache = rows('SELECT * FROM board_columns ORDER BY sort_order, id');
+    } catch (Throwable $e) {
+        $cache = []; // migration 010 ainda nao aplicada
+    }
+    return $cache;
+}
+
+/** A coluna que significa "concluido". Null se ninguem marcou nenhuma. */
+function board_column_done(): ?array
+{
+    foreach (board_columns() as $c) {
+        if ((int) $c['is_done'] === 1) {
+            return $c;
+        }
+    }
+    return null;
+}
+
+/** Primeira coluna nao-concluida: onde nasce tarefa criada fora do quadro. */
+function board_column_entrada(): ?array
+{
+    foreach (board_columns() as $c) {
+        if ((int) $c['is_done'] !== 1) {
+            return $c;
+        }
+    }
+    return board_columns()[0] ?? null;
+}
+
+/**
+ * Cards do quadro agrupados por coluna.
+ *
+ * @param array $f mine (int user), label (nao usado na etapa 1),
+ *                 cadencia (bool: inclui as tarefas automaticas da cadencia)
+ * @return array<int, array> column_id => lista de tarefas
+ */
+function board_cards(array $f = []): array
+{
+    $cols = board_columns();
+    if (!$cols) {
+        return [];
+    }
+    // A coluna de conclusao mostra so o que fechou nos ultimos 30 dias: senao
+    // ela cresce para sempre e o quadro fica impossivel de ler.
+    $sql = 'SELECT t.*, l.company, u.name AS assignee_name
+            FROM tasks t
+            LEFT JOIN leads l ON l.id = t.lead_id
+            LEFT JOIN users u ON u.id = t.assigned_to
+            WHERE t.column_id IS NOT NULL
+              AND (t.done_at IS NULL OR t.done_at >= DATE_SUB(NOW(), INTERVAL 30 DAY))
+            ORDER BY t.sort_order, t.id';
+    $out = array_fill_keys(array_column($cols, 'id'), []);
+    foreach (rows($sql) as $t) {
+        $cid = (int) $t['column_id'];
+        if (!array_key_exists($cid, $out)) {
+            continue;
+        }
+        // Os filtros nao removem o card da lista: marcam. A tela renderiza o
+        // oculto como placeholder invisivel para o navegador conseguir mandar
+        // a ORDEM COMPLETA da coluna ao arrastar — senao a renumeracao 1..N
+        // atropelaria os cards que o filtro escondeu.
+        $oculto = false;
+        if (empty($f['cadencia']) && $t['kind'] === TASK_KIND_CADENCIA) {
+            $oculto = true;
+        }
+        if (!empty($f['mine']) && (int) $t['assigned_to'] !== (int) $f['mine']) {
+            $oculto = true;
+        }
+        $t['_oculto'] = $oculto;
+        $out[$cid][] = $t;
+    }
+    return $out;
+}
+/**
+ * Move o card para a coluna e reordena a coluna inteira.
+ *
+ * Recebe a ordem completa dos ids da coluna de destino e renumera de 1 a N
+ * numa transacao — mais simples e sem deriva de arredondamento do que calcular
+ * uma posicao fracionaria entre dois vizinhos.
+ *
+ * Soltar na coluna de conclusao fecha a tarefa (mesmo done_at do botao do
+ * dashboard); tirar de la reabre.
+ *
+ * @param int[] $ordem ids das tarefas na coluna de destino, de cima para baixo
+ */
+function board_move(int $taskId, int $columnId, array $ordem): void
+{
+    $t = row('SELECT id, lead_id, done_at, column_id FROM tasks WHERE id = ?', [$taskId]);
+    if ($t === null) {
+        throw new InvalidArgumentException('Tarefa nao encontrada.');
+    }
+    $col = null;
+    foreach (board_columns() as $c) {
+        if ((int) $c['id'] === $columnId) {
+            $col = $c;
+        }
+    }
+    if ($col === null) {
+        throw new InvalidArgumentException('Coluna nao encontrada.');
+    }
+    if ($t['lead_id'] !== null && lead_no_contact((int) $t['lead_id']) && (int) $col['is_done'] !== 1) {
+        throw new InvalidArgumentException('Lead marcado como "nao contactar" — a tarefa so pode ser concluida.');
+    }
+    $mudouColuna = (int) $t['column_id'] !== $columnId;
+
+    db()->beginTransaction();
+    try {
+        // FOR UPDATE dentro da transacao: dois arrastos simultaneos na mesma
+        // coluna serializam em vez de gerar sort_order duplicado.
+        $atual = array_map('intval', array_column(
+            rows('SELECT id FROM tasks WHERE column_id = ? ORDER BY sort_order, id FOR UPDATE', [$columnId]),
+            'id'
+        ));
+        $validos = $atual;
+        $validos[] = $taskId;
+        $ordem = array_values(array_unique(array_filter(
+            array_map('intval', $ordem),
+            fn ($id) => in_array($id, $validos, true)
+        )));
+        if (!in_array($taskId, $ordem, true)) {
+            $ordem[] = $taskId;
+        }
+        // Quem nao veio na lista (o cliente nao podia ver) mantem o lugar.
+        $faltando = array_values(array_diff($atual, $ordem));
+        foreach ($faltando as $id) {
+            $ordem[] = $id;
+        }
+
+        q('UPDATE tasks SET column_id = ? WHERE id = ?', [$columnId, $taskId]);
+        foreach ($ordem as $i => $id) {
+            q('UPDATE tasks SET sort_order = ? WHERE id = ?', [$i + 1, $id]);
+        }
+        if ((int) $col['is_done'] === 1) {
+            q('UPDATE tasks SET done_at = NOW() WHERE id = ? AND done_at IS NULL', [$taskId]);
+        } elseif ($mudouColuna) {
+            // So reabre quando o card realmente trocou de coluna: reordenar
+            // dentro da propria coluna nao pode apagar a conclusao.
+            q('UPDATE tasks SET done_at = NULL WHERE id = ?', [$taskId]);
+        }
+        db()->commit();
+    } catch (Throwable $e) {
+        db()->rollBack();
+        throw $e;
+    }
+}
+/** Campos editaveis do card. Valores ja normalizados pelo chamador. */
+function task_update(int $id, array $d): void
+{
+    if (scalar('SELECT id FROM tasks WHERE id = ?', [$id]) === null) {
+        throw new InvalidArgumentException('Tarefa nao encontrada.');
+    }
+    if (array_key_exists('title', $d)) {
+        $d['title'] = norm_text((string) $d['title'], 200);
+        if ($d['title'] === '') {
+            throw new InvalidArgumentException('De um titulo a tarefa.');
+        }
+    }
+    $allowed = ['title', 'description', 'due_at', 'assigned_to'];
+    $sets = [];
+    $params = [];
+    foreach ($allowed as $col) {
+        if (array_key_exists($col, $d)) {
+            $sets[] = "$col = ?";
+            $params[] = $d[$col];
+        }
+    }
+    if (!$sets) {
+        return;
+    }
+    $params[] = $id;
+    q('UPDATE tasks SET ' . implode(', ', $sets) . ' WHERE id = ?', $params);
+}
+
+/** Remove a tarefa. Card do quadro tem exclusao — diferente de lead. */
+function task_delete(int $id): void
+{
+    q('DELETE FROM tasks WHERE id = ?', [$id]);
+}
+
+/* ---------- Colunas do quadro (configuraveis em settings.php) ---------- */
+
+function board_column_add(string $name, string $cor): int
+{
+    $name = norm_text($name, 40);
+    if ($name === '') {
+        throw new InvalidArgumentException('De um nome a coluna.');
+    }
+    if (count(board_columns()) >= 12) {
+        throw new InvalidArgumentException('Limite de 12 colunas — o quadro fica ilegivel com mais.');
+    }
+    $fim = (int) scalar('SELECT COALESCE(MAX(sort_order), 0) + 1 FROM board_columns');
+    q('INSERT INTO board_columns (name, sort_order, is_done, color) VALUES (?,?,0,?)',
+        [$name, $fim, in_array($cor, BOARD_CORES, true) ? $cor : 'cinza']);
+    board_columns(true);
+    return last_id();
+}
+
+function board_column_update(int $id, string $name, string $cor): void
+{
+    $name = norm_text($name, 40);
+    if ($name === '') {
+        throw new InvalidArgumentException('De um nome a coluna.');
+    }
+    q('UPDATE board_columns SET name = ?, color = ? WHERE id = ?',
+        [$name, in_array($cor, BOARD_CORES, true) ? $cor : 'cinza', $id]);
+    board_columns(true);
+}
+
+/** Reordena as colunas pela lista de ids informada. */
+function board_columns_reorder(array $ids): void
+{
+    db()->beginTransaction();
+    try {
+        foreach (array_values(array_map('intval', $ids)) as $i => $id) {
+            q('UPDATE board_columns SET sort_order = ? WHERE id = ?', [$i + 1, $id]);
+        }
+        db()->commit();
+    } catch (Throwable $e) {
+        db()->rollBack();
+        throw $e;
+    }
+    board_columns(true);
+}
+
+/**
+ * Troca qual coluna significa "concluido". Sempre exatamente uma: e ela que
+ * liga o quadro ao done_at que o dashboard e o detalhe do lead ja usam.
+ */
+function board_column_set_done(int $id): void
+{
+    if (scalar('SELECT id FROM board_columns WHERE id = ?', [$id]) === null) {
+        throw new InvalidArgumentException('Coluna nao encontrada.');
+    }
+    $antiga = board_column_done();
+    $antigaId = $antiga !== null ? (int) $antiga['id'] : 0;
+    if ($antigaId === $id) {
+        return;
+    }
+    db()->beginTransaction();
+    try {
+        q('UPDATE board_columns SET is_done = 0');
+        q('UPDATE board_columns SET is_done = 1 WHERE id = ?', [$id]);
+        // Reabre APENAS o que estava na coluna que perdeu o papel de conclusao.
+        // Um WHERE column_id <> ? apagaria o done_at de todo o historico do CRM.
+        // Tarefa de cadencia nunca ressuscita: quem a fecha e a propria cadencia.
+        if ($antigaId > 0) {
+            q('UPDATE tasks SET done_at = NULL
+               WHERE column_id = ? AND done_at IS NOT NULL AND kind <> ?', [$antigaId, TASK_KIND_CADENCIA]);
+        }
+        q('UPDATE tasks SET done_at = NOW() WHERE column_id = ? AND done_at IS NULL', [$id]);
+        db()->commit();
+    } catch (Throwable $e) {
+        db()->rollBack();
+        throw $e;
+    }
+    board_columns(true);
+}
+/**
+ * Apaga a coluna e joga os cards dela na coluna informada (ou na de entrada).
+ * A coluna de conclusao nao pode ser apagada, e nem a ultima que sobrou.
+ */
+function board_column_delete(int $id, ?int $paraId = null): void
+{
+    $cols = board_columns();
+    if (count($cols) <= 1) {
+        throw new InvalidArgumentException('O quadro precisa de pelo menos uma coluna.');
+    }
+    $alvo = null;
+    foreach ($cols as $c) {
+        if ((int) $c['id'] === $id) {
+            $alvo = $c;
+        }
+    }
+    if ($alvo === null) {
+        throw new InvalidArgumentException('Coluna nao encontrada.');
+    }
+    if ((int) $alvo['is_done'] === 1) {
+        throw new InvalidArgumentException('Essa e a coluna de conclusao — marque outra antes de apagar esta.');
+    }
+    $destino = null;
+    foreach ($cols as $c) {
+        if ((int) $c['id'] === $id) {
+            continue;
+        }
+        if ($paraId !== null) {
+            if ((int) $c['id'] === $paraId) {
+                $destino = $c;
+                break;
+            }
+            continue;
+        }
+        // Sem destino escolhido, cai na primeira coluna que NAO conclui:
+        // apagar uma coluna nao pode fechar tarefa por acidente.
+        if ((int) $c['is_done'] !== 1) {
+            $destino = $c;
+            break;
+        }
+    }
+    if ($destino === null) {
+        throw new InvalidArgumentException('Escolha uma coluna de destino valida para os cards.');
+    }
+    $destinoId = (int) $destino['id'];
+    db()->beginTransaction();
+    try {
+        // Os cards que chegam entram DEPOIS dos que ja estavam, sem empatar.
+        $fim = (int) scalar('SELECT COALESCE(MAX(sort_order), 0) FROM tasks WHERE column_id = ?', [$destinoId]);
+        $vindos = rows('SELECT id FROM tasks WHERE column_id = ? ORDER BY sort_order, id', [$id]);
+        foreach ($vindos as $i => $v) {
+            q('UPDATE tasks SET column_id = ?, sort_order = ? WHERE id = ?', [$destinoId, $fim + $i + 1, (int) $v['id']]);
+        }
+        if ((int) $destino['is_done'] === 1) {
+            q('UPDATE tasks SET done_at = NOW()
+               WHERE column_id = ? AND done_at IS NULL AND kind <> ?', [$destinoId, TASK_KIND_CADENCIA]);
+        }
+        q('DELETE FROM board_columns WHERE id = ?', [$id]);
+        db()->commit();
+    } catch (Throwable $e) {
+        db()->rollBack();
+        throw $e;
+    }
+    board_columns(true);
+}
+/** Usuarios ativos, para o seletor de responsavel. */
+function users_ativos(): array
+{
+    return rows('SELECT id, name FROM users WHERE is_active = 1 ORDER BY name');
+}
+
+/* ---------- Metricas do dashboard ---------- */
 
 function metrics_status_counts(): array
 {
@@ -380,10 +963,10 @@ function contact_add(int $leadId, array $d): int
     if ($principal) {
         q('UPDATE lead_contacts SET is_principal = 0 WHERE lead_id = ?', [$leadId]);
     }
-    q('INSERT INTO lead_contacts (lead_id, name, cargo, email, whatsapp, linkedin, is_principal, is_decisor, notes)
-       VALUES (?,?,?,?,?,?,?,?,?)', [
+    q('INSERT INTO lead_contacts (lead_id, name, cargo, email, whatsapp, phone, linkedin, is_principal, is_decisor, notes)
+       VALUES (?,?,?,?,?,?,?,?,?,?)', [
         $leadId, $name, $cargo,
-        $d['email'] ?? null, $d['whatsapp'] ?? null, $d['linkedin'] ?? null,
+        $d['email'] ?? null, $d['whatsapp'] ?? null, $d['phone'] ?? null, $d['linkedin'] ?? null,
         $principal, $decisor,
         norm_text($d['notes'] ?? '', 255) ?: null,
     ]);
@@ -394,9 +977,62 @@ function contact_add(int $leadId, array $d): int
     return $id;
 }
 
-function contact_delete(int $id): void
+
+/**
+ * Edita um contato. A flag de decisor tem botao proprio e nao e recalculada
+ * aqui - mudar o cargo nao desfaz uma marcacao manual.
+ */
+function contact_update(int $id, array $d, ?int $expectLeadId = null): void
 {
+    $c = row('SELECT lead_id, is_principal FROM lead_contacts WHERE id = ?', [$id]);
+    if ($c === null) {
+        throw new InvalidArgumentException('Contato não encontrado.');
+    }
+    if ($expectLeadId !== null && (int) $c['lead_id'] !== $expectLeadId) {
+        throw new InvalidArgumentException('Contato não pertence a este lead.');
+    }
+    $name = norm_text($d['name'] ?? '', 120);
+    if (mb_strlen($name) < 2) {
+        throw new InvalidArgumentException('Informe o nome do contato.');
+    }
+    // SET dinamico (mesmo padrao de lead_update): chave ausente nao apaga
+    // a coluna. Sem isso, editar pela tela zerava o notes gravado pela API.
+    $sets = ['name = ?', 'cargo = ?', 'email = ?', 'whatsapp = ?', 'phone = ?', 'linkedin = ?'];
+    $params = [
+        $name,
+        norm_text($d['cargo'] ?? '', 80) ?: null,
+        $d['email'] ?? null,
+        $d['whatsapp'] ?? null,
+        $d['phone'] ?? null,
+        $d['linkedin'] ?? null,
+    ];
+    if (array_key_exists('notes', $d)) {
+        $sets[] = 'notes = ?';
+        $params[] = norm_text($d['notes'] ?? '', 255) ?: null;
+    }
+    $params[] = $id;
+    q('UPDATE lead_contacts SET ' . implode(', ', $sets) . ' WHERE id = ?', $params);
+    if ((int) $c['is_principal'] === 1) {
+        sync_principal_contact((int) $c['lead_id']);
+    }
+}
+
+function contact_delete(int $id, ?int $expectLeadId = null): void
+{
+    contact_assert_lead($id, $expectLeadId);
     q('DELETE FROM lead_contacts WHERE id = ?', [$id]);
+}
+
+/** Recusa agir sobre contato de outro lead quando o chamador informa qual espera. */
+function contact_assert_lead(int $id, ?int $expectLeadId): void
+{
+    if ($expectLeadId === null) {
+        return;
+    }
+    $dono = scalar('SELECT lead_id FROM lead_contacts WHERE id = ?', [$id]);
+    if ($dono === null || (int) $dono !== $expectLeadId) {
+        throw new InvalidArgumentException('Contato nao pertence a este lead.');
+    }
 }
 
 /** Caminho inverso do sync: edição dos campos rápidos do lead atualiza o contato principal. */
@@ -420,8 +1056,9 @@ function sync_lead_to_principal(int $leadId): void
     }
 }
 
-function contact_set_principal(int $id): void
+function contact_set_principal(int $id, ?int $expectLeadId = null): void
 {
+    contact_assert_lead($id, $expectLeadId);
     $c = row('SELECT lead_id FROM lead_contacts WHERE id = ?', [$id]);
     if ($c === null) {
         throw new InvalidArgumentException('Contato não encontrado.');
@@ -431,8 +1068,9 @@ function contact_set_principal(int $id): void
     sync_principal_contact((int) $c['lead_id']);
 }
 
-function contact_toggle_decisor(int $id): void
+function contact_toggle_decisor(int $id, ?int $expectLeadId = null): void
 {
+    contact_assert_lead($id, $expectLeadId);
     q('UPDATE lead_contacts SET is_decisor = 1 - is_decisor WHERE id = ?', [$id]);
 }
 
@@ -458,13 +1096,14 @@ function contacts_agregados(array $leadIds): array
     }
     $marks = implode(',', array_fill(0, count($leadIds), '?'));
     $map = [];
-    foreach (rows("SELECT lead_id, name, cargo, email, whatsapp, linkedin, is_decisor
+    foreach (rows("SELECT lead_id, name, cargo, email, whatsapp, phone, linkedin, is_decisor
                    FROM lead_contacts WHERE lead_id IN ($marks)
                    ORDER BY lead_id, is_principal DESC, id", $leadIds) as $c) {
         $peca = $c['name']
             . ($c['cargo'] ? ' (' . $c['cargo'] . ($c['is_decisor'] ? ' — decisor' : '') . ')' : ($c['is_decisor'] ? ' (decisor)' : ''))
             . ($c['email'] ? ' ' . $c['email'] : '')
             . ($c['whatsapp'] ? ' ' . $c['whatsapp'] : '')
+            . (!empty($c['phone']) ? ' fixo ' . $c['phone'] : '')
             . ($c['linkedin'] ? ' ' . $c['linkedin'] : '');
         $map[(int) $c['lead_id']][] = trim($peca);
     }

@@ -125,6 +125,7 @@ page_header('Leads', 'leads.php', $user);
           <td>
             <a href="lead.php?id=<?= (int) $l['id'] ?>"><?= esc($l['company']) ?></a>
             <?php if ($l['duplicate_of_lead_id']): ?><span class="badge badge-dup">Duplicado</span><?php endif; ?>
+            <?php if (!empty($l['no_contact'])): ?><span class="badge badge-nc" title="Pediu para não ser contactado">Não contactar</span><?php endif; ?>
           </td>
           <td>
             <?= esc($l['contact_name'] ?: '—') ?>

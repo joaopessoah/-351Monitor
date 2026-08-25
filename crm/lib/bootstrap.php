@@ -126,5 +126,6 @@ require __DIR__ . '/throttle.php';
 require __DIR__ . '/auth.php';
 require __DIR__ . '/validate.php';
 require __DIR__ . '/cnpj.php';
+require __DIR__ . '/settings.php';
 require __DIR__ . '/model.php';
 require __DIR__ . '/render.php';
