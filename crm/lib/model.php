@@ -594,13 +594,18 @@ function board_cards(array $f = []): array
     }
     // A coluna de conclusao mostra so o que fechou nos ultimos 30 dias: senao
     // ela cresce para sempre e o quadro fica impossivel de ler.
+    //
+    // A ordem dentro da coluna e pelo prazo (due_at) crescente: o que vence
+    // primeiro aparece no topo. sort_order fica so como desempate entre cards
+    // do mesmo prazo — por isso arrastar para reordenar DENTRO da coluna nao
+    // muda mais a posicao na tela (mover ENTRE colunas continua valendo).
     $sql = 'SELECT t.*, l.company, u.name AS assignee_name
             FROM tasks t
             LEFT JOIN leads l ON l.id = t.lead_id
             LEFT JOIN users u ON u.id = t.assigned_to
             WHERE t.column_id IS NOT NULL
               AND (t.done_at IS NULL OR t.done_at >= DATE_SUB(NOW(), INTERVAL 30 DAY))
-            ORDER BY t.sort_order, t.id';
+            ORDER BY t.due_at, t.sort_order, t.id';
     $out = array_fill_keys(array_column($cols, 'id'), []);
     foreach (rows($sql) as $t) {
         $cid = (int) $t['column_id'];
