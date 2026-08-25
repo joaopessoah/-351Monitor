@@ -150,13 +150,14 @@ function page_header(string $title, string $active, array $user): void
     security_headers();
     $flash = flash_get();
     $items = [
-        'index.php'    => 'Dashboard',
-        'leads.php'    => 'Leads',
-        'kanban.php'   => 'Kanban',
-        'board.php'    => 'Quadro',
-        'fila.php'     => 'Fila',
-        'import.php'   => 'Importar',
-        'settings.php' => 'Configurações',
+        'index.php'     => 'Dashboard',
+        'leads.php'     => 'Leads',
+        'kanban.php'    => 'Kanban',
+        'board.php'     => 'Quadro',
+        'fila.php'      => 'Fila',
+        'analytics.php' => 'Site',
+        'import.php'    => 'Importar',
+        'settings.php'  => 'Configurações',
     ];
     echo '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">';
     echo '<meta name="viewport" content="width=device-width, initial-scale=1">';

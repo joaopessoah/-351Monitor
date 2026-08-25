@@ -412,8 +412,70 @@ try {
         case 'GET pool-stats': {
             api_out(200, pool_stats());
         }
+        case 'GET analytics': {
+            // Números do site (crm/collect.php). ?d=7|30|90, padrão 30.
+            $dias = (int) in_enum((string) ($_GET['d'] ?? '30'), ['7', '30', '90'], '30');
+            $resumo = analytics_resumo($dias);
+            api_out(200, [
+                'periodo_dias' => $dias,
+                'resumo'       => array_map('intval', $resumo),
+                'por_dia'      => analytics_por_dia($dias),
+                'paginas'      => analytics_paginas($dias),
+                'origens'      => analytics_origens($dias),
+                'eventos'      => analytics_eventos($dias),
+                'dispositivos' => analytics_dispositivos($dias),
+                'funil'        => array_map('intval', analytics_funil($dias)),
+            ]);
+        }
+        case 'GET analytics-visita': {
+            // Jornada completa de uma visita pelo código que chega no WhatsApp.
+            $ref = ref_code_norm($_GET['ref'] ?? '');
+            if ($ref === null) {
+                api_err(422, 'invalid', 'Informe o código de 6 caracteres em ?ref=.');
+            }
+            $v = analytics_visita_por_ref($ref);
+            if ($v === null) {
+                api_err(404, 'not_found', 'Visita não encontrada (visitas sem lead expiram em 365 dias).');
+            }
+            api_out(200, [
+                'ref'          => $v['ref_code'],
+                'started_at'   => api_dt($v['started_at']),
+                'last_seen_at' => api_dt($v['last_seen_at']),
+                'landing_path' => $v['landing_path'],
+                'origem'       => $v['utm_source'] ?? $v['referrer_host'],
+                'utm'          => [
+                    'source' => $v['utm_source'], 'medium' => $v['utm_medium'],
+                    'campaign' => $v['utm_campaign'], 'content' => $v['utm_content'], 'term' => $v['utm_term'],
+                ],
+                'device'       => $v['device'],
+                'browser'      => $v['browser'],
+                'os'           => $v['os'],
+                'lead_id'      => $v['lead_id'] !== null ? (int) $v['lead_id'] : null,
+                'lead_company' => $v['lead_company'],
+                'views'        => array_map(fn ($w) => [
+                    'path' => $w['path'], 'title' => $w['title'],
+                    'seconds' => $w['seconds'] !== null ? (int) $w['seconds'] : null,
+                    'scroll_pct' => $w['scroll_pct'] !== null ? (int) $w['scroll_pct'] : null,
+                    'at' => api_dt($w['created_at']),
+                ], $v['views_list']),
+                'events'       => array_map(fn ($e) => [
+                    'name' => $e['name'], 'path' => $e['path'], 'label' => $e['label'],
+                    'target' => $e['target'],
+                    'value' => $e['value_num'] !== null ? (int) $e['value_num'] : null,
+                    'at' => api_dt($e['created_at']),
+                ], $v['events_list']),
+            ]);
+        }
+        case 'POST analytics-vincular': {
+            $ref = ref_code_norm($body['ref'] ?? '');
+            if ($ref === null) {
+                api_err(422, 'invalid', 'ref inválido (6 caracteres).');
+            }
+            visit_link_lead($ref, (int) ($body['lead_id'] ?? 0));
+            api_out(200, ['ok' => true]);
+        }
         default:
-            api_err(404, 'not_found', 'Rota desconhecida. Rotas: leads, lead, lead-update, lead-status, interactions, tasks, task-done, cnpj-lookup, cnpj-enrich, pool-upsert, pool-stats.');
+            api_err(404, 'not_found', 'Rota desconhecida. Rotas: leads, lead, lead-update, lead-status, interactions, tasks, task-done, cnpj-lookup, cnpj-enrich, pool-upsert, pool-stats, analytics, analytics-visita, analytics-vincular.');
     }
 } catch (InvalidArgumentException $e) {
     api_err(422, 'invalid', $e->getMessage());

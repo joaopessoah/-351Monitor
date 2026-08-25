@@ -209,7 +209,7 @@ code { background: var(--surface-2); border: 1px solid var(--border); border-rad
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field label { font-size: 0.8rem; font-weight: 600; color: var(--ink-2); }
 .field input, .field select, .field textarea,
-.task-quick input, .filters input, .filters select {
+.task-quick input, .task-quick select, .filters input, .filters select {
   background: var(--bg-soft);
   border: 1px solid var(--border);
   color: var(--ink);
@@ -219,7 +219,7 @@ code { background: var(--surface-2); border: 1px solid var(--border); border-rad
   font-size: 0.9rem;
 }
 .field input:focus, .field select:focus, .field textarea:focus,
-.task-quick input:focus, .filters input:focus, .filters select:focus {
+.task-quick input:focus, .task-quick select:focus, .filters input:focus, .filters select:focus {
   outline: none;
   border-color: var(--green);
   box-shadow: 0 0 0 3px var(--green-soft);
@@ -381,3 +381,21 @@ code { background: var(--surface-2); border: 1px solid var(--border); border-rad
 .import-ok { color: var(--green); }
 .import-invalida { color: var(--danger); }
 .import-duplicada { color: var(--warn); }
+
+/* ---------- Painel do site (analytics.php) ----------
+   As regras de .stats-6 vêm depois das media queries de .stats de propósito:
+   mesma especificidade, então a última declarada é a que vale. */
+.stats-6 { grid-template-columns: repeat(6, 1fr); }
+@media (max-width: 1000px) { .stats-6 { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 640px) { .stats-6 { grid-template-columns: repeat(2, 1fr); } }
+.an-periodo { display: flex; gap: 6px; flex-wrap: wrap; }
+.an-nota { margin: -8px 0 18px; font-size: 0.82rem; line-height: 1.65; }
+.an-bars { display: flex; align-items: flex-end; gap: 3px; height: 130px; }
+.an-bar-wrap { flex: 1; min-width: 2px; height: 100%; display: flex; align-items: flex-end; }
+.an-bar { width: 100%; background: var(--green); border-radius: 3px 3px 0 0; opacity: 0.8; }
+.an-bar-wrap:hover .an-bar { opacity: 1; }
+.an-eixo { display: flex; justify-content: space-between; margin-top: 8px; font-size: 0.75rem; color: var(--ink-3); }
+.an-funil { display: grid; grid-template-columns: 200px 1fr 120px; align-items: center; gap: 12px; margin-bottom: 10px; }
+.an-funil-label { font-size: 0.85rem; color: var(--ink-2); }
+.an-funil-n { font-size: 0.85rem; text-align: right; white-space: nowrap; }
+@media (max-width: 640px) { .an-funil { grid-template-columns: 1fr 90px; } .an-funil .progress { grid-column: 1 / -1; } }

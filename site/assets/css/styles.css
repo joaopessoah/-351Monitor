@@ -1337,3 +1337,13 @@ details[open] .faq-icon::after { transform: rotate(90deg); }
   color: var(--ink-2);
 }
 .article-back a:hover { color: var(--ink); }
+
+/* Trechos literais no texto (ex.: o código da visita na política de privacidade). */
+code {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 0.9em;
+  color: var(--ink);
+}

@@ -14,7 +14,7 @@ if (PHP_SAPI !== 'cli') {
     exit("Só na linha de comando.\n");
 }
 
-$suites = ['cadencia.php', 'mailto_crlf.php', 'migrations.php', 'correcoes.php', 'quadro.php'];
+$suites = ['cadencia.php', 'mailto_crlf.php', 'migrations.php', 'correcoes.php', 'quadro.php', 'analytics.php'];
 $php = PHP_BINARY;
 $falhou = [];
 
@@ -30,21 +30,26 @@ foreach ($suites as $s) {
     }
 }
 
-// A suíte de JS exercita o crm.js num DOM mínimo. Precisa do node; se não
-// houver, avisa e segue — não é motivo para reprovar a rodada inteira.
-$js = __DIR__ . DIRECTORY_SEPARATOR . 'interacao.js';
-echo str_repeat('─', 60), "\n", "interacao.js (node)\n", str_repeat('─', 60), "\n";
+// As suítes de JS exercitam o crm.js e o track.js em DOMs mínimos. Precisam do
+// node; se não houver, avisa e segue — não é motivo para reprovar a rodada.
+$suitesJs = ['interacao.js', 'track.js'];
 $saida = [];
 $code = 0;
 exec('node --version 2>&1', $saida, $code);
-if ($code !== 0) {
-    echo "node não encontrado — suíte de JS pulada.\n\n";
-} else {
+$temNode = $code === 0;
+
+foreach ($suitesJs as $s) {
+    echo str_repeat('─', 60), "\n", "$s (node)\n", str_repeat('─', 60), "\n";
+    if (!$temNode) {
+        echo "node não encontrado — suíte pulada.\n\n";
+        continue;
+    }
     $saida = [];
-    exec('node ' . escapeshellarg($js) . ' 2>&1', $saida, $code);
+    $code = 0;
+    exec('node ' . escapeshellarg(__DIR__ . DIRECTORY_SEPARATOR . $s) . ' 2>&1', $saida, $code);
     echo implode("\n", $saida), "\n\n";
     if ($code !== 0) {
-        $falhou[] = 'interacao.js';
+        $falhou[] = $s;
     }
 }
 
@@ -53,5 +58,5 @@ if ($falhou) {
     echo 'FALHOU: ' . implode(', ', $falhou) . "\n";
     exit(1);
 }
-echo (count($suites) + 1) . " suítes, todas passaram.\n";
+echo (count($suites) + ($temNode ? count($suitesJs) : 0)) . " suítes, todas passaram.\n";
 exit(0);

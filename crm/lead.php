@@ -555,6 +555,35 @@ if ($errors) {
         </form>
       <?php endif; ?>
     </div>
+
+    <div class="card">
+      <h2 class="card-title">Jornada no site</h2>
+      <?php
+        try {
+            $jornada = analytics_jornada_do_lead($id);
+        } catch (Throwable $e) {
+            $jornada = null; // analytics ainda não migrado — o card segue vazio
+        }
+      ?>
+      <?php if ($jornada !== null): ?>
+        <p class="muted">Visita <code><?= esc($jornada['ref_code']) ?></code> em <?= esc(fmt_dt($jornada['started_at'])) ?>
+          · entrou por <?= esc($jornada['landing_path']) ?>
+          · origem <?= esc($jornada['utm_source'] ?? $jornada['referrer_host'] ?? 'direto') ?>
+          · <?= count($jornada['views_list']) ?> página(s), <?= count($jornada['events_list']) ?> clique(s).</p>
+        <ul class="plain-list">
+          <?php foreach (array_slice($jornada['events_list'], 0, 6) as $ev): ?>
+            <li><span class="muted"><?= esc(date('H:i', strtotime($ev['created_at']))) ?></span>
+              <?= esc(EVENT_LABELS[$ev['name']] ?? $ev['name']) ?>
+              <?php if ($ev['label']): ?><span class="muted">— <?= esc($ev['label']) ?></span><?php endif; ?>
+            </li>
+          <?php endforeach; ?>
+        </ul>
+        <a class="btn btn-ghost btn-sm" href="analytics.php?ref=<?= esc($jornada['ref_code']) ?>">Ver a visita inteira</a>
+      <?php else: ?>
+        <p class="muted">Sem visita vinculada. Se a pessoa mandou um código <code>#XXXXXX</code> no WhatsApp,
+          cole em <a href="analytics.php">Site</a> para amarrar a jornada a este lead.</p>
+      <?php endif; ?>
+    </div>
   </div>
   <?php endif; ?>
 </div>

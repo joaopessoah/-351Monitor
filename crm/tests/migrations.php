@@ -1,5 +1,5 @@
 <?php
-/** As migrations 007/008/009 sobrevivem ao splitter do migrate.php? */
+/** As migrations novas (007 a 011) sobrevivem ao splitter do migrate.php? */
 
 // Cópia LITERAL de sql_statements() em crm/migrate.php (linhas 14-26).
 if (PHP_SAPI !== 'cli') {
@@ -36,6 +36,8 @@ $esperado = [
     '007_cadencia_email.sql'   => 3,  // ALTER interactions, ALTER tasks, CREATE app_settings
     '008_contato_telefone.sql' => 1,  // ALTER lead_contacts
     '009_lead_no_contact.sql'  => 1,  // ALTER leads
+    '010_quadro.sql'           => 6,  // CREATE board_columns, INSERT padrão, ALTER tasks, 3 UPDATE de backfill
+    '011_analytics.sql'        => 4,  // CREATE site_visits/site_views/site_events, ALTER leads
 ];
 
 foreach ($esperado as $arq => $n) {
@@ -71,6 +73,13 @@ $colunas = [
     'leads.no_contact_at'       => 'no_contact_at',
     'leads.no_contact_reason'   => 'no_contact_reason',
     'app_settings'              => 'app_settings',
+    'site_visits'               => 'site_visits',
+    'site_views'                => 'site_views',
+    'site_events'               => 'site_events',
+    'leads.visit_ref'           => 'visit_ref',
+    'site_visits.ref_code'      => 'ref_code',
+    'site_views.scroll_pct'     => 'scroll_pct',
+    'site_events.value_num'     => 'value_num',
 ];
 foreach ($colunas as $nome => $token) {
     check(str_contains($todoSql, $token), "coluna/tabela $nome não existe em nenhuma migration");
@@ -78,11 +87,12 @@ foreach ($colunas as $nome => $token) {
 
 echo "== o PHP não referencia coluna inexistente ==\n";
 $php = '';
-foreach (['lib/model.php', 'lib/settings.php', 'lead.php', 'leads.php', 'settings.php', 'api/index.php'] as $f) {
+foreach (['lib/model.php', 'lib/settings.php', 'lib/analytics.php', 'lead.php', 'leads.php',
+             'settings.php', 'analytics.php', 'collect.php', 'api/index.php'] as $f) {
     $php .= file_get_contents($CRM . '/' . $f) . "\n";
 }
 // colunas novas usadas no PHP têm que aparecer nas migrations
-preg_match_all('/\b(email_seq|no_contact_at|no_contact_reason|no_contact|phone|kind|app_settings)\b/', $php, $m);
+preg_match_all('/\b(email_seq|no_contact_at|no_contact_reason|no_contact|phone|kind|app_settings|site_visits|site_views|site_events|visit_ref|scroll_pct|value_num)\b/', $php, $m);
 $usadas = array_unique($m[1]);
 sort($usadas);
 foreach ($usadas as $u) {

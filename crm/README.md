@@ -36,10 +36,11 @@ return [
     'db_name'       => 'uXXXX_crm',
     'db_user'       => 'uXXXX_crm',
     'db_pass'       => 'SENHA-DO-BANCO',
-    'migrate_key'   => 'GERE-UM-SEGREDO-43-CHARS',
-    'api_tokens'    => ['claude' => 'GERE-OUTRO-SEGREDO-43-CHARS'],
-    'cookie_secure' => true,   // exige HTTPS
-    'app_env'       => 'prod', // 'dev' liga display_errors
+    'migrate_key'    => 'GERE-UM-SEGREDO-43-CHARS',
+    'api_tokens'     => ['claude' => 'GERE-OUTRO-SEGREDO-43-CHARS'],
+    'analytics_salt' => 'GERE-MAIS-UM-SEGREDO-43-CHARS', // sal do hash de visitante
+    'cookie_secure'  => true,   // exige HTTPS
+    'app_env'        => 'prod', // 'dev' liga display_errors
 ];
 ```
 
@@ -73,6 +74,9 @@ Base: `https://www.mais351monitor.com.br/crm/api/index.php`
 | `?r=task-done` | POST | `{id*}` | `{ok}` |
 | `?r=cnpj-lookup&cnpj=` | GET | consulta pura, não grava | `{cnpj, data}` |
 | `?r=cnpj-enrich` | POST | `{lead_id*}` — consulta e grava no lead | `{ok, data}` |
+| `?r=analytics` | GET | `d=7\|30\|90` (padrão 30) | `{resumo, por_dia, paginas, origens, eventos, dispositivos, funil}` |
+| `?r=analytics-visita&ref=` | GET | código de 6 chars da visita | jornada completa: `views` + `events` |
+| `?r=analytics-vincular` | POST | `{ref*, lead_id*}` | `{ok}` |
 
 Enums — status: `novo, contato_feito, demo_agendada, demo_realizada, trial, cliente, perdido` ·
 origem: `site, whatsapp, email, indicacao, lista_50, outro` · interação: `whatsapp, email, ligacao,
@@ -130,6 +134,37 @@ As colunas (nome, cor, ordem, qual conclui) são editadas em **Configurações**
 apagar a coluna de conclusão nem a última que sobrou; apagar qualquer outra exige escolher
 para onde os cards dela vão.
 
+## Analytics do site (views e cliques)
+
+Medição própria do `www.mais351monitor.com.br`, sem Google Analytics e sem terceiros.
+Painel em **`/crm/analytics.php`** (aba "Site" do menu).
+
+- **Como funciona:** `site/assets/js/track.js` (~6 KB, sem dependência) manda `pv` (pageview),
+  `ev` (clique) e `end` (tempo de leitura + scroll) para `crm/collect.php`, que grava em
+  `site_visits` / `site_views` / `site_events`. Mesmo domínio, mesmo banco dos leads.
+- **Sem cookie e sem IP:** o visitante é `sha256(sal + data + IP + user-agent)` truncado em 32
+  chars — irreversível e trocado toda meia-noite. Visita = 30 min sem atividade. Consequência a
+  saber: "visitantes" num período de 30 dias é a **soma dos únicos de cada dia**, e dois
+  computadores atrás do mesmo IP corporativo com o mesmo navegador viram uma visita só.
+  O sal vem de `analytics_salt` no `crm_config.php`; sem ele, é derivado dos outros segredos.
+- **O track.js precisa carregar ANTES do home.js.** Ele instala um `dataLayer` de verdade e o
+  `trackCalc()` que já existia no home.js passa a cair aqui — por isso os 8 eventos da
+  calculadora funcionam sem uma linha alterada naquele arquivo. Plugar um GTM por cima depois
+  continua funcionando.
+- **Eventos automáticos:** `whatsapp` (os 8 CTAs — o texto pré-preenchido identifica qual),
+  `email`, `outbound`, `anchor`, mais `calculator_interaction` / `calculator_calculate` /
+  `calculator_demo_click` vindos da calculadora.
+- **Código da visita (`ref_code`):** cada visita ganha um código de 6 chars que o track.js
+  pendura no fim do texto dos links `wa.me` (`… #K7M2Q9`). Quando a conversa chega no WhatsApp,
+  cole o código no painel para ver a jornada e **vincular a visita ao lead** — daí saem as
+  colunas "Leads" por origem e o card "Jornada no site" no detalhe do lead.
+- **Bots** são barrados por user-agent no servidor; o **Global Privacy Control** do visitante é
+  respeitado (o track.js nem roda).
+- **Retenção:** visitas sem lead são apagadas com 365 dias (poda oportunista em ~0,5% das
+  escritas). As vinculadas a um lead ficam com ele.
+- **Rate limit:** só a *criação* de visita passa pelo `throttle_events` (30/h e 120/dia por IP);
+  os hits seguintes não gravam nada lá. Tetos por visita: 200 views e 300 eventos.
+
 ## Testes
 
 `php crm/tests/run.php` — suítes das funções puras (dias úteis da cadência, modelos de
@@ -151,3 +186,6 @@ Hostinger — a hospedagem compartilhada não é lugar de descobrir erro de sint
 - Opt-out ("não me contacte"): marcar no detalhe do lead. O registro é **mantido** de propósito —
   é a lista de supressão que impede o contato de voltar pela fila, pelo import ou pelo site
   (`lead_create()` herda o flag do duplicado). Marcar encerra as tarefas abertas e bloqueia a cadência.
+- Analytics do site sem cookie, sem storage no navegador e **sem IP gravado** (hash diário
+  irreversível); GPC respeitado; retenção de 365 dias — tudo declarado na seção "Medição de
+  audiência deste site" da política de privacidade.
