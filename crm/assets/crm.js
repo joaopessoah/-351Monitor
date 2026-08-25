@@ -43,12 +43,35 @@
     sync();
   }
 
-  /* Registrar interação: "qual e-mail" aparece só quando o tipo é e-mail */
+  /* Registrar interação: "qual e-mail" aparece só quando o tipo é e-mail, e o
+     resumo (obrigatório) já vem escrito para a cadência — dizer "mandei o
+     terceiro e-mail" é digitação sem informação, o email_seq já grava isso.
+     Só escrevemos no campo enquanto ele estiver vazio ou com o texto que nós
+     mesmos pusemos: o que a pessoa digitar nunca é sobrescrito. */
   var intType = document.getElementById('int-type');
   var seqWrap = document.getElementById('int-email-seq-wrap');
+  var intSeq = document.getElementById('int-email-seq');
+  var intResumo = document.getElementById('int-summary');
   if (intType && seqWrap) {
-    var syncSeq = function () { seqWrap.hidden = intType.value !== 'email'; };
+    var autoResumo = '';
+
+    var sugereResumo = function () {
+      if (!intResumo || !intSeq) { return; }
+      if (intResumo.value !== '' && intResumo.value !== autoResumo) { return; }
+      var novo = '';
+      if (intType.value === 'email' && intSeq.selectedIndex >= 0) {
+        novo = intSeq.options[intSeq.selectedIndex].text + ' enviado (modelo padrão).';
+      }
+      intResumo.value = novo;
+      autoResumo = novo;
+    };
+
+    var syncSeq = function () {
+      seqWrap.hidden = intType.value !== 'email';
+      sugereResumo();
+    };
     intType.addEventListener('change', syncSeq);
+    if (intSeq) { intSeq.addEventListener('change', sugereResumo); }
     syncSeq();
   }
 
