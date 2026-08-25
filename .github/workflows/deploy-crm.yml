@@ -36,5 +36,6 @@ jobs:
           state-name: .ftp-deploy-sync-state-crm.json
           exclude: |
             README.md
+            tests/**
             **/.git*
             **/.git*/**
