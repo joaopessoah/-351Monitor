@@ -80,25 +80,35 @@ echo "  hoje+4du = " . substr(cadencia_due_at(4, null), 0, 10)
    . " | enviado ontem+4du = " . substr(cadencia_due_at(4, $ontem), 0, 10) . "\n";
 
 echo "== M) settings.php: nenhum required escondido em <details> fechado ==\n";
-$s = file_get_contents($CRM . '/settings.php');
+/**
+ * Lê um fonte normalizando CRLF para LF. As asserções abaixo casam trechos de
+ * código com quebra de linha embutida; num checkout Windows (.gitattributes dá
+ * \r\n no working copy) elas falhariam sem nada ter quebrado de verdade.
+ */
+function fonte(string $caminho): string
+{
+    return str_replace("\r\n", "\n", (string) file_get_contents($caminho));
+}
+
+$s = fonte($CRM . '/settings.php');
 check(!str_contains($s, "'open' : ''"), 'ainda há <details> que nasce fechado');
 check(substr_count($s, '<details class="tpl" open>') === 1, 'o <details> não está fixo em open');
 
 echo "== N) seletor de <code> não vaza para outros cards ==\n";
-$css = file_get_contents($CRM . '/assets/crm.css');
+$css = fonte($CRM . '/assets/crm.css');
 check(!str_contains($css, '.card code'), 'o seletor .card code ainda existe');
 check(str_contains($css, '.cad-chaves code'), 'o seletor escopado não foi criado');
 check(str_contains($s, 'class="muted cad-chaves"'), 'o parágrafo das chaves não recebeu a classe');
 
 echo "== G/H) contact_* recusam contato de outro lead ==\n";
-$src = file_get_contents($CRM . '/lib/model.php');
+$src = fonte($CRM . '/lib/model.php');
 foreach (['contact_delete', 'contact_set_principal', 'contact_toggle_decisor'] as $fn) {
     check((bool) preg_match('/function ' . $fn . '\(int \$id, \?int \$expectLeadId = null\)/', $src),
         "$fn não recebe expectLeadId");
 }
 check(substr_count($src, 'contact_assert_lead($id, $expectLeadId);') === 3,
     'contact_assert_lead não é chamado nas três funções');
-$leadSrc = file_get_contents($CRM . '/lead.php');
+$leadSrc = fonte($CRM . '/lead.php');
 foreach (['contact_delete', 'contact_set_principal', 'contact_toggle_decisor'] as $fn) {
     check(str_contains($leadSrc, $fn . "((int) (\$_POST['contact_id'] ?? 0), \$id)"),
         "lead.php não passa o lead esperado para $fn");

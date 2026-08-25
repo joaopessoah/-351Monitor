@@ -93,11 +93,21 @@ check(str_contains($sql, 'ON DELETE SET NULL'), 'apagar coluna deixaria tarefa �
 check(substr_count($sql, "('A fazer', 1, 0") === 1, 'seed das colunas mudou de forma');
 
 echo "== contrato entre board.php e crm.js ==\n";
-$php = file_get_contents($CRM . '/board.php');
-$js = file_get_contents($CRM . '/assets/crm.js');
-$css = file_get_contents($CRM . '/assets/crm.css');
-$model = file_get_contents($CRM . '/lib/model.php');
-$set = file_get_contents($CRM . '/settings.php');
+/**
+ * Lê um fonte normalizando CRLF para LF. As asserções abaixo casam trechos de
+ * código com quebra de linha embutida; num checkout Windows (.gitattributes dá
+ * \r\n no working copy) elas falhariam sem nada ter quebrado de verdade.
+ */
+function fonte(string $caminho): string
+{
+    return str_replace("\r\n", "\n", (string) file_get_contents($caminho));
+}
+
+$php = fonte($CRM . '/board.php');
+$js = fonte($CRM . '/assets/crm.js');
+$css = fonte($CRM . '/assets/crm.css');
+$model = fonte($CRM . '/lib/model.php');
+$set = fonte($CRM . '/settings.php');
 
 foreach ([['.board', 'class="kanban board"'], ['.board-drop', 'class="board-drop"'],
           ['.board-card', 'board-card']] as [$noJs, $noHtml]) {
