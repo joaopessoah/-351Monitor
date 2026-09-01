@@ -113,10 +113,11 @@ ul[role="list"] { list-style: none; margin: 0; padding: 0; }
 }
 
 .container { width: var(--container); margin-inline: auto; }
-.section { padding-block: clamp(88px, 10vw, 136px); }
+.section { padding-block: clamp(52px, 6vw, 76px); }
 /* Âncoras do menu: desconta o padding interno da seção para o conteúdo
-   aparecer logo abaixo do menu, em vez de deixar um vazio de ~150px no topo */
-.section[id] { scroll-margin-top: calc(12px - clamp(88px, 10vw, 136px)); }
+   aparecer logo abaixo do menu, em vez de deixar um vazio de ~150px no topo.
+   O clamp precisa espelhar o padding-block acima. */
+.section[id] { scroll-margin-top: calc(12px - clamp(52px, 6vw, 76px)); }
 .center { text-align: center; }
 
 .eyebrow {
@@ -336,7 +337,7 @@ h2 { font-size: clamp(1.9rem, 3.4vw, 2.6rem); }
   font: 500 clamp(1.15rem, 2.1vw, 1.45rem) var(--font-display);
   letter-spacing: -0.015em;
   color: var(--ink);
-  margin: clamp(76px, 9vw, 116px) auto 0;
+  margin: clamp(48px, 6vw, 68px) auto 0;
   padding-bottom: clamp(8px, 1vw, 16px);
 }
 .belt span { color: var(--green); }
@@ -559,7 +560,7 @@ h2 { font-size: clamp(1.9rem, 3.4vw, 2.6rem); }
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 18px;
-  margin-top: clamp(44px, 5vw, 60px);
+  margin-top: clamp(30px, 3.4vw, 40px);
 }
 .mcard {
   border: 1px solid #151F30;
@@ -578,7 +579,7 @@ h2 { font-size: clamp(1.9rem, 3.4vw, 2.6rem); }
   font: 500 clamp(1.15rem, 2.1vw, 1.45rem) var(--font-display);
   letter-spacing: -0.015em;
   color: var(--ink);
-  margin: clamp(56px, 7vw, 80px) 0 0;
+  margin: clamp(34px, 4vw, 46px) 0 0;
 }
 .tagline span { color: var(--green); }
 
@@ -649,7 +650,7 @@ h2 { font-size: clamp(1.9rem, 3.4vw, 2.6rem); }
   border-radius: 22px;
   padding: clamp(28px, 4.5vw, 52px);
   background: linear-gradient(180deg, #090F1A, #060A12);
-  margin-top: clamp(44px, 5vw, 60px);
+  margin-top: clamp(30px, 3.4vw, 40px);
 }
 .calc-fields { display: flex; flex-direction: column; gap: 26px; }
 .field label, .field legend {
@@ -894,7 +895,7 @@ fieldset.field .segmented + .field-hint { margin-top: 10px; }
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: clamp(18px, 2.6vw, 28px);
-  margin-top: clamp(44px, 5vw, 60px);
+  margin-top: clamp(30px, 3.4vw, 40px);
 }
 .founder-card {
   min-width: 0;
@@ -941,7 +942,7 @@ fieldset.field .segmented + .field-hint { margin-top: 10px; }
 .who .tagline { margin-top: 12px; font-size: clamp(1.08rem, 1.75vw, 1.3rem); }
 
 .mission {
-  margin-top: clamp(56px, 7vw, 80px);
+  margin-top: clamp(38px, 4.2vw, 50px);
   border: 1px solid #1A2740;
   border-radius: 22px;
   padding: clamp(32px, 5vw, 56px) clamp(24px, 5vw, 64px);
@@ -1080,7 +1081,7 @@ fieldset.field .segmented + .field-hint { margin-top: 10px; }
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 18px;
-  margin-top: clamp(44px, 5vw, 60px);
+  margin-top: clamp(30px, 3.4vw, 40px);
 }
 .qcard {
   border: 1px solid #151F30;
@@ -1134,7 +1135,7 @@ fieldset.field .segmented + .field-hint { margin-top: 10px; }
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 18px;
-  margin-top: clamp(44px, 5vw, 60px);
+  margin-top: clamp(30px, 3.4vw, 40px);
 }
 .step {
   border: 1px solid #151F30;
@@ -1162,7 +1163,7 @@ fieldset.field .segmented + .field-hint { margin-top: 10px; }
 .lgpd-cta { margin: clamp(36px, 4.5vw, 48px) 0 0; }
 
 /* ---------- FAQ (accordion nativo com details/summary) ---------- */
-.faq-list { margin-top: clamp(40px, 5vw, 56px); max-width: 880px; }
+.faq-list { margin-top: clamp(28px, 3.4vw, 36px); max-width: 880px; }
 .faq-item {
   border: 1px solid #151F30;
   border-radius: 14px;
