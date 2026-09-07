@@ -122,6 +122,20 @@ public static class AuditActions
     /// TODOS os dispositivos dela.
     /// </summary>
     public const string Reaggregate = "reaggregate";
+
+    /// <summary>
+    /// F6 — PATCH /organization com person_alerts_enabled (decisão 5 do spec de 07/09/2026):
+    /// a organização LIGA ou DESLIGA as regras de alerta de escopo pessoa. detail
+    /// {person_alerts_enabled: de→para}. Registro exigido pela própria decisão ("opt-in da
+    /// organização, registrado em auditoria"): quem autorizou olhar o dia de uma pessoa
+    /// isolada, e quando, precisa ser evidenciável.
+    ///
+    /// TODO(F6/Configurações › Alertas): o toggle de interface e a gravação desta ação entram
+    /// junto com a tela de Configurações › Alertas, no PATCH /organization — a constante fica
+    /// aqui desde já porque a coluna já existe (migration AlertasGestaoF6) e o GET /alerts já
+    /// informa quando as regras de pessoa estão desligadas.
+    /// </summary>
+    public const string UpdateAlertPrefs = "update_alert_prefs";
 }
 
 /// <summary>Tabela audit_log — append-only, particionada por mês, retenção 24 meses (N13).</summary>

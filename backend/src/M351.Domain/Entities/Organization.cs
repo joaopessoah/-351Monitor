@@ -65,4 +65,16 @@ public class Organization
     /// ocioso) fica fora deste vocabulário — ocioso NUNCA é improdutivo.
     /// </summary>
     public string ClassificationVocabulary { get; set; } = "produtividade";
+
+    /// <summary>
+    /// F6, decisão 5 do spec de 07/09/2026 — OPT-IN da organização para as regras de alerta de
+    /// escopo PESSOA (dias longos e atividade fora do horário). Padrão é <c>false</c>: alerta
+    /// por EQUIPE é o padrão do produto, e olhar o dia de uma pessoa isolada só acontece se a
+    /// CONTROLADORA decidir explicitamente que quer isso — decisão que fica em auditoria
+    /// (<see cref="AuditActions.UpdateAlertPrefs"/>).
+    ///
+    /// Enquanto false, o ManagementAlertService NÃO avalia as duas regras de pessoa: nenhum
+    /// alerta de pessoa fica guardado no banco esperando o toggle ser ligado.
+    /// </summary>
+    public bool PersonAlertsEnabled { get; set; }
 }

@@ -51,6 +51,9 @@ import { TAG_CODEC, TeamTagSelect, useTeamTags } from "@/components/filters/Team
 import { WeeklyChartsRow } from "@/components/dashboard/WeeklyChartsRow";
 import { AgoraFaixa } from "@/components/dashboard/AgoraFaixa";
 import { KpisRow } from "@/components/dashboard/KpisRow";
+import { AlertasCard } from "@/components/dashboard/AlertasCard";
+import { EquipesLadoALado, useEquipesQuery } from "@/components/dashboard/EquipesLadoALado";
+import { ResumoDoPeriodo } from "@/components/dashboard/ResumoDoPeriodo";
 import {
   useActivityByHourQuery,
   useOverviewQuery,
@@ -94,6 +97,12 @@ export function VisaoGeralPage() {
   const overview = useOverviewQuery(resolved, tag, true);
   const totals = overview.data?.totals;
   const previous = overview.data?.previous ?? null;
+
+  // A comparação de equipes é UMA consulta (Promise.all por etiqueta dentro de
+  // um useQuery só). Declarada aqui além de dentro do EquipesLadoALado porque o
+  // Resumo do Período também precisa das linhas: mesma queryKey, mesmo cache,
+  // dois observadores e ZERO requisição a mais.
+  const equipes = useEquipesQuery(resolved, tags, organization?.business_hours);
 
   const header = (
     <div className="space-y-4">
@@ -192,10 +201,27 @@ export function VisaoGeralPage() {
           comparação de semana. O recorte de equipe desce por prop. */}
       <WeeklyChartsRow tag={tag} />
 
-      {/* Alertas de gestão e o comparativo de equipes lado a lado entram na
-          próxima leva desta fase: o motor de regras vive no worker (F6 do plano)
-          e a comparação de equipes precisa da régua de mínimo de grupo. Até lá,
-          as pendências continuam no sino da barra superior. */}
+      {/* Linha 4 — o RESUMO do período em três frases, geradas dos agregados que
+          os blocos acima já carregaram. Zero requisição nova: consome o mesmo
+          cache do overview e da comparação de equipes. O cartão desaparece
+          inteiro se nenhuma frase tiver número real para dizer. */}
+      <ResumoDoPeriodo data={overview.data} equipes={equipes.data ?? []} />
+
+      {/* Linha 5 — ALERTAS de gestão (motor de regras no worker, GET /alerts)
+          somados às pendências de administração que hoje só existem no sino, e
+          o comparativo de EQUIPES lado a lado com o mínimo de grupo da
+          decisão 3. Os dois lado a lado porque respondem à mesma pergunta em
+          dois níveis: "o que exige decisão" e "onde a diferença está". */}
+      <div className="grid gap-4 lg:grid-cols-12">
+        <AlertasCard className="lg:col-span-5" />
+        <EquipesLadoALado
+          className="lg:col-span-7"
+          period={resolved}
+          tags={tags}
+          businessHours={organization?.business_hours}
+        />
+      </div>
+
       <p className="text-xs text-muted-foreground">
         {FRAMING} Estados de máquina (ativo, ocioso, bloqueado) são fisiológicos e não recebem
         julgamento: <span title={IDLE_HINT}>ocioso não é improdutivo</span>.

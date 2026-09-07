@@ -64,6 +64,9 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
             e.Property(x => x.ClassificationVocabulary)
                 .HasColumnName("classification_vocabulary").HasColumnType("text")
                 .HasDefaultValue("produtividade");
+            // F6 — opt-in das regras de alerta de escopo pessoa (decisão 5); padrão desligado
+            e.Property(x => x.PersonAlertsEnabled)
+                .HasColumnName("person_alerts_enabled").HasDefaultValue(false);
 
             // a organização É o tenant: visível apenas para o próprio tenant autenticado
             e.HasQueryFilter(x => _tenant.TenantId != null && x.Id == _tenant.TenantId.Value);

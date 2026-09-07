@@ -1478,3 +1478,86 @@ export interface AppCatalogResponseF6 extends AppCatalogResponse {
 export interface OrganizationVocabularyPatchRequest {
   classification_vocabulary: "produtividade" | "trabalho";
 }
+
+// =============================================================================
+// F6 - ALERTAS DE GESTAO (secao 4 do spec de 07/09/2026)
+// =============================================================================
+
+/**
+ * Um alerta de gestao VIVO, ja traduzido pelo servidor. `title` e `context`
+ * chegam prontos em portugues: o VOCABULARIO ("variacao e contexto, nunca
+ * julgamento", jamais ranking) tem fonte unica no backend, e a tela nao
+ * reescreve a frase nem recalcula numero nenhum.
+ *
+ * `detail` sao os numeros crus da regra, para exibir valor exato sem reparsear
+ * a frase. `severity` e so a faixa de cor do cartao - nao e nota nem juizo.
+ */
+export interface AlertItem {
+  kind: string;
+  scope_type: "organization" | "team" | "person" | "device";
+  scope_key: string;
+  scope_label: string | null;
+  severity: "atencao" | "informativo";
+  title: string;
+  context: string;
+  action: string;
+  /** Rota do portal (sempre relativa) que resolve o alerta. */
+  link: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  detail: Record<string, unknown>;
+}
+
+/**
+ * Resposta de `GET /alerts`.
+ *
+ * `person_alerts_enabled` e o opt-in da decisao 5: com `false` as duas regras
+ * de escopo pessoa nao sao avaliadas, e a tela precisa DIZER isso - omitir
+ * faria o gestor concluir que ninguem trabalha fora do horario quando na
+ * verdade ninguem esta medindo.
+ *
+ * `plan_includes_alerts` separa "nada a relatar" de "o plano nao inclui a
+ * feature": a diferenca entre um elogio e um upgrade.
+ */
+export interface AlertsResponse {
+  items: AlertItem[];
+  person_alerts_enabled: boolean;
+  plan_includes_alerts: boolean;
+  /** Ultima execucao OK do motor no worker; null se nunca rodou. */
+  evaluated_at: string | null;
+}
+
+/**
+ * Uma linha do comparativo de equipes (decisao 3), DERIVADA no portal de um
+ * `GET /dashboard/overview?tag=` por etiqueta (um Promise.all dentro de um
+ * useQuery so). O indice e a cobertura vem prontos do servidor por etiqueta -
+ * nada de recalculo aqui; o que a tela deriva sao divisoes dos totais do
+ * servidor (horas por pessoa-dia, ociosidade, capacidade).
+ *
+ * Metricas de TOTAL sempre existem; as COMPARATIVAS (medias por pessoa,
+ * ociosidade, capacidade) so com 3 pessoas ou mais - abaixo disso a linha
+ * mostra totais e imprime traco no resto, porque media de equipe com 2 pessoas
+ * e afirmacao sobre individuo com outro nome.
+ */
+export interface TeamComparisonRow {
+  tag: string;
+  people: number;
+  /** Pares (pessoa, dia) com dado: denominador das medias por pessoa por dia. */
+  person_days: number;
+  seconds_on: number;
+  seconds_active: number;
+  seconds_idle: number;
+  seconds_unclassified: number;
+  /** Do servidor, nunca recalculado no portal. */
+  productivity_index: number | null;
+  productivity_index_previous: number | null;
+  classification_coverage: number | null;
+  /** Media de horas ativas por pessoa por dia; null sem mínimo de grupo. */
+  active_seconds_per_person_day: number | null;
+  /** ocioso / ligada; null sem mínimo de grupo ou sem tempo ligado. */
+  idle_share: number | null;
+  /** ativo / (jornada declarada x dias uteis x pessoas); null sem base. */
+  capacity_used: number | null;
+  /** false quando a equipe tem menos de 3 pessoas (decisao 3). */
+  meets_group_minimum: boolean;
+}

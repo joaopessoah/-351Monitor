@@ -93,6 +93,12 @@ builder.Services.AddSingleton<FleetAlertService>(sp => new FleetAlertService(
     sp.GetRequiredService<IEmailSender>(),
     builder.Configuration["Portal:BaseUrl"] ?? "http://localhost:5173",
     sp.GetRequiredService<ILogger<FleetAlertService>>()));
+// Alertas de GESTÃO (F6, seção 4 do spec): motor de regras sobre os agregados diários, com
+// estado em management_alerts. Só NpgsqlDataSource — a entrega é no painel (GET /alerts),
+// não por e-mail, então não precisa do IEmailSender do irmão de frota.
+builder.Services.AddSingleton<ManagementAlertService>(sp => new ManagementAlertService(
+    sp.GetRequiredService<NpgsqlDataSource>(),
+    sp.GetRequiredService<ILogger<ManagementAlertService>>()));
 builder.Services.AddSingleton<BillingSnapshotService>(sp => new BillingSnapshotService(
     sp.GetRequiredService<NpgsqlDataSource>(),
     sp.GetRequiredService<ILogger<BillingSnapshotService>>()));
@@ -192,6 +198,18 @@ builder.Services.AddQuartz(quartz =>
     quartz.AddTrigger(trigger => trigger
         .ForJob(fleetAlertKey)
         .WithIdentity("fleet-alert-15min")
+        .StartNow()
+        .WithSimpleSchedule(schedule => schedule.WithIntervalInMinutes(15).RepeatForever()));
+
+    // Alertas de GESTÃO (F6, seção 4 do spec): a cada 15 min, MESMO passo da agregação
+    // diária — o alerta nasce no ciclo seguinte ao agregado que o justifica, sem janela em
+    // que a tela mostre número novo com alerta velho. O serviço aplica cooldown de 24 h,
+    // silêncio fora do horário da org, o opt-in de pessoa (decisão 5) e o gate do plano Pro.
+    var managementAlertKey = new JobKey("management-alert");
+    quartz.AddJob<ManagementAlertJob>(options => options.WithIdentity(managementAlertKey));
+    quartz.AddTrigger(trigger => trigger
+        .ForJob(managementAlertKey)
+        .WithIdentity("management-alert-15min")
         .StartNow()
         .WithSimpleSchedule(schedule => schedule.WithIntervalInMinutes(15).RepeatForever()));
 
