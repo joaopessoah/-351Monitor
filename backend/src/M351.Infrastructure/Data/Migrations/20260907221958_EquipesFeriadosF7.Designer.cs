@@ -4,6 +4,7 @@ using System.Net;
 using M351.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace M351.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(M351DbContext))]
-    partial class M351DbContextModelSnapshot : ModelSnapshot
+    [Migration("20260907221958_EquipesFeriadosF7")]
+    partial class EquipesFeriadosF7
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -395,10 +398,6 @@ namespace M351.Infrastructure.Data.Migrations
                     b.Property<int?>("GoalWorkRelatedPct")
                         .HasColumnType("integer")
                         .HasColumnName("goal_work_related_pct");
-
-                    b.Property<DateTimeOffset?>("LastPersonalDigestAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("last_personal_digest_at");
 
                     b.Property<DateTimeOffset?>("LastWeeklyDigestAt")
                         .HasColumnType("timestamp with time zone")

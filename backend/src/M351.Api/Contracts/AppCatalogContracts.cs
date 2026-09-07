@@ -49,7 +49,15 @@ public sealed record AppCatalogItemResponse(
     AppCategoryResponse? Category,
     string? DefaultCategory,
     [property: JsonPropertyName("seconds_active_30d")] long SecondsActive30d,
-    [property: JsonPropertyName("device_count_30d")] int DeviceCount30d);
+    [property: JsonPropertyName("device_count_30d")] int DeviceCount30d,
+    /// <summary>
+    /// F5 — de ONDE veio a categoria acima: "team" (regra própria da equipe consultada),
+    /// "organization" (regra geral, HERDADA quando se consulta uma equipe) ou null (nenhuma
+    /// regra: o app está sem classificação). Sem <c>?team_id</c> só existem "organization" e
+    /// null. É o que permite à tela dizer "herdado da organização" em vez de fingir que a
+    /// equipe declarou algo que não declarou.
+    /// </summary>
+    string? CategoryScope = null);
 
 /// <summary>Categoria do TENANT referenciada por um app (shape compartilhado catálogo/relatórios).</summary>
 public sealed record AppCategoryResponse(Guid Id, string Name, int Classification, string? Color);
@@ -57,8 +65,16 @@ public sealed record AppCategoryResponse(Guid Id, string Name, int Classificatio
 /// <summary>
 /// PUT declarativo do mapeamento: category_id null = desmapear (a linha inteira sai,
 /// inclusive custom_display_name); custom_display_name ausente ou null = sem nome custom.
+///
+/// F5 — <c>team_id</c> escolhe o ESCOPO da regra: ausente ou null grava a regra da
+/// ORGANIZAÇÃO (comportamento de sempre, nada mudou para quem não manda o campo); com um
+/// team_id, grava a regra específica DAQUELA EQUIPE, que vence a geral para as pessoas dela.
+/// Desmapear no escopo de equipe (category_id null) remove só a regra da equipe — o app volta
+/// a HERDAR a regra da organização, não vira "sem classificação".
+/// <c>custom_display_name</c> é da organização e é ignorado no escopo de equipe: o nome
+/// exibido de um app não muda de time para time.
 /// </summary>
-public sealed record SetAppCategoryRequest(Guid? CategoryId, string? CustomDisplayName);
+public sealed record SetAppCategoryRequest(Guid? CategoryId, string? CustomDisplayName, Guid? TeamId = null);
 
 /// <summary>Resposta do PUT (estado do mapeamento após a escrita, sem métricas de uso).</summary>
 public sealed record AppCategoryMappingResponse(
@@ -66,7 +82,9 @@ public sealed record AppCategoryMappingResponse(
     string ProcessName,
     string DisplayName,
     string? CustomDisplayName,
-    AppCategoryResponse? Category);
+    AppCategoryResponse? Category,
+    /// <summary>F5 — escopo em que a regra foi escrita: null (organização) ou o id da equipe.</summary>
+    Guid? TeamId = null);
 
 // ----- PUT /api/v1/app-catalog/categories/batch (F1.1, aplicação em LOTE das sugestões) -----
 
@@ -76,8 +94,12 @@ public sealed record AppCategoryMappingResponse(
 /// </summary>
 public sealed record BatchAppCategoryItem(Guid AppId, Guid? CategoryId);
 
-/// <summary>Corpo do PUT em lote: a lista de mapeamentos a aplicar de uma vez.</summary>
-public sealed record BatchAppCategoryRequest(IReadOnlyList<BatchAppCategoryItem>? Items);
+/// <summary>
+/// Corpo do PUT em lote: a lista de mapeamentos a aplicar de uma vez. <c>team_id</c> (F5)
+/// aplica o lote inteiro no escopo de UMA equipe; ausente = escopo da organização, como sempre.
+/// </summary>
+public sealed record BatchAppCategoryRequest(
+    IReadOnlyList<BatchAppCategoryItem>? Items, Guid? TeamId = null);
 
 /// <summary>
 /// Resultado do lote: applied = quantidade de mapeamentos escritos; items = estado final de

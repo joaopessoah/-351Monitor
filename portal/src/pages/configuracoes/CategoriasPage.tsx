@@ -11,6 +11,13 @@
 //   janela fixa de 30 dias, máx. 500 itens), contador de não categorizados,
 //   select de categoria por linha e recategorização em LOTE (N PUTs
 //   sequenciais com progresso simples).
+// - Seletor de ESCOPO (F5, spec 2.4) nas abas "Mapeamento" e "Fila": a regra
+//   pode ser da ORGANIZAÇÃO (padrão, o de sempre) ou de UMA EQUIPE, e a regra
+//   da equipe vence a geral para as pessoas dela. Ausência de regra de equipe
+//   é HERANÇA da geral (a linha mostra "herdado da organização"), nunca "sem
+//   classificação" - a distinção é a diferença entre não decidir e decidir que
+//   não conta. Sem nenhuma equipe cadastrada o seletor some e a tela é a de
+//   antes, byte a byte.
 // - "Fila de classificação" (F6, decisão 4): cobertura da classificação em %
 //   + quanto falta em horas/apps para 95%, fila dos apps SEM categoria
 //   ordenada por impacto (GET /app-catalog?sort=impacto), sugestão do
@@ -49,8 +56,8 @@ import { genericErrorMessage } from "@/lib/messages";
 import { formatHours, formatPct } from "@/lib/period";
 import { isAdmin } from "@/lib/roles";
 import type {
-  AppCatalogResponse,
   AppCatalogResponseF6,
+  AppCatalogScopedResponse,
   CategoriesResponse,
   CategoryCreateRequest,
   CategoryItem,
@@ -86,6 +93,15 @@ import {
   coverageGap,
 } from "@/components/apps/classificationCoverage";
 import { useApplyCategoryBatch } from "@/components/apps/useApplyCategoryBatch";
+import {
+  ClassificationScopeSelect,
+  ORGANIZATION_SCOPE,
+  ScopeBadge,
+  ScopeNotice,
+  scopeQuery,
+  scopeTeamId,
+  useTeamsQuery,
+} from "@/components/apps/ClassificationScopeSelect";
 
 // Classes do grupo segmentado (mesmo padrão da timeline/dashboard).
 const segmentedButton = "rounded-[5px] px-3 text-xs font-medium transition-colors";
@@ -592,6 +608,10 @@ function MapeamentoTab({ admin }: { admin: boolean }) {
   const [bulkCategory, setBulkCategory] = useState("");
   const [bulk, setBulk] = useState<BulkProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // F5 - escopo da regra; "" = organização (padrão de sempre)
+  const [teamId, setTeamId] = useState<string>(ORGANIZATION_SCOPE);
+  const teamsQuery = useTeamsQuery();
+  const teamName = teamsQuery.data?.items.find((t) => t.id === teamId)?.name;
 
   // Debounce de 300ms na busca - evita uma consulta por tecla.
   useEffect(() => {
@@ -609,13 +629,14 @@ function MapeamentoTab({ admin }: { admin: boolean }) {
     const params = new URLSearchParams();
     if (q.length > 0) params.set("q", q);
     if (onlyUncategorized) params.set("uncategorized", "true");
-    const s = params.toString();
-    return s.length > 0 ? `?${s}` : "";
-  }, [q, onlyUncategorized]);
+    // o escopo entra pela mesma função das outras telas (scopeQuery) para o
+    // parâmetro nunca ser montado de dois jeitos diferentes
+    return `?${params.toString()}${scopeQuery(teamId)}`;
+  }, [q, onlyUncategorized, teamId]);
 
   const catalogQuery = useQuery({
-    queryKey: ["app-catalog", { q, uncategorized: onlyUncategorized }],
-    queryFn: () => api<AppCatalogResponse>(`/app-catalog${catalogParams}`),
+    queryKey: ["app-catalog", { q, uncategorized: onlyUncategorized, teamId }],
+    queryFn: () => api<AppCatalogScopedResponse>(`/app-catalog${catalogParams}`),
     placeholderData: (prev) => prev,
   });
   const data = catalogQuery.data;
@@ -658,6 +679,8 @@ function MapeamentoTab({ admin }: { admin: boolean }) {
           body: {
             category_id: bulkCategory === "" ? null : bulkCategory,
             custom_display_name: item.custom_display_name,
+            // F5 - o lote respeita o escopo selecionado na barra acima
+            team_id: scopeTeamId(teamId),
           },
         });
       } catch {
@@ -723,6 +746,8 @@ function MapeamentoTab({ admin }: { admin: boolean }) {
           />
           Somente não categorizados
         </label>
+        {/* F5 - escopo da regra (some quando não há equipe cadastrada) */}
+        <ClassificationScopeSelect value={teamId} onChange={setTeamId} disabled={bulk !== null} />
       </div>
 
       {admin && (
@@ -732,8 +757,8 @@ function MapeamentoTab({ admin }: { admin: boolean }) {
         >
           <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <span>
-            A categoria vale para toda a organização e reagrega os últimos 30 dias. Histórico
-            anterior mantém a classificação antiga.
+            <ScopeNotice teamId={teamId} teamName={teamName} /> Histórico anterior aos 30 dias
+            mantém a classificação antiga.
           </span>
         </div>
       )}
@@ -895,17 +920,22 @@ function MapeamentoTab({ admin }: { admin: boolean }) {
                         </td>
                         <td className="px-3 py-2">
                           {admin ? (
-                            <CategoryInlineSelect
-                              appId={item.app_id}
-                              categoryId={item.category?.id ?? null}
-                              categoryName={item.category?.name ?? null}
-                              customDisplayName={item.custom_display_name}
-                              categories={categories}
-                              disabled={bulk !== null}
-                              onError={() =>
-                                setError("Não foi possível salvar a categoria. Tente novamente.")
-                              }
-                            />
+                            <span className="flex flex-wrap items-center gap-2">
+                              <CategoryInlineSelect
+                                appId={item.app_id}
+                                categoryId={item.category?.id ?? null}
+                                categoryName={item.category?.name ?? null}
+                                customDisplayName={item.custom_display_name}
+                                categories={categories}
+                                disabled={bulk !== null}
+                                teamId={scopeTeamId(teamId)}
+                                onError={() =>
+                                  setError("Não foi possível salvar a categoria. Tente novamente.")
+                                }
+                              />
+                              {/* diz quando a categoria exibida veio da regra GERAL */}
+                              <ScopeBadge scope={item.category_scope} teamId={teamId} />
+                            </span>
                           ) : (
                             <span className="flex items-center gap-2">
                               <span
@@ -1176,11 +1206,19 @@ function FilaTab({ admin }: { admin: boolean }) {
   });
   const categories = categoriesQuery.data?.items ?? [];
 
+  // F5 - a fila também tem escopo: com uma equipe selecionada ela lista o que
+  // AQUELA equipe ainda não tem coberto (por regra própria OU herdada), e a
+  // cobertura do cabeçalho segue a mesma régua efetiva.
+  const [teamId, setTeamId] = useState<string>(ORGANIZATION_SCOPE);
+  const teamsQuery = useTeamsQuery();
+  const teamName = teamsQuery.data?.items.find((t) => t.id === teamId)?.name;
+
   // Mesma janela de 30 dias da Mapeamento de apps, mas ordenada por IMPACTO
   // (sem categoria primeiro, por tempo ativo desc) - é a fila em si.
   const catalogQuery = useQuery({
-    queryKey: ["app-catalog", { uncategorized: true, sort: "impacto", q: "" }],
-    queryFn: () => api<AppCatalogResponseF6>("/app-catalog?uncategorized=true&sort=impacto"),
+    queryKey: ["app-catalog", { uncategorized: true, sort: "impacto", q: "", teamId }],
+    queryFn: () =>
+      api<AppCatalogResponseF6>(`/app-catalog?uncategorized=true&sort=impacto${scopeQuery(teamId)}`),
     staleTime: 60_000,
   });
   const data = catalogQuery.data;
@@ -1247,6 +1285,7 @@ function FilaTab({ admin }: { admin: boolean }) {
     try {
       const applied = await batch.apply(
         previewItems.map((i) => ({ appId: i.app_id, categoryId: suggestionByApp.get(i.app_id)!.categoryId })),
+        scopeTeamId(teamId),
       );
       setPreviewOpen(false);
       setAppliedCount(applied);
@@ -1262,10 +1301,21 @@ function FilaTab({ admin }: { admin: boolean }) {
     <div className="space-y-4">
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Cobertura da classificação</CardTitle>
-          <CardDescription>
-            Últimos 30 dias · quanto do tempo ativo está em apps com categoria.
-          </CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1.5">
+              <CardTitle className="text-base">Cobertura da classificação</CardTitle>
+              <CardDescription>
+                Últimos 30 dias · quanto do tempo ativo está em apps com categoria
+                {teamId === ORGANIZATION_SCOPE ? "." : ` para ${teamName ?? "a equipe"}.`}
+              </CardDescription>
+            </div>
+            {/* F5 - a fila herda o mesmo seletor de escopo do Mapeamento */}
+            <ClassificationScopeSelect
+              value={teamId}
+              onChange={setTeamId}
+              disabled={batch.progress !== null}
+            />
+          </div>
         </CardHeader>
         <div className="px-6 pb-6">
           {failed ? (
@@ -1431,6 +1481,7 @@ function FilaTab({ admin }: { admin: boolean }) {
                                     customDisplayName={item.custom_display_name}
                                     categories={categories}
                                     disabled={batch.progress !== null}
+                                    teamId={scopeTeamId(teamId)}
                                     onError={() =>
                                       setRowError("Não foi possível salvar a categoria. Tente novamente.")
                                     }
@@ -1445,6 +1496,7 @@ function FilaTab({ admin }: { admin: boolean }) {
                                           appId: item.app_id,
                                           categoryId: suggestion.categoryId,
                                           customDisplayName: item.custom_display_name,
+                                          teamId: scopeTeamId(teamId),
                                         })
                                       }
                                       className={cn(

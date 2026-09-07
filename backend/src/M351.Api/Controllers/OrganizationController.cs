@@ -1,16 +1,19 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Dapper;
 using M351.Api.Agent;
 using M351.Api.Auth;
 using M351.Api.Contracts;
 using M351.Api.Services;
 using M351.Domain.Entities;
 using M351.Domain.Privacy;
+using M351.Infrastructure.Capacity;
 using M351.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace M351.Api.Controllers;
 
@@ -30,7 +33,7 @@ namespace M351.Api.Controllers;
 [ApiController]
 [Route("api/v1/organization")]
 [Authorize] // GET: Viewer+; PATCH refina para AdminPlus
-public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiControllerBase
+public class OrganizationController(M351DbContext db, AuditWriter audit, NpgsqlDataSource dataSource) : ApiControllerBase
 {
     private const int MaxTextLength = 1000;
 
@@ -618,6 +621,185 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
 
         return NoContent();
     }
+
+    // =====================================================================================
+    // F7 — FERIADOS DA ORGANIZAÇÃO (spec seção 6, fase F7).
+    //
+    // Para que servem: "capacidade utilizada" é ativo ÷ (jornada declarada × dias úteis ×
+    // pessoas). Sem calendário, o feriado entra no denominador como se fosse dia trabalhado e
+    // a capacidade sai SUBESTIMADA — o número que o site usa para responder "preciso
+    // contratar?". Feriado sai do denominador, e é só isso: NENHUM agregado muda, então
+    // criar/remover feriado NÃO enfileira reagregação (ao contrário de tudo em /teams).
+    //
+    // O calendário nacional dos dois anos seguintes é semeado na CRIAÇÃO da organização
+    // (CreateOrgCommand). O POST /seed existe para as organizações que já existiam antes desta
+    // fase e para virar o ano; é idempotente.
+    // =====================================================================================
+
+    /// <summary>Teto de anos por semeadura (o calendário nacional é gerado, não digitado).</summary>
+    private const int MaxSeedYears = 5;
+
+    private const int MaxHolidayNameLength = 120;
+
+    /// <summary>
+    /// GET /api/v1/organization/holidays?year= (Viewer): feriados do ano (padrão: ano corrente
+    /// no fuso da organização) mais as SUGESTÕES de ponto facultativo federal do mesmo ano
+    /// (Carnaval e Corpus Christi), que a semeadura não cria de propósito — quem trabalha
+    /// nesses dias não pode ter o denominador furado por padrão.
+    /// </summary>
+    [HttpGet("holidays")]
+    public async Task<IActionResult> Holidays([FromQuery(Name = "year")] int? year, CancellationToken ct)
+    {
+        var org = await db.Organizations.FirstAsync(ct);
+        var targetYear = year ?? TodayInOrgTz(org.Timezone).Year;
+        if (targetYear is < 2000 or > 2100)
+            return ProblemResponse(StatusCodes.Status400BadRequest, "year deve estar entre 2000 e 2100.");
+
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        var rows = (await connection.QueryAsync<HolidayRow>(new CommandDefinition(
+            """
+            SELECT holiday_date::text AS date, name
+            FROM organization_holidays
+            WHERE tenant_id = @TenantId
+              AND holiday_date >= make_date(@Year, 1, 1) AND holiday_date <= make_date(@Year, 12, 31)
+            ORDER BY holiday_date
+            """,
+            new { TenantId = org.Id, Year = targetYear }, cancellationToken: ct))).ToList();
+
+        var existing = rows.Select(r => r.Date).ToHashSet(StringComparer.Ordinal);
+        var suggestions = BrazilianHolidays.OptionalForYear(targetYear)
+            .Select(h => new HolidayResponse(h.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), h.Name))
+            .Where(h => !existing.Contains(h.Date))
+            .ToList();
+
+        return Ok(new HolidayListResponse(targetYear,
+            rows.Select(r => new HolidayResponse(r.Date, r.Name)).ToList(), suggestions));
+    }
+
+    /// <summary>
+    /// POST /api/v1/organization/holidays (Admin): cria (ou renomeia) um feriado. Idempotente
+    /// pela data — reenviar a mesma data com outro nome corrige o nome, o que é o que a tela
+    /// faz quando o cliente troca "Feriado municipal" por algo específico.
+    /// </summary>
+    [HttpPost("holidays")]
+    [Authorize(Policy = AuthConstants.PolicyAdminPlus)]
+    public async Task<IActionResult> CreateHoliday([FromBody] CreateHolidayRequest? request, CancellationToken ct)
+    {
+        if (!DateOnly.TryParseExact(request?.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var date))
+            return ProblemResponse(StatusCodes.Status400BadRequest, "date é obrigatório no formato yyyy-MM-dd.");
+
+        var name = request?.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(name) || name.Length > MaxHolidayNameLength)
+            return ProblemResponse(StatusCodes.Status400BadRequest,
+                $"Nome do feriado inválido (1 a {MaxHolidayNameLength} caracteres).");
+
+        var tenantId = CurrentUser.TenantId(User);
+
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var tx = await connection.BeginTransactionAsync(ct);
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            INSERT INTO organization_holidays (tenant_id, holiday_date, name)
+            VALUES (@TenantId, @Date::date, @Name)
+            ON CONFLICT (tenant_id, holiday_date) DO UPDATE SET name = EXCLUDED.name
+            """,
+            new { TenantId = tenantId, Date = request!.Date, Name = name },
+            transaction: tx, cancellationToken: ct));
+
+        // feriado NÃO reagrega (só muda o denominador da capacidade), mas fica na trilha:
+        // mexe num número que embasa decisão de contratação
+        await AuditWriter.AddInTransactionAsync(connection, tx, tenantId, AuditActions.UpdateHolidays,
+            actorUserId: CurrentUser.UserId(User), actorIp: HttpContext.Connection.RemoteIpAddress,
+            targetType: "organization", targetId: tenantId,
+            detailJson: JsonSerializer.Serialize(new { holiday_date = request.Date, name }), ct: ct);
+        await tx.CommitAsync(ct);
+
+        return Ok(new HolidayResponse(date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), name));
+    }
+
+    /// <summary>
+    /// DELETE /api/v1/organization/holidays/{date} (Admin): 204 sempre que a data é válida
+    /// (apagar o que não existe é sucesso — a tela pode reenviar sem tratar corrida).
+    /// </summary>
+    [HttpDelete("holidays/{date}")]
+    [Authorize(Policy = AuthConstants.PolicyAdminPlus)]
+    public async Task<IActionResult> DeleteHoliday(string date, CancellationToken ct)
+    {
+        if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out _))
+            return ProblemResponse(StatusCodes.Status400BadRequest, "Data inválida: use yyyy-MM-dd.");
+
+        var tenantId = CurrentUser.TenantId(User);
+
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var tx = await connection.BeginTransactionAsync(ct);
+
+        var removed = await connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM organization_holidays WHERE tenant_id = @TenantId AND holiday_date = @Date::date",
+            new { TenantId = tenantId, Date = date }, transaction: tx, cancellationToken: ct));
+
+        if (removed > 0)
+        {
+            await AuditWriter.AddInTransactionAsync(connection, tx, tenantId, AuditActions.UpdateHolidays,
+                actorUserId: CurrentUser.UserId(User), actorIp: HttpContext.Connection.RemoteIpAddress,
+                targetType: "organization", targetId: tenantId,
+                detailJson: JsonSerializer.Serialize(new { holiday_date = date, deleted = true }), ct: ct);
+        }
+
+        await tx.CommitAsync(ct);
+        return NoContent();
+    }
+
+    /// <summary>
+    /// POST /api/v1/organization/holidays/seed (Admin): semeia o calendário NACIONAL dos anos
+    /// pedidos (padrão: ano corrente e o próximo, igual à criação da organização). Idempotente:
+    /// não sobrescreve nome editado nem ressuscita feriado apagado de propósito.
+    /// </summary>
+    [HttpPost("holidays/seed")]
+    [Authorize(Policy = AuthConstants.PolicyAdminPlus)]
+    public async Task<IActionResult> SeedHolidays([FromBody] SeedHolidaysRequest? request, CancellationToken ct)
+    {
+        var org = await db.Organizations.FirstAsync(ct);
+        var today = TodayInOrgTz(org.Timezone);
+
+        var years = (request?.Years is { Count: > 0 } requested ? requested : [today.Year, today.Year + 1])
+            .Distinct().Order().ToList();
+        if (years.Count > MaxSeedYears)
+            return ProblemResponse(StatusCodes.Status400BadRequest, $"Máximo de {MaxSeedYears} anos por chamada.");
+        if (years.Any(y => y is < 2000 or > 2100))
+            return ProblemResponse(StatusCodes.Status400BadRequest, "Cada ano deve estar entre 2000 e 2100.");
+
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var tx = await connection.BeginTransactionAsync(ct);
+
+        var inserted = await BrazilianHolidays.SeedAsync(connection, tx, org.Id, years, ct);
+
+        await AuditWriter.AddInTransactionAsync(connection, tx, org.Id, AuditActions.UpdateHolidays,
+            actorUserId: CurrentUser.UserId(User), actorIp: HttpContext.Connection.RemoteIpAddress,
+            targetType: "organization", targetId: org.Id,
+            detailJson: JsonSerializer.Serialize(new { seeded = true, years, inserted }), ct: ct);
+        await tx.CommitAsync(ct);
+
+        return Ok(new SeedHolidaysResponse(years, inserted));
+    }
+
+    /// <summary>Dia local "hoje" no fuso da organização (fuso inválido cai em UTC).</summary>
+    private static DateOnly TodayInOrgTz(string timezone)
+    {
+        try
+        {
+            var tz = TimeZoneInfo.FindSystemTimeZoneById(timezone);
+            return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, tz).DateTime);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return DateOnly.FromDateTime(DateTime.UtcNow);
+        }
+    }
+
+    private sealed record HolidayRow(string Date, string Name);
 
     /// <summary>
     /// Lê um campo de texto opcional do corpo: ausente (hasField=false, não muda); null (define

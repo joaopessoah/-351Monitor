@@ -39,6 +39,13 @@ public class Organization
     public DateTimeOffset? LastWeeklyDigestAt { get; set; }
 
     /// <summary>
+    /// F6 — última vez que o lote de digests PESSOAIS saiu para esta org. Carimbo SEPARADO
+    /// do digest do gestor de propósito: falha no lote pessoal não pode fazer o gestor
+    /// receber o resumo dele duas vezes na hora seguinte.
+    /// </summary>
+    public DateTimeOffset? LastPersonalDigestAt { get; set; }
+
+    /// <summary>
     /// F5 — meta semanal AGREGADA de horas ativas da equipe (nunca por pessoa, sem ranking).
     /// null = sem meta. Exibida como barra de progresso na Visão Geral e markLine no gráfico.
     /// </summary>

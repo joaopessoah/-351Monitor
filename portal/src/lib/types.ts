@@ -1592,3 +1592,275 @@ export interface PersonDay {
 export interface PeopleDailyResponse {
   items: PersonDay[];
 }
+
+// ---------------------------------------------------------------------------
+// Anotacao de periodo e contestacao de classificacao (F6, decisao 6 do spec de
+// 07/09/2026) - `GET/POST /people/{sid}/notes` e `PATCH .../notes/{id}`.
+//
+// A medicao sabe QUANTO, nunca POR QUE: reuniao presencial, treinamento, visita
+// a cliente ou maquina em manutencao aparecem como ausencia de atividade, e o
+// numero sozinho mente por omissao. A anotacao e o contexto que gente escreve
+// sobre um periodo; a contestacao e a discordancia registrada sobre COMO um
+// aplicativo foi classificado.
+//
+// ACEITAR UMA CONTESTACAO NAO ALTERA NENHUM AGREGADO. E um ato de registro e
+// insumo da curadoria - o numero so muda quando o gestor remapeia a categoria
+// em Configuracoes > Classificacao e o historico e recalculado. O servidor
+// devolve essa frase pronta em `effect` (ver PersonNoteReviewResponse) para que
+// a tela DIGA isso ao gestor no clique, em vez de deixa-lo esperando.
+//
+// O segmento {sid} da rota aceita o windows_sid OU o device_user_id: a pagina
+// /pessoas/:id navega por device_user_id (o contrato de GET /device-users nao
+// devolve o SID) e a resolucao acontece no servidor, pelo par (tenant, id).
+// ---------------------------------------------------------------------------
+
+/** "anotacao" = contexto de um periodo; "contestacao" = discordancia da classificacao. */
+export type PersonNoteKind = "anotacao" | "contestacao";
+
+/** Nasce "aberta"; so o gestor (Admin+) move para "aceita" ou "recusada". */
+export type PersonNoteStatus = "aberta" | "aceita" | "recusada";
+
+/**
+ * Uma anotacao ou contestacao. Os nomes de quem criou e de quem revisou vem JA
+ * resolvidos do servidor (`created_by_name`/`reviewed_by_name`; null quando o
+ * usuario nao esta mais no tenant) - renderize estes campos, nao cruze por id.
+ *
+ * `app_id`/`app_process_name`/`app_display_name` so existem na contestacao com
+ * aplicativo: e o app cuja classificacao se contesta.
+ */
+export interface PersonNote {
+  id: string;
+  windows_sid: string;
+  kind: PersonNoteKind;
+  /** Inicio e fim do periodo anotado, ISO 8601 com fuso. */
+  started_at: string;
+  ended_at: string;
+  app_id: string | null;
+  app_process_name: string | null;
+  app_display_name: string | null;
+  body: string;
+  status: PersonNoteStatus;
+  created_by_user_id: string;
+  created_by_name: string | null;
+  created_at: string;
+  reviewed_by_user_id: string | null;
+  reviewed_by_name: string | null;
+  reviewed_at: string | null;
+  /** A resposta do gestor - obrigatoria na recusa, opcional na aceitacao. */
+  review_note: string | null;
+}
+
+/** Resposta de `GET /people/{sid}/notes?from&to` - sem paginacao (uma pessoa, ate 92 dias). */
+export interface PersonNotesResponse {
+  items: PersonNote[];
+}
+
+/**
+ * Corpo do `POST`. O status nao vai aqui: nasce sempre "aberta". `app_id` so e
+ * aceito em kind "contestacao" (numa anotacao de periodo o servidor responde 400).
+ */
+export interface PersonNoteCreateRequest {
+  kind: PersonNoteKind;
+  started_at: string;
+  ended_at: string;
+  app_id?: string | null;
+  body: string;
+}
+
+/**
+ * Corpo do `PATCH` (Admin+): a revisao do gestor. So "aceita" ou "recusada" -
+ * voltar para "aberta" nao existe, a revisao e um fato datado e assinado.
+ * `review_note` e obrigatoria na recusa.
+ */
+export interface PersonNoteReviewRequest {
+  status: Exclude<PersonNoteStatus, "aberta">;
+  review_note?: string | null;
+}
+
+/**
+ * Resposta do `PATCH`: a anotacao ja no estado novo mais `effect` - a frase do
+ * SERVIDOR dizendo o que a decisao fez (e, no caso da contestacao aceita, o que
+ * ela NAO fez: nenhum agregado muda). Exiba `effect` verbatim.
+ */
+export interface PersonNoteReviewResponse {
+  note: PersonNote;
+  effect: string;
+}
+
+// =============================================================================
+// F5 + F7 - CLASSIFICACAO POR EQUIPE, EQUIPES, JORNADA E FERIADOS
+// (spec secoes 2.3 e 2.4; fase F7 da secao 6)
+//
+// Duas nocoes de "equipe" coexistem de proposito no produto:
+//  - a ETIQUETA livre de devices.tags, que continua sendo o filtro ?tag de
+//    todos os dashboards, relatorios, timeline e exports - nada foi removido;
+//  - a ENTIDADE `teams`, vinculada a PESSOA (windows_sid), que tem nome
+//    canonico, jornada declarada e regra de classificacao propria.
+// Onde as duas respondem, a equipe da PESSOA vence; a etiqueta e o atalho de
+// migracao, e a equipe declara em `tag` qual etiqueta legada ela representa.
+//
+// Tipos A PARTE, no fim do arquivo: as fatias anteriores ja fecharam
+// AppCatalogResponse/AppCategoryPutRequest acima e esta fatia nao os edita.
+// =============================================================================
+
+/** Escopo de uma regra de classificacao, como o backend o devolve. */
+export type ClassificationScope = "team" | "organization";
+
+/**
+ * Item de `GET /app-catalog?team_id=` (F5). Mesmo formato de AppCatalogItem
+ * mais `category_scope`, que diz de ONDE veio a categoria exibida:
+ *   "team"         - a equipe consultada tem regra propria;
+ *   "organization" - a regra e a geral, HERDADA (a equipe nao declarou nada);
+ *   null           - nenhuma das duas: o app esta sem classificacao.
+ * Sem `?team_id` so existem "organization" e null. A distincao importa na
+ * tela: "herdado da organizacao" nao e a mesma coisa que "a equipe decidiu".
+ */
+export interface AppCatalogItemScoped {
+  app_id: string;
+  process_name: string;
+  display_name: string;
+  custom_display_name: string | null;
+  category: { id: string; name: string; classification: number; color: string | null } | null;
+  default_category: string | null;
+  seconds_active_30d: number;
+  device_count_30d: number;
+  category_scope: ClassificationScope | null;
+}
+
+/** Resposta de `GET /app-catalog?team_id=` - cobertura ja pela regua EFETIVA. */
+export interface AppCatalogScopedResponse {
+  items: AppCatalogItemScoped[];
+  uncategorized_count: number;
+  uncategorized_seconds_active: number;
+  total_seconds_active: number;
+}
+
+/**
+ * Body de `PUT /app-catalog/{appId}/category` com ESCOPO (F5).
+ * `team_id` ausente ou null = regra da ORGANIZACAO (o de sempre).
+ * `team_id` preenchido = regra daquela EQUIPE, que vence a geral para as
+ * pessoas dela; nesse escopo, `category_id: null` REMOVE so a regra da equipe
+ * e o app volta a HERDAR a regra geral - nao vira "sem classificacao".
+ * `custom_display_name` e da organizacao e e ignorado no escopo de equipe.
+ */
+export interface AppCategoryScopedPutRequest {
+  category_id: string | null;
+  custom_display_name?: string | null;
+  team_id?: string | null;
+}
+
+/** Body de `PUT /app-catalog/categories/batch` com escopo de equipe (F5). */
+export interface AppCategoryScopedBatchRequest {
+  items: AppCategoryBatchItem[];
+  team_id?: string | null;
+}
+
+/**
+ * Uma equipe (`GET /api/v1/teams`). `work_hours` e a jornada DECLARADA pela
+ * equipe (null = nao declarou); `effective_work_hours` e a que VALE - a da
+ * equipe, ou a da organizacao quando `work_hours_inherited` e true. Ausencia
+ * de jornada e HERANCA, nunca "sem jornada".
+ */
+export interface Team {
+  id: string;
+  name: string;
+  /** Etiqueta legada de devices.tags que esta equipe representa; null = so por pessoa. */
+  tag: string | null;
+  work_hours: BusinessHours | null;
+  effective_work_hours: BusinessHours | null;
+  work_hours_inherited: boolean;
+  member_count: number;
+  /** Quantos apps tem regra de classificacao PROPRIA desta equipe. */
+  team_rule_count: number;
+}
+
+export interface TeamListResponse {
+  items: Team[];
+  organization_work_hours: BusinessHours | null;
+}
+
+/** Body de POST/PATCH de equipe - no PATCH, campo ausente nao muda, null limpa. */
+export interface TeamWriteRequest {
+  name?: string;
+  tag?: string | null;
+  work_hours?: BusinessHours | null;
+}
+
+/** Uma pessoa vinculada a equipe; o nome ja vem resolvido pelo servidor. */
+export interface TeamMember {
+  windows_sid: string;
+  display_name: string;
+}
+
+export interface TeamMembersResponse {
+  team_id: string;
+  name: string;
+  items: TeamMember[];
+}
+
+/**
+ * Resposta do `PUT /teams/{id}/members` (composicao DECLARATIVA: a lista
+ * enviada passa a ser a composicao exata). Uma pessoa esta em no maximo UMA
+ * equipe, entao enviar alguem que estava em outra equipe a MOVE.
+ * `reaggregation_enqueued` sao os pares (dispositivo, dia) reenfileirados: a
+ * equipe decide a regra de classificacao aplicada ao tempo daquelas pessoas.
+ */
+export interface SetTeamMembersResponse {
+  team_id: string;
+  items: TeamMember[];
+  added: number;
+  removed: number;
+  reaggregation_enqueued: number;
+}
+
+/** Um feriado da organizacao. `date` e yyyy-MM-dd, como todo dia da API. */
+export interface Holiday {
+  date: string;
+  name: string;
+}
+
+/**
+ * `GET /organization/holidays?year=`. `suggestions` sao os pontos facultativos
+ * federais do ano (Carnaval e Corpus Christi) que a semeadura NAO cria de
+ * proposito: quem trabalha nesses dias nao pode ter o denominador da
+ * capacidade furado por padrao; quem os observa adiciona com um clique.
+ */
+export interface HolidayListResponse {
+  year: number;
+  items: Holiday[];
+  suggestions: Holiday[];
+}
+
+export interface SeedHolidaysResponse {
+  years: number[];
+  inserted: number;
+}
+
+/**
+ * Base do denominador da CAPACIDADE UTILIZADA de um escopo no periodo:
+ * ativo / (jornada declarada x dias uteis x pessoas).
+ *
+ * `business_days` JA vem sem os feriados - e essa a correcao da F7 (ate aqui o
+ * cartao de equipes da Visao Geral contava feriado como dia util e mostrava
+ * capacidade subestimada). `capacity_seconds_per_person` e o produto pronto:
+ * multiplique pelo numero de pessoas e divida o tempo ativo.
+ */
+export interface CapacityScope {
+  scope_type: "organization" | "team";
+  team_id: string | null;
+  scope_label: string;
+  /** Etiqueta legada equivalente - permite casar com o `?tag` do overview. */
+  tag: string | null;
+  daily_hours: number;
+  business_days: number;
+  holidays_excluded: number;
+  capacity_seconds_per_person: number;
+  member_count: number;
+}
+
+/** `GET /teams/capacity?from&to` - a linha da organizacao mais uma por equipe. */
+export interface CapacityResponse {
+  from: string;
+  to: string;
+  scopes: CapacityScope[];
+}

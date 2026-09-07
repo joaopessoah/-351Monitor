@@ -31,7 +31,11 @@ export function useApplyCategoryBatch() {
   const [progress, setProgress] = useState<BatchApplyProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function apply(items: BatchApplyItem[]): Promise<number> {
+  /**
+   * `teamId` (F5) aplica o lote inteiro no ESCOPO de uma equipe; null/ausente
+   * mantém o escopo da organização, que é o comportamento de sempre.
+   */
+  async function apply(items: BatchApplyItem[], teamId: string | null = null): Promise<number> {
     if (items.length === 0) return 0;
     setError(null);
     setProgress({ done: 0, total: items.length });
@@ -40,8 +44,9 @@ export function useApplyCategoryBatch() {
     try {
       for (let start = 0; start < items.length; start += APP_CATEGORY_BATCH_MAX) {
         const page = items.slice(start, start + APP_CATEGORY_BATCH_MAX);
-        const body: AppCategoryBatchRequest = {
+        const body: AppCategoryBatchRequest & { team_id?: string } = {
           items: page.map((i) => ({ app_id: i.appId, category_id: i.categoryId })),
+          ...(teamId === null ? {} : { team_id: teamId }),
         };
         const result = await api<AppCategoryBatchResponse>("/app-catalog/categories/batch", {
           method: "PUT",

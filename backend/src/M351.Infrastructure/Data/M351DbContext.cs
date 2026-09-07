@@ -57,6 +57,7 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
             e.Property(x => x.OnboardingChecklistDismissedAt).HasColumnName("onboarding_checklist_dismissed_at");
             // F5 — idempotência do digest semanal
             e.Property(x => x.LastWeeklyDigestAt).HasColumnName("last_weekly_digest_at");
+            e.Property(x => x.LastPersonalDigestAt).HasColumnName("last_personal_digest_at");
             // F5 — metas semanais AGREGADAS da organização (nunca por pessoa)
             e.Property(x => x.GoalWeeklyActiveHours).HasColumnName("goal_weekly_active_hours");
             e.Property(x => x.GoalWorkRelatedPct).HasColumnName("goal_work_related_pct");

@@ -2,11 +2,13 @@ using System.Text;
 using M351.Api.Controllers;
 using M351.Domain;
 using M351.Domain.Entities;
+using M351.Infrastructure.Capacity;
 using M351.Infrastructure.Data;
 using M351.Infrastructure.Email;
 using M351.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace M351.Api.Backoffice;
 
@@ -94,6 +96,16 @@ public static class CreateOrgCommand
         db.Invitations.Add(invitation);
         await db.SaveChangesAsync();
         await SeedCategoriesAsync(db, org.Id);
+
+        // F7 — calendário nacional do ano corrente e do próximo. Sem ele a "capacidade
+        // utilizada" conta feriado como dia trabalhado e sai subestimada desde o primeiro dia
+        // do cliente. Idempotente; Configurações › Equipes tem o botão para semear de novo.
+        var dataSource = scope.ServiceProvider.GetRequiredService<NpgsqlDataSource>();
+        await using (var connection = await dataSource.OpenConnectionAsync())
+        {
+            await BrazilianHolidays.SeedCurrentAndNextYearAsync(
+                connection, null, org.Id, DateOnly.FromDateTime(DateTime.UtcNow));
+        }
 
         var link = $"{portal.BaseUrl.TrimEnd('/')}/convite/{token}";
 

@@ -27,6 +27,18 @@ namespace M351.Api.Controllers;
 /// brasileiro aplicado pelo AppDictionarySeeder) e o PUT /categories/batch aplica N sugestões
 /// numa ÚNICA transação com UMA ÚNICA reagregação (N PUTs individuais custariam N reagregações
 /// de 30 dias). A sugestão nunca é aplicada automaticamente: quem decide é o tenant.
+///
+/// F5, CLASSIFICAÇÃO POR EQUIPE (spec seção 2.4 — o mesmo app pode ser produtivo no Marketing e
+/// improdutivo no Financeiro): todo endpoint de mapeamento aceita o ESCOPO em team_id.
+///   - ausente/null  → regra da ORGANIZAÇÃO, em tenant_app_categories. Exatamente o que sempre
+///                     existiu: nenhum cliente, nenhuma chamada e nenhum teste antigo muda;
+///   - com team_id   → regra da EQUIPE, em tenant_app_team_categories.
+/// ORDEM DE PRECEDÊNCIA na LEITURA (a mesma do DailyAggregationService, que é quem manda):
+///   1. regra da equipe consultada → category_scope "team"
+///   2. regra da organização       → category_scope "organization" (HERANÇA, não omissão)
+///   3. nenhuma das duas           → category null, "sem classificação"
+/// Desmapear no escopo de equipe devolve o app à regra da organização; desmapear no escopo da
+/// organização deixa o app sem classificação para quem não tem regra de equipe.
 /// </summary>
 [Route("api/v1/app-catalog")]
 [Authorize] // Viewer+ nas leituras; o PUT exige AdminPlus
@@ -56,24 +68,34 @@ public class AppCatalogController(
     public const string SortImpacto = "impacto";
 
     /// <summary>
-    /// GET /api/v1/app-catalog?q=&amp;uncategorized=true&amp;sort=impacto (Viewer): recorte do
-    /// tenant, máximo 500 itens. Janela 30d = hoje no fuso do tenant menos 30 dias (mesmo corte
+    /// GET /api/v1/app-catalog?q=&amp;uncategorized=true&amp;sort=impacto&amp;team_id= (Viewer):
+    /// recorte do tenant, máximo 500 itens. Janela 30d = hoje no fuso do tenant menos 30 dias (mesmo corte
     /// da reagregação). q busca em process_name/display_name/custom_display_name (ILIKE).
     /// uncategorized_count ignora os filtros (badge global), e desde a F6 vêm também
     /// uncategorized_seconds_active e total_seconds_active — a COBERTURA em tempo, que é o KPI
     /// da curadoria (contagem de apps não diz o tamanho do buraco). sort=impacto põe o que falta
     /// classificar no topo; qualquer outro valor cai no default (tempo ativo desc).
+    ///
+    /// team_id (F5) troca o ESCOPO da leitura: cada item passa a mostrar a regra EFETIVA
+    /// daquela equipe (a própria, ou a da organização herdada) e category_scope diz qual das
+    /// duas respondeu. A cobertura e o contador de "sem categoria" seguem a mesma régua
+    /// efetiva — um app coberto pela regra geral NÃO é pendência da equipe.
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> List(
         [FromQuery(Name = "q")] string? q,
         [FromQuery(Name = "uncategorized")] bool uncategorized = false,
         [FromQuery(Name = "sort")] string? sort = null,
+        [FromQuery(Name = "team_id")] Guid? teamId = null,
         CancellationToken ct = default)
     {
         var tenantId = Auth.CurrentUser.TenantId(User);
 
         await using var connection = await dataSource.OpenConnectionAsync(ct);
+
+        // equipe inexistente OU de outro tenant → 404 (nunca 403, Princípio 4)
+        if (teamId is not null && !await TeamExistsAsync(connection, null, tenantId, teamId.Value, ct))
+            return NotFoundProblem();
 
         var timezone = await connection.ExecuteScalarAsync<string?>(new CommandDefinition(
             "SELECT timezone FROM organizations WHERE id = @TenantId",
@@ -96,30 +118,44 @@ public class AppCatalogController(
                 GROUP BY u.app_id
             ), known AS (
                 -- recorte do tenant: apps com uso registrado OU mapeados pelo tenant
+                -- (na organização ou, quando há escopo, pela própria equipe consultada)
                 SELECT DISTINCT u.app_id FROM daily_app_usage u WHERE u.tenant_id = @TenantId
                 UNION
                 SELECT tac.app_id FROM tenant_app_categories tac WHERE tac.tenant_id = @TenantId
+                UNION
+                SELECT r.app_id FROM tenant_app_team_categories r
+                 WHERE r.tenant_id = @TenantId AND r.team_id = @TeamId
             )
             SELECT a.id AS app_id, a.process_name, a.display_name, a.default_category,
                    tac.custom_display_name,
                    c.id AS category_id, c.name AS category_name,
                    c.classification AS category_classification, c.color AS category_color,
+                   -- de onde veio a regra efetiva (a MESMA precedência da agregação)
+                   CASE WHEN tatc.category_id IS NOT NULL THEN 'team'
+                        WHEN tac.category_id  IS NOT NULL THEN 'organization'
+                   END AS category_scope,
                    COALESCE(u.seconds_active_30d, 0) AS seconds_active_30d,
                    COALESCE(u.device_count_30d, 0) AS device_count_30d
             FROM known k
             JOIN app_catalog a ON a.id = k.app_id
             LEFT JOIN usage_30d u ON u.app_id = k.app_id
+            -- PRECEDÊNCIA: regra da equipe consultada primeiro, regra da organização depois.
+            -- Com @TeamId null o primeiro JOIN não casa nunca e a leitura é a de sempre.
+            LEFT JOIN tenant_app_team_categories tatc
+                   ON tatc.tenant_id = @TenantId AND tatc.app_id = k.app_id AND tatc.team_id = @TeamId
             LEFT JOIN tenant_app_categories tac ON tac.tenant_id = @TenantId AND tac.app_id = k.app_id
-            LEFT JOIN categories c ON c.tenant_id = @TenantId AND c.id = tac.category_id
+            LEFT JOIN categories c
+                   ON c.tenant_id = @TenantId AND c.id = COALESCE(tatc.category_id, tac.category_id)
             WHERE (@Pattern::text IS NULL
                    OR a.process_name ILIKE @Pattern
                    OR a.display_name ILIKE @Pattern
                    OR tac.custom_display_name ILIKE @Pattern)
-              AND (@UncategorizedOnly = false OR tac.category_id IS NULL)
+              AND (@UncategorizedOnly = false OR COALESCE(tatc.category_id, tac.category_id) IS NULL)
             -- sort=impacto: sem categoria primeiro (ordem da fila), depois tempo ativo desc.
             -- O CASE fica no SQL e não no C# porque o LIMIT 500 corta ANTES de chegar aqui:
             -- ordenar no cliente devolveria os 500 mais usados, não os 500 mais impactantes.
-            ORDER BY CASE WHEN @ByImpact AND tac.category_id IS NULL THEN 0 ELSE 1 END,
+            ORDER BY CASE WHEN @ByImpact AND COALESCE(tatc.category_id, tac.category_id) IS NULL
+                          THEN 0 ELSE 1 END,
                      seconds_active_30d DESC, a.process_name
             LIMIT @Limit
             """,
@@ -127,6 +163,7 @@ public class AppCatalogController(
             {
                 TenantId = tenantId, Cutoff = cutoff, Pattern = pattern,
                 UncategorizedOnly = uncategorized, ByImpact = byImpact, Limit = MaxItems,
+                TeamId = teamId,
             },
             cancellationToken: ct))).ToList();
 
@@ -140,8 +177,13 @@ public class AppCatalogController(
               AND NOT EXISTS (
                   SELECT 1 FROM tenant_app_categories tac
                   WHERE tac.tenant_id = u.tenant_id AND tac.app_id = u.app_id)
+              -- escopo de equipe: a regra própria dela também cobre o app. Com @TeamId null
+              -- este NOT EXISTS é trivialmente verdadeiro e a conta é a de sempre.
+              AND NOT EXISTS (
+                  SELECT 1 FROM tenant_app_team_categories r
+                  WHERE r.tenant_id = u.tenant_id AND r.app_id = u.app_id AND r.team_id = @TeamId)
             """,
-            new { TenantId = tenantId }, cancellationToken: ct));
+            new { TenantId = tenantId, TeamId = teamId }, cancellationToken: ct));
 
         // COBERTURA da classificação em TEMPO (F6): os dois lados da fração numa só varredura
         // de daily_app_usage, na MESMA janela de 30 dias das métricas por item — o cabeçalho da
@@ -153,18 +195,22 @@ public class AppCatalogController(
                    COALESCE(sum(u.seconds_active) FILTER (
                        WHERE NOT EXISTS (
                            SELECT 1 FROM tenant_app_categories tac
-                           WHERE tac.tenant_id = u.tenant_id AND tac.app_id = u.app_id)), 0)::bigint
+                           WHERE tac.tenant_id = u.tenant_id AND tac.app_id = u.app_id)
+                         AND NOT EXISTS (
+                           SELECT 1 FROM tenant_app_team_categories r
+                           WHERE r.tenant_id = u.tenant_id AND r.app_id = u.app_id
+                             AND r.team_id = @TeamId)), 0)::bigint
                        AS uncategorized_seconds_active
             FROM daily_app_usage u
             WHERE u.tenant_id = @TenantId AND u.summary_date >= @Cutoff::date
             """,
-            new { TenantId = tenantId, Cutoff = cutoff }, cancellationToken: ct));
+            new { TenantId = tenantId, Cutoff = cutoff, TeamId = teamId }, cancellationToken: ct));
 
         var items = rows.Select(r => new AppCatalogItemResponse(
                 r.AppId, r.ProcessName, r.DisplayName, r.CustomDisplayName,
                 ToCategory(r.CategoryId, r.CategoryName, r.CategoryClassification, r.CategoryColor),
                 r.DefaultCategory,
-                r.SecondsActive30d, r.DeviceCount30d))
+                r.SecondsActive30d, r.DeviceCount30d, r.CategoryScope))
             .ToList();
 
         return Ok(new AppCatalogListResponse(
@@ -173,10 +219,17 @@ public class AppCatalogController(
     }
 
     /// <summary>
-    /// PUT /api/v1/app-catalog/{appId}/category (Admin): upsert/remoção do mapeamento do
-    /// TENANT. category_id null = desmapear (a linha sai inteira, custom_display_name junto).
-    /// Categoria de outro tenant/inexistente e app inexistente respondem 404. Sempre reagrega
-    /// os últimos 30 dias (contrato F3.3) e audita update_category.
+    /// PUT /api/v1/app-catalog/{appId}/category (Admin): upsert/remoção do mapeamento.
+    /// category_id null = desmapear. Categoria de outro tenant/inexistente, equipe de outro
+    /// tenant/inexistente e app inexistente respondem 404. Sempre reagrega os últimos 30 dias
+    /// (contrato F3.3) e audita update_category.
+    ///
+    /// ESCOPO (F5): sem team_id a regra é da ORGANIZAÇÃO (tenant_app_categories) — o
+    /// comportamento de sempre, e desmapear tira a linha inteira, custom_display_name junto.
+    /// Com team_id a regra é da EQUIPE (tenant_app_team_categories) e desmapear remove SÓ a
+    /// regra dela: o app volta a herdar a regra da organização, não vira "sem classificação".
+    /// custom_display_name é da organização e não participa do escopo de equipe (o nome
+    /// exibido de um app não muda de time para time).
     /// </summary>
     [HttpPut("{appId:guid}/category")]
     [Authorize(Policy = AuthConstants.PolicyAdminPlus)]
@@ -196,6 +249,11 @@ public class AppCatalogController(
             new { AppId = appId }, cancellationToken: ct));
         if (app is null) return NotFoundProblem(); // app desconhecido do catálogo global
 
+        // equipe inexistente OU de outro tenant → 404 (nunca 403, Princípio 4)
+        if (request.TeamId is { } scopeTeamId
+            && !await TeamExistsAsync(connection, null, tenantId, scopeTeamId, ct))
+            return NotFoundProblem();
+
         CategoryRefRow? category = null;
         if (request.CategoryId is { } categoryId)
         {
@@ -205,13 +263,47 @@ public class AppCatalogController(
             if (category is null) return NotFoundProblem(); // inexistente OU de outro tenant
         }
 
-        var fromCategoryId = await connection.ExecuteScalarAsync<Guid?>(new CommandDefinition(
-            "SELECT category_id FROM tenant_app_categories WHERE tenant_id = @TenantId AND app_id = @AppId",
-            new { TenantId = tenantId, AppId = appId }, cancellationToken: ct));
+        // estado anterior NO MESMO ESCOPO que está sendo escrito (de→para da trilha)
+        var fromCategoryId = request.TeamId is null
+            ? await connection.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+                "SELECT category_id FROM tenant_app_categories WHERE tenant_id = @TenantId AND app_id = @AppId",
+                new { TenantId = tenantId, AppId = appId }, cancellationToken: ct))
+            : await connection.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+                """
+                SELECT category_id FROM tenant_app_team_categories
+                WHERE tenant_id = @TenantId AND app_id = @AppId AND team_id = @TeamId
+                """,
+                new { TenantId = tenantId, AppId = appId, TeamId = request.TeamId }, cancellationToken: ct));
 
         await using var tx = await connection.BeginTransactionAsync(ct);
 
-        if (request.CategoryId is null)
+        if (request.TeamId is { } teamScope)
+        {
+            // ---- escopo de EQUIPE: só a regra específica dela é escrita/removida ----
+            if (request.CategoryId is null)
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    """
+                    DELETE FROM tenant_app_team_categories
+                    WHERE tenant_id = @TenantId AND app_id = @AppId AND team_id = @TeamId
+                    """,
+                    new { TenantId = tenantId, AppId = appId, TeamId = teamScope },
+                    transaction: tx, cancellationToken: ct));
+            }
+            else
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    """
+                    INSERT INTO tenant_app_team_categories (tenant_id, team_id, app_id, category_id)
+                    VALUES (@TenantId, @TeamId, @AppId, @CategoryId)
+                    ON CONFLICT (tenant_id, team_id, app_id) DO UPDATE
+                    SET category_id = EXCLUDED.category_id
+                    """,
+                    new { TenantId = tenantId, AppId = appId, TeamId = teamScope, CategoryId = request.CategoryId },
+                    transaction: tx, cancellationToken: ct));
+            }
+        }
+        else if (request.CategoryId is null)
         {
             await connection.ExecuteAsync(new CommandDefinition(
                 "DELETE FROM tenant_app_categories WHERE tenant_id = @TenantId AND app_id = @AppId",
@@ -244,16 +336,19 @@ public class AppCatalogController(
                 process_name = app.ProcessName,
                 from_category_id = fromCategoryId,
                 to_category_id = request.CategoryId,
+                // escopo da regra: null = organização (o de sempre), id = equipe
+                team_id = request.TeamId,
             }), ct: ct);
 
         await tx.CommitAsync(ct);
 
         return Ok(new AppCategoryMappingResponse(
             app.AppId, app.ProcessName, app.DisplayName,
-            request.CategoryId is null ? null : customName,
+            request.TeamId is null && request.CategoryId is not null ? customName : null,
             category is null
                 ? null
-                : new AppCategoryResponse(category.Id, category.Name, category.Classification, category.Color)));
+                : new AppCategoryResponse(category.Id, category.Name, category.Classification, category.Color),
+            request.TeamId));
     }
 
     /// <summary>
@@ -271,6 +366,10 @@ public class AppCatalogController(
     /// inexistente ou de outro tenant respondem 404 (nunca 403, Princípio 4) e NADA é aplicado;
     /// custom_display_name NÃO faz parte do lote (renomear é ato individual da tela de detalhe).
     /// Auditoria update_category por app, na MESMA transação (uma linha por app, igual ao PUT).
+    ///
+    /// ESCOPO (F5): team_id no CORPO (não por item) aplica o lote inteiro como regra daquela
+    /// equipe — é o "aplicar todas as sugestões" da fila de classificação com um escopo
+    /// selecionado. Sem team_id o lote é da organização, como sempre foi.
     /// </summary>
     [HttpPut("categories/batch")]
     [Authorize(Policy = AuthConstants.PolicyAdminPlus)]
@@ -292,10 +391,15 @@ public class AppCatalogController(
 
         var tenantId = Auth.CurrentUser.TenantId(User);
         var userId = Auth.CurrentUser.UserId(User);
+        var teamId = request.TeamId;
 
         await using var connection = await dataSource.OpenConnectionAsync(ct);
 
         // ----- validação ANTES de abrir a transação: um id ruim não aplica NADA do lote -----
+        if (teamId is { } scopeTeamId
+            && !await TeamExistsAsync(connection, null, tenantId, scopeTeamId, ct))
+            return NotFoundProblem();
+
         var appIds = items.Select(i => i.AppId).ToArray();
         var apps = (await connection.QueryAsync<AppRow>(new CommandDefinition(
             "SELECT id AS app_id, process_name, display_name FROM app_catalog WHERE id = ANY(@AppIds)",
@@ -308,13 +412,19 @@ public class AppCatalogController(
             new { TenantId = tenantId, Ids = categoryIds }, cancellationToken: ct))).ToDictionary(c => c.Id);
         if (categories.Count != categoryIds.Length) return NotFoundProblem(); // inexistente OU de outro tenant
 
-        // estado ANTERIOR de cada app (de→para da trilha), numa leitura só
+        // estado ANTERIOR de cada app NO ESCOPO que está sendo escrito (de→para da trilha)
         var previous = (await connection.QueryAsync<MappingRow>(new CommandDefinition(
-            """
-            SELECT app_id, category_id, custom_display_name
-            FROM tenant_app_categories WHERE tenant_id = @TenantId AND app_id = ANY(@AppIds)
-            """,
-            new { TenantId = tenantId, AppIds = appIds }, cancellationToken: ct)))
+            teamId is null
+                ? """
+                  SELECT app_id, category_id, custom_display_name
+                  FROM tenant_app_categories WHERE tenant_id = @TenantId AND app_id = ANY(@AppIds)
+                  """
+                : """
+                  SELECT app_id, category_id, NULL::text AS custom_display_name
+                  FROM tenant_app_team_categories
+                  WHERE tenant_id = @TenantId AND team_id = @TeamId AND app_id = ANY(@AppIds)
+                  """,
+            new { TenantId = tenantId, AppIds = appIds, TeamId = teamId }, cancellationToken: ct)))
             .ToDictionary(r => r.AppId);
 
         var actorIp = HttpContext.Connection.RemoteIpAddress;
@@ -324,7 +434,34 @@ public class AppCatalogController(
 
         foreach (var item in items)
         {
-            if (item.CategoryId is null)
+            if (teamId is { } teamScope)
+            {
+                // escopo de EQUIPE: mesma semântica do PUT individual com team_id — remover a
+                // regra devolve o app à regra da organização, não o deixa sem classificação
+                if (item.CategoryId is null)
+                {
+                    await connection.ExecuteAsync(new CommandDefinition(
+                        """
+                        DELETE FROM tenant_app_team_categories
+                        WHERE tenant_id = @TenantId AND app_id = @AppId AND team_id = @TeamId
+                        """,
+                        new { TenantId = tenantId, AppId = item.AppId, TeamId = teamScope },
+                        transaction: tx, cancellationToken: ct));
+                }
+                else
+                {
+                    await connection.ExecuteAsync(new CommandDefinition(
+                        """
+                        INSERT INTO tenant_app_team_categories (tenant_id, team_id, app_id, category_id)
+                        VALUES (@TenantId, @TeamId, @AppId, @CategoryId)
+                        ON CONFLICT (tenant_id, team_id, app_id) DO UPDATE
+                        SET category_id = EXCLUDED.category_id
+                        """,
+                        new { TenantId = tenantId, AppId = item.AppId, TeamId = teamScope, CategoryId = item.CategoryId },
+                        transaction: tx, cancellationToken: ct));
+                }
+            }
+            else if (item.CategoryId is null)
             {
                 await connection.ExecuteAsync(new CommandDefinition(
                     "DELETE FROM tenant_app_categories WHERE tenant_id = @TenantId AND app_id = @AppId",
@@ -357,6 +494,7 @@ public class AppCatalogController(
                     process_name = apps[item.AppId].ProcessName,
                     from_category_id = previous.TryGetValue(item.AppId, out var from) ? from.CategoryId : (Guid?)null,
                     to_category_id = item.CategoryId,
+                    team_id = teamId,
                     batch = true,
                 }), ct: ct);
         }
@@ -379,7 +517,8 @@ public class AppCatalogController(
                 app.AppId, app.ProcessName, app.DisplayName, customName,
                 category is null
                     ? null
-                    : new AppCategoryResponse(category.Id, category.Name, category.Classification, category.Color));
+                    : new AppCategoryResponse(category.Id, category.Name, category.Classification, category.Color),
+                teamId);
         }).ToList();
 
         return Ok(new BatchAppCategoryResponse(applied.Count, applied, reaggregationDays));
@@ -469,6 +608,17 @@ public class AppCatalogController(
     }
 
     // ------------------------------------------------------------ helpers
+    /// <summary>
+    /// A equipe existe NESTE tenant? Escopo de equipe inexistente ou de outro tenant responde
+    /// 404 como qualquer outro recurso cruzado (Princípio 4), nunca 403.
+    /// </summary>
+    internal static Task<bool> TeamExistsAsync(
+        NpgsqlConnection connection, NpgsqlTransaction? transaction, Guid tenantId, Guid teamId,
+        CancellationToken ct) =>
+        connection.ExecuteScalarAsync<bool>(new CommandDefinition(
+            "SELECT EXISTS (SELECT 1 FROM teams WHERE tenant_id = @TenantId AND id = @TeamId)",
+            new { TenantId = tenantId, TeamId = teamId }, transaction: transaction, cancellationToken: ct));
+
     /// <summary>Dia local "hoje" no fuso do tenant (clock injetável para testes).</summary>
     private DateOnly TodayInTenantTz(string timezone)
     {
@@ -495,6 +645,7 @@ public class AppCatalogController(
         string? CategoryName,
         short? CategoryClassification,
         string? CategoryColor,
+        string? CategoryScope,
         long SecondsActive30d,
         int DeviceCount30d);
 
@@ -505,7 +656,10 @@ public class AppCatalogController(
 
     private sealed record CategoryRefRow(Guid Id, string Name, short Classification, string? Color);
 
-    /// <summary>Estado vigente de um mapeamento do tenant (leitura do de→para do lote).</summary>
+    /// <summary>
+    /// Estado vigente de um mapeamento no escopo lido (leitura do de→para do lote).
+    /// custom_display_name é sempre null no escopo de equipe: nome custom é da organização.
+    /// </summary>
     private sealed record MappingRow(Guid AppId, Guid CategoryId, string? CustomDisplayName);
 
     private sealed record TitleTotalsRow(long MaskedSeconds, long TotalSeconds);

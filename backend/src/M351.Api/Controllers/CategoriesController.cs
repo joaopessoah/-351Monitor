@@ -23,6 +23,12 @@ namespace M351.Api.Controllers;
 /// tenant_app_categories que referenciam a categoria — os apps voltam a "Não categorizados"
 /// (decisão documentada para o silêncio da spec; a alternativa de bloquear o delete com 409
 /// pioraria o fluxo da tela de configurações).
+///
+/// F5 — a CATEGORIA continua sendo da organização; o que ganhou escopo de equipe foi o
+/// MAPEAMENTO app→categoria (ver AppCatalogController). Aqui isso aparece em um ponto só: o
+/// DELETE precisa remover também as regras por equipe que apontam para a categoria
+/// (tenant_app_team_categories tem a MESMA FK para categories.id), senão o delete estouraria
+/// violação de chave estrangeira.
 /// </summary>
 [Route("api/v1/categories")]
 [Authorize] // Viewer+ no GET; rotas de escrita exigem AdminPlus
@@ -187,6 +193,14 @@ public class CategoriesController(NpgsqlDataSource dataSource) : ApiControllerBa
         var unmapped = await connection.ExecuteAsync(new CommandDefinition(
             "DELETE FROM tenant_app_categories WHERE tenant_id = @TenantId AND category_id = @Id",
             new { TenantId = tenantId, Id = id }, transaction: tx, cancellationToken: ct));
+
+        // F5 — e as regras POR EQUIPE que apontam para a mesma categoria: elas têm a MESMA FK
+        // para categories.id, então sem este DELETE o de cima passaria e o DELETE da categoria
+        // estouraria 23503. Os apps dessas equipes voltam a herdar a regra da organização (ou
+        // ficam sem classificação, se ela também apontava para a categoria excluída).
+        var unmappedTeams = await connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM tenant_app_team_categories WHERE tenant_id = @TenantId AND category_id = @Id",
+            new { TenantId = tenantId, Id = id }, transaction: tx, cancellationToken: ct));
         await connection.ExecuteAsync(new CommandDefinition(
             "DELETE FROM categories WHERE tenant_id = @TenantId AND id = @Id",
             new { TenantId = tenantId, Id = id }, transaction: tx, cancellationToken: ct));
@@ -204,6 +218,7 @@ public class CategoriesController(NpgsqlDataSource dataSource) : ApiControllerBa
                 name = current.Name,
                 deleted = true,
                 unmapped_apps = unmapped,
+                unmapped_team_rules = unmappedTeams,
             }), ct: ct);
 
         await tx.CommitAsync(ct);

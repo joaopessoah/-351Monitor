@@ -33,6 +33,8 @@ export function invalidateAppCategoryData(queryClient: QueryClient): Promise<voi
     queryClient.invalidateQueries({ queryKey: ["reports"] }),
     queryClient.invalidateQueries({ queryKey: ["dashboard", "top-apps"] }),
     queryClient.invalidateQueries({ queryKey: ["timeline"] }),
+    // F5 - a listagem de equipes mostra quantas regras próprias cada uma tem
+    queryClient.invalidateQueries({ queryKey: ["teams"] }),
   ]).then(() => undefined);
 }
 
@@ -46,16 +48,24 @@ interface SetAppCategoryVars {
    * no backend, nome junto - contrato documentado.
    */
   customDisplayName: string | null;
+  /**
+   * F5 - ESCOPO da regra: null (ou ausente) grava a regra da ORGANIZAÇÃO, que
+   * é o comportamento de sempre; um id de equipe grava a regra DAQUELA equipe,
+   * que vence a geral para as pessoas dela. Desmapear no escopo de equipe
+   * remove só a regra dela e o app volta a HERDAR a regra da organização.
+   */
+  teamId?: string | null;
 }
 
 /** PUT /app-catalog/{appId}/category + invalidação - padrão de mutation do portal. */
 export function useSetAppCategory(onError?: (err: unknown) => void) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ appId, categoryId, customDisplayName }: SetAppCategoryVars) => {
-      const body: AppCategoryPutRequest = {
+    mutationFn: ({ appId, categoryId, customDisplayName, teamId = null }: SetAppCategoryVars) => {
+      const body: AppCategoryPutRequest & { team_id?: string | null } = {
         category_id: categoryId,
         custom_display_name: customDisplayName,
+        ...(teamId === null ? {} : { team_id: teamId }),
       };
       return api<unknown>(`/app-catalog/${encodeURIComponent(appId)}/category`, {
         method: "PUT",
@@ -75,6 +85,7 @@ export function CategoryInlineSelect({
   categories,
   disabled = false,
   onError,
+  teamId = null,
 }: {
   appId: string;
   /** Categoria atual do app segundo o servidor - null = Não categorizado. */
@@ -87,6 +98,11 @@ export function CategoryInlineSelect({
   /** Trava externa (ex.: recategorização em lote em andamento). */
   disabled?: boolean;
   onError?: (err: unknown) => void;
+  /**
+   * F5 - escopo da regra: null (padrão) = organização; id de equipe = regra
+   * própria daquela equipe. Ver SetAppCategoryVars.
+   */
+  teamId?: string | null;
 }) {
   const mutation = useSetAppCategory(onError);
   // Valor otimista exibido enquanto salva; limpo só no onSettled, DEPOIS da
@@ -108,7 +124,7 @@ export function CategoryInlineSelect({
         const value = e.target.value;
         setPendingValue(value);
         mutation.mutate(
-          { appId, categoryId: value === "" ? null : value, customDisplayName },
+          { appId, categoryId: value === "" ? null : value, customDisplayName, teamId },
           { onSettled: () => setPendingValue(null) },
         );
       }}

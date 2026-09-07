@@ -136,6 +136,49 @@ public static class AuditActions
     /// informa quando as regras de pessoa estão desligadas.
     /// </summary>
     public const string UpdateAlertPrefs = "update_alert_prefs";
+
+    /// <summary>
+    /// F6 — POST /people/{sid}/notes (decisão 6 do spec de 07/09/2026): registro de uma
+    /// ANOTAÇÃO DE PERÍODO ou de uma CONTESTAÇÃO DE CLASSIFICAÇÃO sobre uma pessoa.
+    /// detail {note_id, windows_sid, kind, started_at, ended_at, app_id}. O CORPO do texto NÃO
+    /// vai para a trilha de propósito: ele já está em person_notes e duplicá-lo numa tabela
+    /// append-only de 24 meses de retenção espalharia conteúdo escrito pelo titular por um
+    /// lugar de onde ele não pode ser removido a pedido dele (art. 18 LGPD).
+    ///
+    /// Verbo próprio, não update_person: o alvo é o registro de contexto, não a identidade.
+    /// </summary>
+    public const string CreatePersonNote = "create_person_note";
+
+    /// <summary>
+    /// F6 — PATCH /people/{sid}/notes/{id} (decisão 6): a REVISÃO do gestor — aceitar ou
+    /// recusar uma anotação/contestação. detail {note_id, windows_sid, kind, status: de→para}.
+    ///
+    /// Registro EXIGIDO pela própria decisão ("com revisão do gestor"): quem decidiu, quando e
+    /// o que decidiu é o que dá valor ao instrumento — uma contestação recusada sem rastro de
+    /// autoria seria pior do que não ter contestação. A resposta ao colaborador (review_note)
+    /// fica em person_notes, pela mesma razão do corpo em create_person_note.
+    /// </summary>
+    public const string ReviewPersonNote = "review_person_note";
+
+    /// <summary>
+    /// F7 — /api/v1/teams: criação, edição, exclusão de EQUIPE e mudança de composição
+    /// (vínculo de pessoas). detail {team_id, name, changes} ou {team_id, added, removed}.
+    ///
+    /// Auditado porque a equipe define DUAS coisas com efeito sobre a medição: a jornada
+    /// declarada (denominador da capacidade) e a regra de classificação que vale para aquelas
+    /// pessoas. Mover alguém de equipe muda os baldes do histórico recente dela — quem moveu, e
+    /// quando, precisa ser evidenciável. A mudança de composição também enfileira reagregação.
+    /// </summary>
+    public const string UpdateTeam = "update_team";
+
+    /// <summary>
+    /// F7 — /api/v1/organization/holidays: feriado criado, removido ou o calendário nacional
+    /// semeado. detail {holiday_date, name} ou {seeded, years}.
+    ///
+    /// Feriado NÃO reagrega nada (não muda balde nenhum): ele sai do DENOMINADOR da capacidade
+    /// utilizada. Fica auditado porque mexe num número que embasa decisão de contratação.
+    /// </summary>
+    public const string UpdateHolidays = "update_holidays";
 }
 
 /// <summary>Tabela audit_log — append-only, particionada por mês, retenção 24 meses (N13).</summary>

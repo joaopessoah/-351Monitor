@@ -53,11 +53,32 @@ namespace M351.Infrastructure.Aggregation;
 ///  - durações: soma EXATA (numeric) por (lane, estado) com floor DEPOIS da soma — regra
 ///    canônica de arredondamento do gate 11.3, espelhada bit a bit pelo rodapé da timeline
 ///    (soma de ticks por lane com floor por lane; ver TimelineController.SecondsIn);
-///  - classificação: SÓ intervalos active contam; app_id → tenant_app_categories →
-///    categories.classification (+1/0/−1). App SEM mapeamento no tenant (ou active com
-///    app_id NULL) cai em seconds_unclassified — é "sem classificação", NÃO neutro (F6: o
-///    índice de produtividade e a cobertura da classificação dependem dessa separação, e
-///    "neutro" passa a significar só o que o cliente classificou como neutro de propósito);
+///  - classificação: SÓ intervalos active contam; app_id → categoria → classification
+///    (+1/0/−1). App SEM regra aplicável no tenant (ou active com app_id NULL) cai em
+///    seconds_unclassified — é "sem classificação", NÃO neutro (F6: o índice de produtividade
+///    e a cobertura da classificação dependem dessa separação, e "neutro" passa a significar
+///    só o que o cliente classificou como neutro de propósito).
+///
+///    ORDEM DE PRECEDÊNCIA DA REGRA (F5, spec seção 2.4 — o mesmo app pode ser produtivo no
+///    Marketing e improdutivo no Financeiro):
+///      1. regra da EQUIPE da lane   (tenant_app_team_categories, escopo específico)
+///      2. regra da ORGANIZAÇÃO      (tenant_app_categories, escopo geral)
+///      3. nenhuma das duas          → seconds_unclassified
+///    Um COALESCE(regra_da_equipe, regra_da_organizacao) expressa as três linhas: ausência de
+///    regra de equipe é HERANÇA da geral, jamais "sem classificação". Esta é a consulta mais
+///    quente do produto, então o custo novo é só um LEFT JOIN por (tenant, app, team) numa
+///    tabela pequena e indexada, resolvido com o MESMO teste de saída de antes (c.id IS NULL);
+///
+///  - EQUIPE DA LANE (F7, spec seção 2.3): resolvida na CTE lane_team, por lane e por
+///    dispositivo do dia que está sendo recomputado, também com precedência declarada:
+///      1. equipe da PESSOA          (team_members pelo windows_sid canônico da lane)
+///      2. etiqueta legada do device (teams.tag presente em devices.tags — atalho de migração)
+///      3. nenhuma das duas          → lane sem equipe, cai direto na regra da organização
+///    O SID canônico passa pela mesclagem de people (COALESCE(merged_into_sid, windows_sid)):
+///    quem vinculou a pessoa pelo SID que absorveu os outros não perde o vínculo quando o
+///    agente reporta o SID absorvido. O passo 2 usa LATERAL ... LIMIT 1 ordenado por nome, e
+///    não `tag = ANY(tags)` solto: um dispositivo com duas etiquetas reivindicadas por duas
+///    equipes DUPLICARIA as linhas do JOIN e inflaria os segundos do dia;
 ///  - seconds_neutral = seconds_active − work − not_work − unclassified (resto): garante o
 ///    invariante work + neutral + not_work + unclassified == seconds_active mesmo com
 ///    truncamento por balde;
@@ -172,6 +193,34 @@ public sealed class DailyAggregationService(NpgsqlDataSource dataSource, ILogger
             [("t", tenantId), ("d", deviceId), ("day", day)], ct);
 
         await ExecAsync(conn, tx, """
+            WITH lane_team AS (
+                -- EQUIPE DE CADA LANE deste dispositivo (F7). Precedência, de cima para baixo:
+                --   1. equipe da PESSOA, pelo SID canônico (mesclagem de people resolvida);
+                --   2. etiqueta legada do dispositivo que alguma equipe declarou em teams.tag;
+                --   3. NULL — a lane não tem equipe e usa só a regra da organização.
+                -- O LATERAL com LIMIT 1 é obrigatório: sem ele, um dispositivo com duas
+                -- etiquetas reivindicadas por duas equipes devolveria DUAS linhas por lane e
+                -- dobraria os segundos do dia.
+                SELECT du.id AS device_user_id,
+                       COALESCE(tm.team_id, tag_team.team_id) AS team_id
+                FROM device_users du
+                LEFT JOIN people p
+                       ON p.tenant_id = du.tenant_id AND p.windows_sid = du.windows_sid
+                LEFT JOIN team_members tm
+                       ON tm.tenant_id = du.tenant_id
+                      AND tm.windows_sid = COALESCE(p.merged_into_sid, du.windows_sid)
+                LEFT JOIN devices dev
+                       ON dev.tenant_id = du.tenant_id AND dev.id = du.device_id
+                LEFT JOIN LATERAL (
+                    SELECT t2.id AS team_id
+                    FROM teams t2
+                    WHERE t2.tenant_id = du.tenant_id
+                      AND t2.tag IS NOT NULL AND t2.tag = ANY(dev.tags)
+                    ORDER BY t2.name
+                    LIMIT 1
+                ) tag_team ON true
+                WHERE du.tenant_id = @t AND du.device_id = @d
+            )
             INSERT INTO daily_device_summaries (
                 tenant_id, summary_date, device_id, device_user_id,
                 seconds_active, seconds_idle, seconds_locked, seconds_on,
@@ -203,8 +252,17 @@ public sealed class DailyAggregationService(NpgsqlDataSource dataSource, ILogger
                        max(i.ended_at) FILTER (WHERE i.state IN ('active','idle','locked')) AS last_event_at,
                        bool_or(i.data_incomplete) AS incomplete
                 FROM activity_intervals i
+                LEFT JOIN lane_team lt ON lt.device_user_id = i.device_user_id
+                -- PRECEDÊNCIA DA CLASSIFICAÇÃO (F5): 1) regra da EQUIPE da lane, 2) regra da
+                -- ORGANIZAÇÃO, 3) nenhuma → sem classificação. O COALESCE abaixo é a regra
+                -- inteira; lt.team_id NULL nunca casa em tatc e cai sozinho na regra geral.
+                LEFT JOIN tenant_app_team_categories tatc
+                       ON tatc.tenant_id = i.tenant_id AND tatc.app_id = i.app_id
+                      AND tatc.team_id = lt.team_id
                 LEFT JOIN tenant_app_categories tac ON tac.tenant_id = i.tenant_id AND tac.app_id = i.app_id
-                LEFT JOIN categories c ON c.tenant_id = i.tenant_id AND c.id = tac.category_id
+                LEFT JOIN categories c
+                       ON c.tenant_id = i.tenant_id
+                      AND c.id = COALESCE(tatc.category_id, tac.category_id)
                 WHERE i.tenant_id = @t AND i.device_id = @d AND i.source_day = @day
                 GROUP BY 1
             ) lanes

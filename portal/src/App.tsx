@@ -21,6 +21,7 @@ import { ConfiguracoesLayout } from "@/pages/configuracoes/ConfiguracoesLayout";
 import { UsuariosPage } from "@/pages/configuracoes/UsuariosPage";
 import { ChavesPage } from "@/pages/configuracoes/ChavesPage";
 import { CategoriasPage } from "@/pages/configuracoes/CategoriasPage";
+import { EquipesPage } from "@/pages/configuracoes/EquipesPage";
 import { PrivacidadePage } from "@/pages/configuracoes/PrivacidadePage";
 import { ColetaPage } from "@/pages/configuracoes/ColetaPage";
 import { OrganizacaoPage } from "@/pages/configuracoes/OrganizacaoPage";
@@ -70,6 +71,8 @@ export function App() {
             <Route path="usuarios" element={<UsuariosPage />} />
             <Route path="chaves" element={<ChavesPage />} />
             <Route path="categorias" element={<CategoriasPage />} />
+            {/* F7 — equipes (vínculo por pessoa), jornada por equipe e feriados. */}
+            <Route path="equipes" element={<EquipesPage />} />
             <Route path="privacidade" element={<PrivacidadePage />} />
             <Route path="coleta" element={<ColetaPage />} />
             <Route path="organizacao" element={<OrganizacaoPage />} />

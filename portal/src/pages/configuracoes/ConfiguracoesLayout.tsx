@@ -13,6 +13,10 @@ const baseTabs = [
   // recálculo de histórico, não só o CRUD de categorias. A ROTA continua
   // /configuracoes/categorias de propósito (link salvo/compartilhado não quebra).
   { to: "/configuracoes/categorias", label: "Classificação" },
+  // F7: equipes de verdade (vínculo por PESSOA), jornada por equipe e feriados.
+  // Fica ao lado de Classificação de propósito: é lá que o escopo de equipe da
+  // regra é escolhido, e as duas telas se referenciam.
+  { to: "/configuracoes/equipes", label: "Equipes" },
   { to: "/configuracoes/privacidade", label: "Privacidade" },
   // Organização: campos de transparência (finalidade, DPO, vigência). GET é
   // PolicyAccess (qualquer papel lê); a edição é gated dentro da página.
@@ -49,7 +53,7 @@ export function ConfiguracoesLayout() {
         <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Administração da organização: usuários do portal, chaves de instalação, classificação,
-          privacidade e transparência.
+          equipes, privacidade e transparência.
         </p>
       </div>
       <nav className="flex flex-wrap gap-1 border-b" aria-label="Seções de configurações">

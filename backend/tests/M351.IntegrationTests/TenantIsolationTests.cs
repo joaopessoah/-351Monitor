@@ -23,6 +23,9 @@ public class TenantIsolationTests(ApiTestFixture fixture) : IAsyncLifetime
     private Device _deviceB = null!;
     private EnrollmentKey _keyB = null!;
 
+    /// <summary>F7 — equipe do tenant B (id conhecido para os testes cruzados de /teams).</summary>
+    private readonly Guid _teamB = Uuid7.NewUuid7();
+
     public async Task InitializeAsync()
     {
         _client = fixture.CreateApiClient();
@@ -40,6 +43,18 @@ public class TenantIsolationTests(ApiTestFixture fixture) : IAsyncLifetime
         _userB = await fixture.CreateUserAsync(orgB.Id, UserRole.Viewer);
         _deviceB = await fixture.CreateDeviceAsync(orgB.Id, "NB-TENANT-B");
         _keyB = await fixture.CreateEnrollmentKeyAsync(orgB.Id, "chave-b");
+
+        // F7 — equipe e feriado do tenant B: nem o id, nem a listagem, nem o escopo de
+        // classificacao (?team_id) podem responder para o token de A
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            "INSERT INTO teams (id, tenant_id, name, tag) VALUES (@i, @t, 'Equipe B', 'iso-b')",
+            ("i", _teamB), ("t", orgB.Id));
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            "INSERT INTO team_members (tenant_id, team_id, windows_sid) VALUES (@t, @i, 'S-1-5-21-ISO-B-0001')",
+            ("i", _teamB), ("t", orgB.Id));
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            "INSERT INTO organization_holidays (tenant_id, holiday_date, name) VALUES (@t, @d::date, 'Feriado do B')",
+            ("t", orgB.Id), ("d", $"{DateTime.UtcNow.Year}-03-19"));
 
         _tokenA = await AuthClient.LoginAsync(_client, _ownerA);
     }
@@ -629,6 +644,72 @@ public class TenantIsolationTests(ApiTestFixture fixture) : IAsyncLifetime
             ("t", tenantId), ("d", deviceId), ("day", day), ("sid", sid));
     }
 
+    /// <summary>
+    /// F7/F5 — /teams e o ESCOPO de classificacao por equipe. Equipe de outro tenant responde
+    /// 404 em todas as rotas, a listagem de A nao mostra a equipe de B e ?team_id de B nao vira
+    /// uma leitura silenciosa do catalogo de A com escopo alheio.
+    /// </summary>
+    [Fact]
+    public async Task EquipesDoTenantB_NaoVazam_EmNenhumaRota()
+    {
+        var lista = await SendAsync(HttpMethod.Get, "/api/v1/teams");
+        Assert.Equal(HttpStatusCode.OK, lista.StatusCode);
+        using (var doc = JsonDocument.Parse(await lista.Content.ReadAsStringAsync()))
+        {
+            Assert.Empty(doc.RootElement.GetProperty("items").EnumerateArray());
+        }
+
+        foreach (var (method, url) in new (HttpMethod, string)[]
+        {
+            (HttpMethod.Get, $"/api/v1/teams/{_teamB}/members"),
+            (HttpMethod.Delete, $"/api/v1/teams/{_teamB}"),
+            (HttpMethod.Get, $"/api/v1/app-catalog?team_id={_teamB}"),
+        })
+        {
+            var response = await SendAsync(method, url);
+            Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+
+        var patch = await SendAsync(HttpMethod.Patch, $"/api/v1/teams/{_teamB}", new { name = "Sequestrada" });
+        Assert.Equal(HttpStatusCode.NotFound, patch.StatusCode);
+
+        var membros = await SendAsync(HttpMethod.Put, $"/api/v1/teams/{_teamB}/members",
+            new { windows_sids = new[] { "S-1-5-21-ISO-A-0001" } });
+        Assert.Equal(HttpStatusCode.NotFound, membros.StatusCode);
+
+        // e a composicao do B continua intacta depois da tentativa
+        var intacta = await TestDb.ScalarAsync<long>(fixture.Database.ConnectionString,
+            "SELECT count(*) FROM team_members WHERE team_id = @i", ("i", _teamB));
+        Assert.Equal(1, intacta);
+    }
+
+    /// <summary>F7 — o calendario de feriados e a base de capacidade sao do proprio tenant.</summary>
+    [Fact]
+    public async Task FeriadosECapacidade_NaoVazamDoTenantB()
+    {
+        var ano = DateTime.UtcNow.Year;
+        var feriados = await SendAsync(HttpMethod.Get, $"/api/v1/organization/holidays?year={ano}");
+        Assert.Equal(HttpStatusCode.OK, feriados.StatusCode);
+        using (var doc = JsonDocument.Parse(await feriados.Content.ReadAsStringAsync()))
+        {
+            Assert.DoesNotContain(doc.RootElement.GetProperty("items").EnumerateArray(),
+                i => i.GetProperty("name").GetString() == "Feriado do B");
+        }
+
+        var capacidade = await SendAsync(HttpMethod.Get,
+            $"/api/v1/teams/capacity?from={ano}-03-16&to={ano}-03-20");
+        Assert.Equal(HttpStatusCode.OK, capacidade.StatusCode);
+        using (var doc = JsonDocument.Parse(await capacidade.Content.ReadAsStringAsync()))
+        {
+            var scopes = doc.RootElement.GetProperty("scopes").EnumerateArray().ToList();
+            // so a linha da organizacao de A: nenhuma equipe de B, e o feriado de B nao desconta
+            Assert.Single(scopes);
+            Assert.Equal(0, scopes[0].GetProperty("holidays_excluded").GetInt32());
+            Assert.Equal(5, scopes[0].GetProperty("business_days").GetInt32());
+        }
+    }
+
     [Fact]
     public async Task RespostaCruzada_NuncaEh403_SempreEh404()
     {
@@ -638,6 +719,7 @@ public class TenantIsolationTests(ApiTestFixture fixture) : IAsyncLifetime
             (HttpMethod.Get, $"/api/v1/users/{_userB.Id}"),
             (HttpMethod.Get, $"/api/v1/devices/{_deviceB.Id}"),
             (HttpMethod.Delete, $"/api/v1/enrollment-keys/{_keyB.Id}"),
+            (HttpMethod.Get, $"/api/v1/teams/{_teamB}/members"),
         };
 
         foreach (var (method, url) in alvos)
