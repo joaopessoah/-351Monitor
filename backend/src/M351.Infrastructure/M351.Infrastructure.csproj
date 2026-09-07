@@ -24,6 +24,10 @@
     </PackageReference>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.11" />
     <PackageReference Include="Otp.NET" Version="1.4.0" />
+    <!-- F6, PDF do resumo semanal (ResumoPdfRenderer): QuestPDF sob licença Community
+         (gratuita para faturamento anual < US$ 1 M). A licença é declarada em código,
+         no startup do worker e no inicializador estático do renderer. -->
+    <PackageReference Include="QuestPDF" Version="2026.8.0" />
   </ItemGroup>
 
 </Project>

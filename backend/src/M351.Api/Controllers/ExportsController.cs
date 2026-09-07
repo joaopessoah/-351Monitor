@@ -18,10 +18,14 @@ namespace M351.Api.Controllers;
 /// <summary>
 /// /api/v1/exports (F3.5, Seções 7.4/8.6): CSV assíncrono — o POST só enfileira (202); o
 /// ExportService (worker) gera o arquivo; o download é servido daqui (volume compartilhado
-/// API+worker em staging — infra/docker-compose.staging.yml).
+/// API+worker em staging — infra/docker-compose.staging.yml). O artefato é .csv, .zip
+/// (pacote DSR) ou .pdf (resumo), conforme o kind.
 ///
 /// Regras e decisões documentadas:
-///  - kinds criados AQUI: usage_csv | jornada_csv | fora_horario_csv. Pacotes DSR/offboarding
+///  - kinds criados AQUI: usage_csv | jornada_csv | fora_horario_csv | resumo_pdf (F6, o
+///    resumo semanal do gestor em PDF: os MESMOS números do digest por e-mail, agregados,
+///    sem lista de pessoas, com o disclaimer da Portaria 671 no rodapé de toda página;
+///    device_ids/tag/group_by não se aplicam → 400). Pacotes DSR/offboarding
 ///    (dsr_subject/dsr_device/tenant_full) NÃO nascem deste POST genérico (→ 400): são criados
 ///    pelos endpoints /privacy/* (F4.5). A LISTAGEM e o DOWNLOAD os servem aqui — o download de
 ///    pacote DSR é application/zip (.zip) e expira em 72h, não os 7d do CSV de relatório;
@@ -55,7 +59,8 @@ public class ExportsController(
     IOptions<ExportOptions> exportOptions,
     TimeProvider clock) : ApiControllerBase
 {
-    private static readonly string[] ValidKinds = ["usage_csv", "jornada_csv", "fora_horario_csv"];
+    private static readonly string[] ValidKinds =
+        ["usage_csv", "jornada_csv", "fora_horario_csv", ExportService.ResumoPdfKind];
 
     private const string ItemSql = """
         SELECT j.id, j.kind, j.status, j.created_at, j.params::text AS params_json,
@@ -71,7 +76,7 @@ public class ExportsController(
     {
         if (body?.Kind is null || !ValidKinds.Contains(body.Kind))
             return ProblemResponse(StatusCodes.Status400BadRequest,
-                "Parâmetro kind deve ser usage_csv, jornada_csv ou fora_horario_csv. "
+                "Parâmetro kind deve ser usage_csv, jornada_csv, fora_horario_csv ou resumo_pdf. "
                 + "Pacotes DSR (dsr_subject/dsr_device/tenant_full) são criados pelos endpoints /privacy/*.");
 
         if (body.Params is null)
@@ -87,9 +92,19 @@ public class ExportsController(
             (body.Params.GroupBy is null || !ReportsController.ValidGroupBys.Contains(body.Params.GroupBy)))
             return ProblemResponse(StatusCodes.Status400BadRequest,
                 "Parâmetro group_by é obrigatório para usage_csv: app, category, device ou device_user.");
-        if (body.Kind is "jornada_csv" or "fora_horario_csv" && body.Params.GroupBy is not null)
+        if (body.Kind is "jornada_csv" or "fora_horario_csv" or ExportService.ResumoPdfKind
+            && body.Params.GroupBy is not null)
             return ProblemResponse(StatusCodes.Status400BadRequest,
                 $"Parâmetro group_by não se aplica a {body.Kind}.");
+
+        // resumo_pdf é o resumo AGREGADO da organização, os mesmos números do digest do
+        // gestor. Recorte por dispositivo ou por etiqueta ainda não existe nesse cálculo, e
+        // aceitar o parâmetro em silêncio entregaria um PDF do tenant inteiro com cara de
+        // filtrado — o que um gestor leria como número da equipe. 400 explícito.
+        if (body.Kind == ExportService.ResumoPdfKind
+            && (body.Params.DeviceIds is { Length: > 0 } || NormalizeTeamTag(body.Params.Tag) is not null))
+            return ProblemResponse(StatusCodes.Status400BadRequest,
+                "resumo_pdf é o resumo agregado da organização: device_ids e tag não se aplicam.");
 
         Guid[]? deviceIds = null;
         if (body.Params.DeviceIds is { Length: > 0 })
@@ -253,11 +268,12 @@ public class ExportsController(
                     ? "O pacote ficou disponível por 72 horas. Solicite uma nova exportação."
                     : "O arquivo ficou disponível por 7 dias. Solicite uma nova exportação.");
 
-        // pacote DSR/offboarding = application/zip (.zip); CSV de relatório = text/csv
-        var (contentType, fileName) = IsDsrPackage(row.Kind)
-            ? ("application/zip", DownloadFileName(row))
-            : ("text/csv; charset=utf-8", DownloadFileName(row));
-        return PhysicalFile(absolutePath, contentType, fileName);
+        // pacote DSR/offboarding = application/zip (.zip); resumo = application/pdf (.pdf);
+        // CSV de relatório = text/csv
+        var contentType = IsDsrPackage(row.Kind) ? "application/zip"
+            : row.Kind == ExportService.ResumoPdfKind ? "application/pdf"
+            : "text/csv; charset=utf-8";
+        return PhysicalFile(absolutePath, contentType, DownloadFileName(row));
     }
 
     // ------------------------------------------------------------ helpers
@@ -327,6 +343,10 @@ public class ExportsController(
         using var doc = JsonDocument.Parse(row.ParamsJson);
         var from = doc.RootElement.TryGetProperty("from", out var f) ? f.GetString() : null;
         var to = doc.RootElement.TryGetProperty("to", out var t) ? t.GetString() : null;
+
+        if (row.Kind == ExportService.ResumoPdfKind)
+            return $"resumo_{from}_{to}.pdf";
+
         var prefix = row.Kind switch
         {
             "jornada_csv" => "jornada",

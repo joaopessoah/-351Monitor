@@ -51,8 +51,15 @@ builder.Services.AddSingleton<DailyAggregationService>(sp => new DailyAggregatio
     sp.GetRequiredService<NpgsqlDataSource>(),
     sp.GetRequiredService<ILogger<DailyAggregationService>>()));
 
+// Licença do QuestPDF (F6, kind resumo_pdf): Community, gratuita para faturamento anual
+// abaixo de US$ 1 M. Precisa ser declarada em CÓDIGO antes de qualquer render; fica aqui,
+// no startup do worker, que é quem renderiza (o ResumoPdfRenderer repete a declaração no
+// inicializador estático para os testes, e atribuir é idempotente).
+M351.Infrastructure.Digest.ResumoPdfRenderer.ConfigureLicense();
+
 // ExportWorker (F3.5): CSVs assíncronos no diretório COMPARTILHADO com a API
-// (Exports:Directory — volume em staging; default relativo em dev local)
+// (Exports:Directory — volume em staging; default relativo em dev local). Desde a F6 a
+// mesma fila também produz o PDF do resumo (resumo_pdf).
 builder.Services.AddSingleton<ExportService>(sp => new ExportService(
     sp.GetRequiredService<NpgsqlDataSource>(),
     builder.Configuration[$"{ExportOptions.SectionName}:{nameof(ExportOptions.Directory)}"]

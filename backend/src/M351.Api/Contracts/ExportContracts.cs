@@ -5,8 +5,10 @@ namespace M351.Api.Contracts;
 // ----- POST/GET /api/v1/exports (F3.5, Seções 7.4/8.6 — CSV assíncrono) -----
 
 /// <summary>
-/// Body de POST /exports. kind: usage_csv | jornada_csv | fora_horario_csv (dsr_* são F4, 400 aqui);
-/// params validados com os MESMOS validadores dos endpoints de leitura.
+/// Body de POST /exports. kind: usage_csv | jornada_csv | fora_horario_csv | resumo_pdf
+/// (dsr_* são F4, 400 aqui); params validados com os MESMOS validadores dos endpoints de
+/// leitura. resumo_pdf (F6) é o resumo AGREGADO do período em PDF — os mesmos números do
+/// digest semanal do gestor —, então só aceita from/to: device_ids, tag e group_by viram 400.
 /// </summary>
 public sealed record ExportCreateRequest(string? Kind, ExportParamsRequest? Params);
 

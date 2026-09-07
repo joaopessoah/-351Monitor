@@ -75,6 +75,16 @@ public sealed partial class ExportService(
     private static bool IsZipKind(string kind) => ZipKinds.Contains(kind);
 
     /// <summary>
+    /// F6 — kind do PDF do resumo semanal. Mesmo desenho assíncrono dos CSVs (fila, prazo
+    /// de 7 dias, download autenticado, trilha export_csv); só o artefato muda: .pdf
+    /// renderizado por ResumoPdfRenderer, com os MESMOS números do digest do gestor.
+    /// </summary>
+    public const string ResumoPdfKind = "resumo_pdf";
+
+    /// <summary>true para o kind que gera PDF (retenção de relatório, 7 dias, como o CSV).</summary>
+    private static bool IsPdfKind(string kind) => kind == ResumoPdfKind;
+
+    /// <summary>
     /// Job em 'running' há mais que isto = worker morreu sem shutdown gracioso (kill -9,
     /// OOM, queda) — o sweep devolve à fila. Folgado: o maior CSV (500 k linhas) leva
     /// segundos, não minutos.
@@ -148,9 +158,10 @@ public sealed partial class ExportService(
 
         if (job is null) return 0;
 
-        // pacotes DSR/offboarding são .zip com retenção 72h; CSVs de relatório, .csv com 7 dias
+        // pacotes DSR/offboarding são .zip com retenção 72h; CSVs de relatório, .csv com 7
+        // dias; o resumo (F6) é .pdf com a MESMA retenção de relatório do CSV
         var zip = IsZipKind(job.Kind);
-        var extension = zip ? "zip" : "csv";
+        var extension = zip ? "zip" : IsPdfKind(job.Kind) ? "pdf" : "csv";
         var retention = zip ? DsrFileRetention : FileRetention;
 
         var relativePath = $"{job.TenantId}/{job.Id}.{extension}";
@@ -198,6 +209,10 @@ public sealed partial class ExportService(
         // ZIP inteiro em memória); CSVs de relatório: o caminho clássico StreamWriter
         if (IsZipKind(job.Kind))
             return await GenerateDsrZipAsync(job, absolutePath, ct);
+
+        // F6: o PDF do resumo é binário — sai do caminho do StreamWriter de texto
+        if (IsPdfKind(job.Kind))
+            return await GenerateResumoPdfAsync(job, absolutePath, ct);
 
         var p = ParseParams(job.ParamsJson);
 
