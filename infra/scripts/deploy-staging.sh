@@ -53,13 +53,23 @@ if [ "$DEPLOY_BUILD" != "1" ] && [ -n "${GHCR_TOKEN:-}" ]; then
     "docker login ghcr.io -u '${GHCR_USER}' --password-stdin"
 fi
 
-ssh "${SSH_OPTS[@]}" "${STAGING_SSH_USER}@${STAGING_SSH_HOST}" bash -s -- \
-  "$STAGING_DIR" "${SEQ_RETENTION_DAYS:-}" "$DEPLOY_BUILD" "$IMAGE_TAG" <<'REMOTE'
+# O log do bloco remoto é espelhado em arquivo para a checagem da sentinela no fim.
+REMOTE_LOG="$(mktemp)"
+trap 'rm -f "$REMOTE_LOG"' EXIT
+
+# Os valores viajam como ATRIBUICOES DE AMBIENTE, nao como argumentos posicionais. O ssh
+# nao preserva a lista de argumentos: junta tudo num string e o shell remoto reparte de
+# novo, entao um argumento VAZIO (SEQ_RETENTION_DAYS quase sempre e) some e todos os
+# seguintes escorregam de posicao. Era assim que DEPLOY_BUILD=1 virava "staging" no
+# servidor e o deploy caia no caminho de pull do registro em vez de construir.
+ssh "${SSH_OPTS[@]}" "${STAGING_SSH_USER}@${STAGING_SSH_HOST}" \
+  "M351_DIR='$STAGING_DIR' M351_SEQ_RETENTION='${SEQ_RETENTION_DAYS:-}' M351_BUILD='$DEPLOY_BUILD' M351_IMAGE_TAG='$IMAGE_TAG' bash -s" \
+  2>&1 <<'REMOTE' | tee "$REMOTE_LOG"
 set -euo pipefail
-DIR="$1"
-SEQ_RETENTION_DAYS="${2:-}"
-DEPLOY_BUILD="${3:-1}"
-export IMAGE_TAG="${4:-staging}"   # exportada: o compose interpola ${IMAGE_TAG:-staging}
+DIR="${M351_DIR}"
+SEQ_RETENTION_DAYS="${M351_SEQ_RETENTION:-}"
+DEPLOY_BUILD="${M351_BUILD:-1}"
+export IMAGE_TAG="${M351_IMAGE_TAG:-staging}"   # exportada: o compose interpola ${IMAGE_TAG:-staging}
 cd "$DIR"
 
 echo "[deploy] sincronizando código com origin/main (staging nunca tem commits locais)"
@@ -70,7 +80,10 @@ git reset --hard origin/main
 # migração pendente; se uma migração corromper dados, este dump é o ponto de
 # restauração imediato (ver docs/runbooks/backup-restore.md).
 echo "[deploy] backup pré-deploy (protege o AutoMigrate)"
-bash infra/scripts/backup.sh
+# Entrada padrão fechada de propósito: qualquer comando que a leia (o `docker compose exec`
+# do backup é um) consumiria o RESTO DESTE BLOCO, que chega por stdin do ssh. O backup já se
+# protege por dentro; esta é a segunda barreira, para quem acrescentar comandos aqui.
+bash infra/scripts/backup.sh < /dev/null
 
 COMPOSE="docker compose -f infra/docker-compose.staging.yml --env-file infra/.env"
 
@@ -141,6 +154,18 @@ docker image prune -f >/dev/null
 
 echo "[deploy] containers ativos:"
 $COMPOSE ps
+
+# SENTINELA: última linha do bloco remoto. O chamador EXIGE vê-la para declarar sucesso.
+# Sem ela, um comando que drene a entrada padrão volta a truncar o script em silêncio e o
+# deploy "passaria" sem ter construído nem subido nada.
+echo "[deploy] remote-ok"
 REMOTE
+
+if ! grep -q "remote-ok" "$REMOTE_LOG"; then
+  echo "[deploy] ERRO: o bloco remoto terminou ANTES do fim (sentinela ausente)."
+  echo "[deploy] Causa típica: algum comando do bloco leu a entrada padrão e consumiu o"
+  echo "[deploy] resto do script. Rode o comando suspeito com '< /dev/null'."
+  exit 1
+fi
 
 echo "[deploy] concluído"

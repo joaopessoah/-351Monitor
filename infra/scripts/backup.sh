@@ -68,8 +68,14 @@ STAMP="$(date +%Y%m%d_%H%M%S)"
 OUT="$BACKUP_DIR/m351_${POSTGRES_DB}_${STAMP}.dump"
 
 echo "[backup] iniciando pg_dump de ${POSTGRES_DB} -> ${OUT}"
+# `< /dev/null` NAO e decorativo: `docker compose exec` REPASSA a entrada padrao do
+# chamador para o container e a DRENA, mesmo com -T (que so desliga o TTY). Quando este
+# script roda dentro do bloco remoto do deploy (ssh ... bash -s <<'REMOTE'), a entrada
+# padrao E o proprio script, e o exec engolia todas as linhas seguintes: o deploy fazia o
+# backup e terminava sem construir nem subir nada, imprimindo "concluido". Diagnosticado
+# em 07/09/2026, quando a Visao Geral nova nao apareceu no painel depois do deploy.
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T postgres \
-  pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom > "$OUT"
+  pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom > "$OUT" < /dev/null
 
 # -----------------------------------------------------------------------------
 # Integridade do dump ANTES de declarar sucesso: pg_restore --list lê o índice do
