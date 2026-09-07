@@ -23,7 +23,14 @@ public record DeviceUserResponse(
     string WindowsUsername,
     string? DisplayName,
     DateTimeOffset FirstSeenAt,
-    DateTimeOffset LastSeenAt);
+    DateTimeOffset LastSeenAt,
+    /// <summary>
+    /// F6 — o SID do Windows, que é a IDENTIDADE de pessoa no tenant (chave de people e de
+    /// /people/{sid}). Sem ele a tela individual não conseguia oferecer apelido nem mesclagem,
+    /// porque o titular só se identificava pelo par (dispositivo, usuário). Não é dado novo:
+    /// device_users já guardava a coluna, ela só não saía no contrato.
+    /// </summary>
+    string WindowsSid);
 
 /// <summary>
 /// Body do PATCH /device-users/{id} (AdminPlus): display_name null/vazio limpa o apelido (as
