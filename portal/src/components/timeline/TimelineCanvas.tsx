@@ -62,9 +62,16 @@ export const TIMELINE_CANVAS_HEIGHT = AXIS_H + STATE_H + LANE_GAP + APP_H + PAD_
 // Paleta da marca (lib/brandTheme.ts, a mesma legenda do site): ativo verde de
 // atividade, ocioso grafite, bloqueado cinza-azulado; a linha "agora" usa o
 // verde vivo de AÇÃO da marca (mesma cor do indicador de presença ao vivo).
+// OCIOSO: a Seção 1.2 do spec de produtividade registra a colisão semântica -
+// a timeline pintava ocioso de ÂMBAR, e âmbar significa "Improdutivo" na
+// legenda do site. Ocioso NUNCA é improdutivo (Seção 2.1), então fica no
+// cinza-azulado #3A455C com HACHURA a 45° (`idleHatch`) para se distinguir de
+// "Bloqueado" sem depender de matiz.
 export const COLOR = {
   active: BRAND.vizProdutivo,
   idle: BRAND.vizOcioso,
+  /** Traço da hachura de ocioso - mesmo par #3A455C/#4E5C78 do mockup aprovado. */
+  idleHatch: "#4E5C78",
   locked: BRAND.slate,
   offCleanStroke: BRAND.ink3,
   noData: BRAND.red,
@@ -216,6 +223,7 @@ export function TimelineCanvas({
 
     if (indexed.length > 0) {
       const noDataHatch = makeHatch(ctx, COLOR.noData, "rgba(255, 139, 139, 0.08)");
+      const idleHatch = makeHatch(ctx, COLOR.idleHatch, COLOR.idle);
       for (const { startMs, endMs, iv } of indexed) {
         const rx0 = xOf(startMs);
         const rx1 = xOf(endMs);
@@ -224,9 +232,13 @@ export function TimelineCanvas({
         const bw = Math.max(Math.min(rx1, w) - x0, 1);
         switch (iv.state) {
           case "active":
-          case "idle":
           case "locked":
             ctx.fillStyle = COLOR[iv.state];
+            ctx.fillRect(x0, stateY, bw, STATE_H);
+            break;
+          case "idle":
+            // Ocioso: base #3A455C + hachura a 45° (redundância não-cromática).
+            ctx.fillStyle = idleHatch;
             ctx.fillRect(x0, stateY, bw, STATE_H);
             break;
           case "off_clean":

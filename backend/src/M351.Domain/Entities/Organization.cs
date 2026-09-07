@@ -49,4 +49,20 @@ public class Organization
     /// da organização). null = sem meta.
     /// </summary>
     public int? GoalWorkRelatedPct { get; set; }
+
+    /// <summary>
+    /// F6, decisão 1 do spec de 07/09/2026 — VOCABULÁRIO dos rótulos de classificação que a
+    /// organização vê no portal. Só o rótulo muda; os dados (classification +1/0/−1 e o balde
+    /// sem classificação) são os mesmos nos dois conjuntos, então trocar aqui NÃO reagrega nada.
+    ///
+    ///  - "produtividade" (default): Produtivo / Neutro / Improdutivo / Sem classificação —
+    ///    padrão da categoria e o que o site promete;
+    ///  - "trabalho": Relacionado ao trabalho / Neutro / Não relacionado ao trabalho /
+    ///    Não categorizado — o conjunto neutro, para quem prefere não usar adjetivo.
+    ///
+    /// O enquadramento "classificação definida pela sua empresa" acompanha os dois: o julgamento
+    /// é do cliente sobre APLICATIVOS, nunca sobre pessoas, e estado de máquina (inclusive
+    /// ocioso) fica fora deste vocabulário — ocioso NUNCA é improdutivo.
+    /// </summary>
+    public string ClassificationVocabulary { get; set; } = "produtividade";
 }

@@ -77,4 +77,10 @@ public record OrganizationResponse(
     DateOnly? DataVigencia,
     /// <summary>F5 — metas semanais AGREGADAS da org (null = sem meta definida).</summary>
     int? GoalWeeklyActiveHours = null,
-    int? GoalWorkRelatedPct = null);
+    int? GoalWorkRelatedPct = null,
+    /// <summary>
+    /// F6, decisão 1 — vocabulário dos rótulos de classificação ("produtividade" ou
+    /// "trabalho"). Repetido aqui (além do /me) porque é NESTA tela que se troca: a resposta
+    /// do PATCH tem de devolver o valor efetivamente gravado.
+    /// </summary>
+    string ClassificationVocabulary = "produtividade");

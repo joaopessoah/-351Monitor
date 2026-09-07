@@ -48,15 +48,27 @@ public class AppCatalogController(
     public const int MaxBatchItems = MaxItems;
 
     /// <summary>
-    /// GET /api/v1/app-catalog?q=&amp;uncategorized=true (Viewer): recorte do tenant, ordenado
-    /// por seconds_active_30d desc, máximo 500 itens. Janela 30d = hoje no fuso do tenant
-    /// menos 30 dias (mesmo corte da reagregação). q busca em process_name/display_name/
-    /// custom_display_name (ILIKE). uncategorized_count ignora os filtros (badge global).
+    /// Ordenação "impacto" (F6): apps SEM categoria primeiro, e dentro de cada grupo por tempo
+    /// ativo desc. É a ordem da FILA DE CLASSIFICAÇÃO — o topo da lista é sempre o app que mais
+    /// aumenta a cobertura por clique. O default segue sendo só tempo ativo desc, que é a ordem
+    /// da tabela de mapeamento (lá o gestor procura um app específico, não a próxima pendência).
+    /// </summary>
+    public const string SortImpacto = "impacto";
+
+    /// <summary>
+    /// GET /api/v1/app-catalog?q=&amp;uncategorized=true&amp;sort=impacto (Viewer): recorte do
+    /// tenant, máximo 500 itens. Janela 30d = hoje no fuso do tenant menos 30 dias (mesmo corte
+    /// da reagregação). q busca em process_name/display_name/custom_display_name (ILIKE).
+    /// uncategorized_count ignora os filtros (badge global), e desde a F6 vêm também
+    /// uncategorized_seconds_active e total_seconds_active — a COBERTURA em tempo, que é o KPI
+    /// da curadoria (contagem de apps não diz o tamanho do buraco). sort=impacto põe o que falta
+    /// classificar no topo; qualquer outro valor cai no default (tempo ativo desc).
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> List(
         [FromQuery(Name = "q")] string? q,
         [FromQuery(Name = "uncategorized")] bool uncategorized = false,
+        [FromQuery(Name = "sort")] string? sort = null,
         CancellationToken ct = default)
     {
         var tenantId = Auth.CurrentUser.TenantId(User);
@@ -71,6 +83,7 @@ public class AppCatalogController(
         // string yyyy-MM-dd + cast ::date no SQL — mesmo padrão de datas do dashboard F3.2
         var cutoff = TodayInTenantTz(timezone).AddDays(-ReaggregationRequester.WindowDays).ToString("yyyy-MM-dd");
         var pattern = string.IsNullOrWhiteSpace(q) ? null : $"%{q.Trim()}%";
+        var byImpact = string.Equals(sort, SortImpacto, StringComparison.OrdinalIgnoreCase);
 
         var rows = (await connection.QueryAsync<CatalogRow>(new CommandDefinition(
             """
@@ -103,10 +116,18 @@ public class AppCatalogController(
                    OR a.display_name ILIKE @Pattern
                    OR tac.custom_display_name ILIKE @Pattern)
               AND (@UncategorizedOnly = false OR tac.category_id IS NULL)
-            ORDER BY seconds_active_30d DESC, a.process_name
+            -- sort=impacto: sem categoria primeiro (ordem da fila), depois tempo ativo desc.
+            -- O CASE fica no SQL e não no C# porque o LIMIT 500 corta ANTES de chegar aqui:
+            -- ordenar no cliente devolveria os 500 mais usados, não os 500 mais impactantes.
+            ORDER BY CASE WHEN @ByImpact AND tac.category_id IS NULL THEN 0 ELSE 1 END,
+                     seconds_active_30d DESC, a.process_name
             LIMIT @Limit
             """,
-            new { TenantId = tenantId, Cutoff = cutoff, Pattern = pattern, UncategorizedOnly = uncategorized, Limit = MaxItems },
+            new
+            {
+                TenantId = tenantId, Cutoff = cutoff, Pattern = pattern,
+                UncategorizedOnly = uncategorized, ByImpact = byImpact, Limit = MaxItems,
+            },
             cancellationToken: ct))).ToList();
 
         // badge "N apps sem categoria": recorte inteiro, sem os filtros da listagem.
@@ -122,6 +143,23 @@ public class AppCatalogController(
             """,
             new { TenantId = tenantId }, cancellationToken: ct));
 
+        // COBERTURA da classificação em TEMPO (F6): os dois lados da fração numa só varredura
+        // de daily_app_usage, na MESMA janela de 30 dias das métricas por item — o cabeçalho da
+        // tela fecha com a soma das linhas. tenant_id no WHERE e no NOT EXISTS: o mapeamento é
+        // por tenant, e um app mapeado por OUTRA organização continua "sem categoria" aqui.
+        var coverage = await connection.QuerySingleAsync<CoverageRow>(new CommandDefinition(
+            """
+            SELECT COALESCE(sum(u.seconds_active), 0)::bigint AS total_seconds_active,
+                   COALESCE(sum(u.seconds_active) FILTER (
+                       WHERE NOT EXISTS (
+                           SELECT 1 FROM tenant_app_categories tac
+                           WHERE tac.tenant_id = u.tenant_id AND tac.app_id = u.app_id)), 0)::bigint
+                       AS uncategorized_seconds_active
+            FROM daily_app_usage u
+            WHERE u.tenant_id = @TenantId AND u.summary_date >= @Cutoff::date
+            """,
+            new { TenantId = tenantId, Cutoff = cutoff }, cancellationToken: ct));
+
         var items = rows.Select(r => new AppCatalogItemResponse(
                 r.AppId, r.ProcessName, r.DisplayName, r.CustomDisplayName,
                 ToCategory(r.CategoryId, r.CategoryName, r.CategoryClassification, r.CategoryColor),
@@ -129,7 +167,9 @@ public class AppCatalogController(
                 r.SecondsActive30d, r.DeviceCount30d))
             .ToList();
 
-        return Ok(new AppCatalogListResponse(items, uncategorizedCount));
+        return Ok(new AppCatalogListResponse(
+            items, uncategorizedCount,
+            coverage.UncategorizedSecondsActive, coverage.TotalSecondsActive));
     }
 
     /// <summary>
@@ -457,6 +497,9 @@ public class AppCatalogController(
         string? CategoryColor,
         long SecondsActive30d,
         int DeviceCount30d);
+
+    /// <summary>Os dois lados da cobertura em tempo (janela de 30 dias do tenant).</summary>
+    private sealed record CoverageRow(long TotalSecondsActive, long UncategorizedSecondsActive);
 
     private sealed record AppRow(Guid AppId, string ProcessName, string DisplayName);
 

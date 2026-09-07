@@ -10,6 +10,30 @@
 //  - GET /dashboard/summary?device_user_id=...: tempos e composição por
 //    classificação no período (presets de 7/14/30 dias).
 //
+// REFORMA F6 (decisões 1, 2 e 4 do spec de 07/09/2026), acrescentada acima do
+// que já existia, sem remover nada:
+//  - KPIs da pessoa no período (ligada, ativa, índice, ociosidade, sem
+//    classificação). O ÍNDICE e a COBERTURA vêm do servidor, de
+//    GET /people (fonte única da fórmula) - o portal só formata, e `null`
+//    imprime "–", nunca 0%;
+//  - composição por DIA com os quatro baldes de classificação + ocioso, a
+//    partir do GET /dashboard/summary?device_user_id= que a página já consumia;
+//  - apelido e mesclagem por PATCH /people/{sid} (Admin+).
+//
+// VOCABULÁRIO: a classificação passa a usar Produtivo / Neutro / Improdutivo /
+// Sem classificação (decisão 1), sempre com o enquadramento "classificação
+// definida pela sua empresa". Os ESTADOS DE MÁQUINA seguem neutros (Ativo,
+// Ocioso, Bloqueado) e ocioso NUNCA é somado como improdutivo. O módulo
+// lib/classification.ts ainda carrega o conjunto neutro anterior (opção da
+// organização) e é migrado na fase de Classificação 2.0.
+//
+// COSTURA (temporária): GET /device-users/{id} não devolve o windows_sid, e é o
+// SID que identifica a pessoa em /people. Ele é resolvido por
+// GET /people?q={nome exibido}; sem correspondência os KPIs e o bloco de
+// identidade explicam a ausência em vez de mostrar número errado. A unificação
+// das duas identidades (registro por dispositivo e pessoa) entra na fase
+// seguinte.
+//
 // USO POR APLICATIVO NÃO ENTRA nesta versão: o GET /reports/usage só aceita
 // filtro por device_ids (parâmetro real do ReportsController) - não há filtro por
 // titular. Passar o device do registro mostraria o uso de TODAS as pessoas

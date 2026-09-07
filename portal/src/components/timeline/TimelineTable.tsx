@@ -19,6 +19,11 @@ const noDataHatch: CSSProperties = {
     "repeating-linear-gradient(45deg, #dc2626 0px, #dc2626 2px, #fecaca 2px, #fecaca 4px)",
 };
 
+/** Hachura a 45° do ocioso - o MESMO par de cores do canvas (COLOR.idle/idleHatch). */
+const idleHatch: CSSProperties = {
+  backgroundImage: "repeating-linear-gradient(45deg, #3A455C 0 2px, #4E5C78 2px 4px)",
+};
+
 /** Cabeçalhos compartilhados das colunas de intervalo (modo device e equipe). */
 function IntervalHeadCells() {
   return (
@@ -180,18 +185,26 @@ function DeviceCell({ lane, rowSpan }: { lane: TeamTimelineLane; rowSpan: number
   );
 }
 
-/** Swatch do estado com redundância não-cromática (off_clean contorno; no_data hachura). */
+/**
+ * Swatch do estado com redundância não-cromática (off_clean contorno; no_data e
+ * ocioso hachura). As cores são as do CANVAS (lib/brandTheme.ts) - os hex
+ * antigos aqui eram de outra paleta e OCIOSO estava ÂMBAR, a mesma cor que
+ * "Improdutivo" tem na legenda do site (colisão semântica da Seção 1.2).
+ * Ocioso NUNCA é improdutivo: cinza-azulado + hachura a 45°.
+ */
 function StateSwatch({ state }: { state: IntervalState }) {
   if (state === "no_data") {
     return <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-sm" style={noDataHatch} />;
   }
   if (state === "off_clean") {
-    return <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full border-2 border-[#9ca3af]" />;
+    return <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full border-2 border-brand-slate" />;
   }
-  const solid: Record<"active" | "idle" | "locked", string> = {
-    active: "bg-[#16a34a]",
-    idle: "bg-[#d97706]",
-    locked: "bg-[#64748b]",
+  if (state === "idle") {
+    return <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-sm" style={idleHatch} />;
+  }
+  const solid: Record<"active" | "locked", string> = {
+    active: "bg-viz-produtivo",
+    locked: "bg-brand-slate",
   };
   return <span aria-hidden className={cn("h-2.5 w-2.5 shrink-0 rounded-full", solid[state])} />;
 }
