@@ -211,15 +211,7 @@
         </ul>
       </div>
 
-      <!-- ===== PRINT REAL PENDENTE: VISÃO GERAL =====
-           Quando o print da nova Visão Geral existir, troque TODO o conteúdo de
-           .shot-body abaixo por uma única linha:
-           <img src="assets/img/print-visao-geral.png" alt="Painel Visão Geral da +351 Monitor com índice de produtividade, composição do tempo e aplicativos" width="1280" height="800" loading="eager" decoding="async">
-           Tamanho recomendado: exportar a 2560x800 px (2x) e salvar como 1280x800 px,
-           formato PNG, tema escuro do portal, dados do tenant de demonstração.
-           Mantenha a moldura <figure class="shot"> e a barra .shot-top para preservar o visual.
-           O mockup em HTML/CSS abaixo permanece até o print existir. -->
-      <figure class="shot shot-hero reveal" role="img" aria-label="Interface da +351 Monitor: visão geral com tempo ativo, ociosidade, aplicativos e atividade ao longo do dia">
+      <figure class="shot shot-hero reveal">
         <div class="shot-top" aria-hidden="true">
           <span class="shot-brand">
             <svg viewBox="0 0 64 64" fill="none"><rect x="3" y="7" width="58" height="42" rx="7" stroke="#E8EEF7" stroke-width="4"/><path d="M11 30h7l5.5-11L31 41l5-11 3.5 6H53" stroke="#B6FF3C" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M23 57h18" stroke="#E8EEF7" stroke-width="4" stroke-linecap="round"/></svg>
@@ -230,58 +222,9 @@
             <i class="shot-avatar"></i>
           </span>
         </div>
-        <div class="shot-body" aria-hidden="true">
-          <aside class="shot-nav">
-            <span class="on">Visão geral</span>
-            <span>Colaboradores</span>
-            <span>Atividades</span>
-            <span>Aplicativos</span>
-            <span>Jornada</span>
-            <span>Relatórios</span>
-            <span>Configurações</span>
-          </aside>
-          <div class="shot-main">
-            <div class="shot-head">
-              <strong>Resumo geral</strong>
-              <span class="shot-chip">Hoje</span>
-            </div>
-            <div class="shot-kpis">
-              <div class="skpi"><span class="skpi-l">Colaboradores ativos</span><span class="skpi-v">128</span><span class="skpi-d">+8 vs ontem</span></div>
-              <div class="skpi"><span class="skpi-l">Tempo ativo médio</span><span class="skpi-v">6h48</span><span class="skpi-d">+4% vs ontem</span></div>
-              <div class="skpi"><span class="skpi-l">Ociosidade média</span><span class="skpi-v">52min</span><span class="skpi-d">−6min vs ontem</span></div>
-              <div class="skpi"><span class="skpi-l">Horas registradas</span><span class="skpi-v">872</span><span class="skpi-d">hoje</span></div>
-            </div>
-            <div class="shot-grid">
-              <div class="shot-card">
-                <div class="shot-card-head"><span>Atividade ao longo do dia</span><span class="shot-legend"><i></i>Atividade</span></div>
-                <svg class="shot-chart" viewBox="0 0 560 210" preserveAspectRatio="none">
-                  <g class="grid">
-                    <line x1="12" y1="36"  x2="548" y2="36"/>
-                    <line x1="12" y1="88"  x2="548" y2="88"/>
-                    <line x1="12" y1="140" x2="548" y2="140"/>
-                    <line x1="12" y1="192" x2="548" y2="192"/>
-                  </g>
-                  <path class="area" d="M12 163 L80 122 L146 93 L202 109 L258 158 L314 111 L370 83 L426 101 L482 124 L548 156 L548 192 L12 192 Z"/>
-                  <path class="line" d="M12 163 L80 122 L146 93 L202 109 L258 158 L314 111 L370 83 L426 101 L482 124 L548 156"/>
-                  <g class="dots">
-                    <circle cx="12" cy="163" r="3"/><circle cx="146" cy="93" r="3"/><circle cx="258" cy="158" r="3"/><circle cx="370" cy="83" r="3"/><circle cx="482" cy="124" r="3"/>
-                  </g>
-                </svg>
-                <div class="shot-hours"><span>08h</span><span>10h</span><span>12h</span><span>14h</span><span>16h</span><span>18h</span></div>
-              </div>
-              <div class="shot-card">
-                <div class="shot-card-head"><span>Aplicativos mais utilizados</span></div>
-                <div class="shot-apps">
-                  <div class="sapp"><span class="sapp-n">ERP</span><span class="sapp-t"><i style="width:92%"></i></span><span class="sapp-v">6h12</span></div>
-                  <div class="sapp"><span class="sapp-n">Excel</span><span class="sapp-t"><i style="width:74%"></i></span><span class="sapp-v">4h45</span></div>
-                  <div class="sapp"><span class="sapp-n">Navegador</span><span class="sapp-t"><i style="width:60%"></i></span><span class="sapp-v">3h58</span></div>
-                  <div class="sapp"><span class="sapp-n">Outlook</span><span class="sapp-t"><i style="width:38%"></i></span><span class="sapp-v">2h30</span></div>
-                  <div class="sapp"><span class="sapp-n">Teams</span><span class="sapp-t"><i style="width:28%"></i></span><span class="sapp-v">1h47</span></div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <img src="assets/img/painel-visao-geral.webp"
+             alt="Painel da +351 Monitor na tela Visão Geral: composição do tempo por dia, aplicativos que concentram as horas, resumo do período, alertas de gestão e comparação entre equipes."
+             width="1440" height="998" decoding="async" fetchpriority="high">
       </figure>
     </div>
 
@@ -291,49 +234,10 @@
   <!-- ============ 2. A PLATAFORMA (mostrar o produto cedo) ============ -->
   <section class="section manage" id="produto">
     <div class="container manage-grid">
-      <!-- ===== PRINT REAL PENDENTE: COLABORADORES =====
-           Troque TODO o conteúdo de .shot-body abaixo por:
-           <img src="assets/img/print-colaboradores.png" alt="Lista de colaboradores da +351 Monitor com tempo ativo e composição do período" width="1120" height="760" loading="lazy" decoding="async">
-           Tamanho recomendado: exportar a 2240x1520 px (2x) e salvar como 1120x760 px, PNG.
-           Use nomes fictícios no tenant de demonstração, nunca dados de cliente.
-           O mockup em HTML/CSS abaixo permanece até o print existir. -->
-      <figure class="shot shot-manage reveal" role="img" aria-label="Interface da +351 Monitor, lista de colaboradores com estado do dispositivo, tempo ativo e composição do tempo classificada pela empresa">
-        <div class="shot-body shot-body-solo" aria-hidden="true">
-          <aside class="shot-nav shot-nav-slim">
-            <span>Visão geral</span>
-            <span class="on">Colaboradores</span>
-            <span>Atividades</span>
-            <span>Aplicativos</span>
-            <span>Jornada</span>
-            <span>Relatórios</span>
-          </aside>
-          <div class="shot-main">
-            <div class="shot-head">
-              <strong>Colaboradores</strong>
-              <span class="shot-search">
-                <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="6.5" stroke="#8FA0BC" stroke-width="1.7"/><path d="M15.8 15.8 20 20" stroke="#8FA0BC" stroke-width="1.7" stroke-linecap="round"/></svg>
-                Buscar colaborador
-              </span>
-            </div>
-            <div class="shot-tabs"><span class="on">Geral</span><span>Atividade</span><span>Aplicativos</span><span>Jornada</span></div>
-            <div class="shot-table">
-              <div class="srow srow-head"><span>Colaborador</span><span>Status</span><span>Tempo ativo</span><span>Jornada de hoje</span></div>
-              <div class="srow"><span class="sname"><i>AO</i>Ana Oliveira</span><span class="sstat on">Ativo</span><span class="stime">6h52</span><span class="sbar"><i class="p" style="width:58%"></i><i class="n" style="width:15%"></i><i class="d" style="width:6%"></i><i class="u" style="width:7%"></i><i class="o" style="width:10%"></i></span></div>
-              <div class="srow"><span class="sname"><i>BS</i>Bruno Santos</span><span class="sstat on">Ativo</span><span class="stime">6h31</span><span class="sbar"><i class="p" style="width:54%"></i><i class="n" style="width:19%"></i><i class="d" style="width:8%"></i><i class="u" style="width:9%"></i><i class="o" style="width:8%"></i></span></div>
-              <div class="srow"><span class="sname"><i>CF</i>Carla Ferreira</span><span class="sstat idle">Ocioso</span><span class="stime">4h58</span><span class="sbar"><i class="p" style="width:41%"></i><i class="n" style="width:11%"></i><i class="d" style="width:4%"></i><i class="u" style="width:6%"></i><i class="o" style="width:30%"></i></span></div>
-              <div class="srow"><span class="sname"><i>DL</i>Diego Lima</span><span class="sstat on">Ativo</span><span class="stime">6h05</span><span class="sbar"><i class="p" style="width:52%"></i><i class="n" style="width:21%"></i><i class="d" style="width:9%"></i><i class="u" style="width:5%"></i><i class="o" style="width:6%"></i></span></div>
-              <div class="srow"><span class="sname"><i>EC</i>Elisa Costa</span><span class="sstat off">Offline</span><span class="stime">2h40</span><span class="sbar"><i class="p" style="width:26%"></i><i class="n" style="width:8%"></i><i class="d" style="width:2%"></i><i class="u" style="width:4%"></i><i class="o" style="width:6%"></i></span></div>
-              <div class="srow"><span class="sname"><i>FR</i>Fábio Ramos</span><span class="sstat on">Ativo</span><span class="stime">6h14</span><span class="sbar"><i class="p" style="width:56%"></i><i class="n" style="width:17%"></i><i class="d" style="width:5%"></i><i class="u" style="width:6%"></i><i class="o" style="width:9%"></i></span></div>
-            </div>
-            <div class="shot-legend-row">
-              <span><i class="p"></i>Produtivo</span>
-              <span><i class="n"></i>Neutro</span>
-              <span><i class="d"></i>Improdutivo</span>
-              <span><i class="u"></i>Sem classificação</span>
-              <span><i class="o"></i>Ocioso (estado da máquina)</span>
-            </div>
-          </div>
-        </div>
+      <figure class="shot shot-manage reveal">
+        <img src="assets/img/painel-colaboradores.webp"
+             alt="Painel da +351 Monitor na tela Colaboradores: uma linha por pessoa com horas ligadas, horas ativas, índice de produtividade, ociosidade, tempo sem classificação e tendência dos últimos 12 dias."
+             width="1440" height="1022" loading="lazy" decoding="async">
       </figure>
 
       <div class="manage-copy">
@@ -478,13 +382,8 @@
        você responde hoje com dados?") e #funcionalidades ("Da atividade no
        dispositivo ao indicador de gestão"), que repetiam o mesmo conteúdo em dois
        formatos. Os dois id antigos continuam existindo como âncora.
-       ===== PRINTS REAIS PENDENTES =====
-       Quando existirem os prints da Visão Geral, da Linha do Tempo e de
-       Colaboradores, cada .pair pode receber a imagem da tela correspondente
-       logo acima de .pair-a:
-       <img src="assets/img/tela-visao-geral.png" alt="..." width="720" height="420" loading="lazy" decoding="async">
-       Tamanho recomendado: 720x420 px exibidos (exportar a 1440x840 px, 2x), PNG,
-       recorte apenas do bloco citado na resposta, tema escuro do portal. -->
+       set/2026: o print da Linha do Tempo entrou logo abaixo dos pares. Os prints da
+       Visão Geral e de Colaboradores estão no hero e na seção 2. -->
   <section class="section" id="funcionalidades">
     <span class="anchor-alias anchor-alias-flow" id="descobertas" aria-hidden="true"></span>
     <div class="container">
@@ -518,6 +417,13 @@
           <p class="pair-a"><span class="pair-screen">Cobertura da classificação</span>Mostra quanto do tempo ativo ainda está em aplicativos que a sua empresa não classificou. O <b>índice de produtividade</b> nunca aparece sem a cobertura ao lado, e a fila de classificação indica o que corrigir primeiro.</p>
         </article>
       </div>
+
+      <figure class="shot shot-timeline reveal">
+        <img src="assets/img/painel-linha-do-tempo.webp"
+             alt="Painel da +351 Monitor na tela Linha do Tempo: faixas de atividade e ociosidade hora a hora, uma linha por pessoa, com o resumo do dia por pessoa abaixo."
+             width="1440" height="1105" loading="lazy" decoding="async">
+        <figcaption>Linha do Tempo: o dia da equipe hora a hora, com o resumo por pessoa logo abaixo.</figcaption>
+      </figure>
 
       <p class="pairs-note reveal">Todas as definições e fórmulas ficam publicadas, sem caixa-preta: <a href="como-medimos.html">como medimos</a>. Relatórios de jornada, de aplicativos e de atividade fora do horário complementam as telas acima, e a exportação sai em CSV. A comparação entre capacidade contratada e capacidade utilizada está em desenvolvimento e ainda não faz parte do que a plataforma entrega.</p>
 
