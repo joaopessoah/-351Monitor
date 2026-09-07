@@ -11,9 +11,12 @@ export default defineConfig({
     },
   },
   build: {
-    // O chunk do ECharts (core + zrender, já modular: só BarChart e 5
-    // components) fica em ~525 kB min / ~179 kB gzip - acima do aviso default
+    // O chunk do ECharts (core + zrender, já modular: Bar/Line/Pie e 6
+    // components) fica em ~589 kB min / ~202 kB gzip - acima do aviso default
     // de 500 kB, mas é um vendor chunk único e cacheável. Limite documentado.
+    // O Line e o Legend entraram em 07/09/2026: sem eles o ECharts descartava
+    // em silêncio a série do cartão de atividade por hora e a legenda da
+    // composição por dia da pessoa (ver o comentário em charts/EChart.tsx).
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {

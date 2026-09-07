@@ -39,7 +39,7 @@ import { ArrowRight, Info, Tags } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { formatDuration } from "@/lib/format";
-import type { MeResponse, OverviewResponse } from "@/lib/types";
+import type { ActivityByHourItem, MeResponse, OverviewResponse } from "@/lib/types";
 import {
   PERIOD_CODEC,
   comparisonLabel,
@@ -453,6 +453,9 @@ function ComposicaoCard({
 // Atividade ao longo do dia
 // -----------------------------------------------------------------------------
 
+/** Array vazio compartilhado: mantém a identidade estável entre renders. */
+const SEM_HORAS: readonly ActivityByHourItem[] = [];
+
 /**
  * Pessoas ativas por hora, média do período, com a linha fina do período
  * anterior atrás. É a resposta visual para "a que horas minha operação
@@ -476,8 +479,18 @@ function AtividadePorHoraCard({
   const atual = useActivityByHourQuery(period, tag);
   const anterior = useActivityByHourQuery(previousPeriodOf(period), tag);
 
-  const horas = atual.data?.hours ?? [];
-  const horasAnteriores = anterior.data?.hours ?? [];
+  // CAUSA RAIZ do cartão em branco (corrigida em 07/09/2026, ver o comentário
+  // longo no topo de components/charts/EChart.tsx): este é o ÚNICO cartão da
+  // Visão Geral feito só de séries `type: "line"`, e o registro modular do
+  // ECharts no wrapper não incluía o LineChart. O ECharts descartava as duas
+  // séries em silêncio (só um console.error), sobrava o eixo X sozinho, e o
+  // estado de vazio não entrava porque, para o cartão, havia dado. O endpoint
+  // sempre esteve certo. A correção é o `use([LineChart])` no wrapper.
+
+  // Referência estável enquanto o período anterior ainda carrega: `?? []` novo a
+  // cada render invalidaria o useMemo abaixo e refaria o setOption à toa.
+  const horas = atual.data?.hours ?? SEM_HORAS;
+  const horasAnteriores = anterior.data?.hours ?? SEM_HORAS;
 
   const option = useMemo<EChartsOption>(() => {
     const serie = horas.map((h) => h.avg_people_active ?? 0);
