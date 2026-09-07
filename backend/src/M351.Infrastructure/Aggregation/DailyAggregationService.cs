@@ -167,6 +167,9 @@ public sealed class DailyAggregationService(NpgsqlDataSource dataSource, ILogger
         await ExecAsync(conn, tx,
             "DELETE FROM daily_app_usage WHERE tenant_id = @t AND device_id = @d AND summary_date = @day",
             [("t", tenantId), ("d", deviceId), ("day", day)], ct);
+        await ExecAsync(conn, tx,
+            "DELETE FROM hourly_activity WHERE tenant_id = @t AND device_id = @d AND summary_date = @day",
+            [("t", tenantId), ("d", deviceId), ("day", day)], ct);
 
         await ExecAsync(conn, tx, """
             INSERT INTO daily_device_summaries (
@@ -219,6 +222,37 @@ public sealed class DailyAggregationService(NpgsqlDataSource dataSource, ILogger
             WHERE i.tenant_id = @t AND i.device_id = @d AND i.source_day = @day
               AND i.state = 'active' AND i.app_id IS NOT NULL
             GROUP BY COALESCE(i.device_user_id, '00000000-0000-0000-0000-000000000000'::uuid), i.app_id
+            """, [("t", tenantId), ("d", deviceId), ("day", day)], ct);
+
+        // Distribuição horária (F6): recorta cada intervalo active/idle nas fronteiras de hora
+        // LOCAL do tenant. generate_series anda de hora em hora do início ao fim do intervalo já
+        // convertido para o relógio local; o recorte é GREATEST/LEAST, e o segmento degenerado
+        // (intervalo terminando exatamente na virada) sai pelo e > s. Fonte do gráfico
+        // "Atividade ao longo do dia" — mesmo snapshot dos agregados acima.
+        await ExecAsync(conn, tx, """
+            INSERT INTO hourly_activity (
+                tenant_id, summary_date, hour_local, device_id, device_user_id, seconds_active, seconds_idle)
+            SELECT @t, @day, extract(hour FROM seg.hour_start)::smallint, @d, seg.lane,
+                   floor(COALESCE(sum(extract(epoch FROM (seg.e - seg.s))) FILTER (WHERE seg.state = 'active'), 0))::int,
+                   floor(COALESCE(sum(extract(epoch FROM (seg.e - seg.s))) FILTER (WHERE seg.state = 'idle'), 0))::int
+            FROM (
+                SELECT COALESCE(i.device_user_id, '00000000-0000-0000-0000-000000000000'::uuid) AS lane,
+                       i.state,
+                       g.h AS hour_start,
+                       GREATEST(i.started_at AT TIME ZONE o.timezone, g.h) AS s,
+                       LEAST(i.ended_at AT TIME ZONE o.timezone, g.h + interval '1 hour') AS e
+                FROM activity_intervals i
+                JOIN organizations o ON o.id = i.tenant_id
+                CROSS JOIN LATERAL generate_series(
+                    date_trunc('hour', i.started_at AT TIME ZONE o.timezone),
+                    date_trunc('hour', i.ended_at   AT TIME ZONE o.timezone),
+                    interval '1 hour') AS g(h)
+                WHERE i.tenant_id = @t AND i.device_id = @d AND i.source_day = @day
+                  AND i.state IN ('active', 'idle')
+            ) seg
+            WHERE seg.e > seg.s
+            GROUP BY 3, seg.lane
+            HAVING sum(extract(epoch FROM (seg.e - seg.s))) >= 1
             """, [("t", tenantId), ("d", deviceId), ("day", day)], ct);
 
         await tx.CommitAsync(ct);

@@ -6,7 +6,8 @@ namespace M351.Infrastructure.Maintenance;
 /// <summary>
 /// Job RetentionPurge (Secao 7.6; tabela 7.2 N12; Secao 9.6). Roda 1x/dia (02:30
 /// America/Sao_Paulo, agendado pelo Worker). DELETE (nao DROP) das tabelas de agregado diario
-/// — daily_device_summaries e daily_app_usage — com summary_date alem de 24 meses. Sao as UNICAS
+/// — daily_device_summaries, daily_app_usage e hourly_activity (F6) — com summary_date alem de
+/// 24 meses. Sao as UNICAS
 /// nao-particionadas das quatro retencoes (as tres particionadas N10/N11/N13 sao do
 /// PartitionMaintenance — este job NAO toca nelas).
 ///
@@ -30,7 +31,8 @@ public sealed class RetentionPurgeService(NpgsqlDataSource dataSource, ILogger<R
     /// Linhas deletadas por tabela (e se o lock foi adquirido) — permite aos testes asseridarem o
     /// ciclo sem reler maintenance_runs (tabela global compartilhada entre testes).
     /// </summary>
-    public sealed record RetentionPurgeResult(bool LockAcquired, int SummariesDeleted, int AppUsageDeleted);
+    public sealed record RetentionPurgeResult(
+        bool LockAcquired, int SummariesDeleted, int AppUsageDeleted, int HourlyActivityDeleted = 0);
 
     /// <summary>Um ciclo: deleta os agregados diarios alem de 24 meses. Grava maintenance_runs.</summary>
     public async Task<RetentionPurgeResult> RunOnceAsync(CancellationToken ct = default)
@@ -55,14 +57,17 @@ public sealed class RetentionPurgeService(NpgsqlDataSource dataSource, ILogger<R
                 {
                     logger?.LogInformation("RetentionPurge: outra instancia ja purgando; ciclo pulado.");
                     await tx.RollbackAsync(ct);
-                    return new RetentionPurgeResult(LockAcquired: false, 0, 0);
+                    return new RetentionPurgeResult(LockAcquired: false, 0, 0, 0);
                 }
             }
 
             var summariesDeleted = await DeleteAsync(conn, tx, "daily_device_summaries", cutoff, ct);
             var appUsageDeleted = await DeleteAsync(conn, tx, "daily_app_usage", cutoff, ct);
+            // F6: hourly_activity e um agregado diario como os outros dois (mesma retencao N12)
+            var hourlyDeleted = await DeleteAsync(conn, tx, "hourly_activity", cutoff, ct);
             detail["daily_device_summaries_deleted"] = summariesDeleted;
             detail["daily_app_usage_deleted"] = appUsageDeleted;
+            detail["hourly_activity_deleted"] = hourlyDeleted;
             detail["cutoff"] = cutoff.ToString("yyyy-MM-dd");
 
             await tx.CommitAsync(ct);
@@ -75,7 +80,7 @@ public sealed class RetentionPurgeService(NpgsqlDataSource dataSource, ILogger<R
                 "RetentionPurge: summaries={Summaries} / app_usage={AppUsage} linha(s) deletada(s) (corte {Cutoff:yyyy-MM-dd}).",
                 summariesDeleted, appUsageDeleted, cutoff);
 
-            return new RetentionPurgeResult(LockAcquired: true, summariesDeleted, appUsageDeleted);
+            return new RetentionPurgeResult(LockAcquired: true, summariesDeleted, appUsageDeleted, hourlyDeleted);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

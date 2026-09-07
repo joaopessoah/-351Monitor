@@ -259,6 +259,221 @@ public class DashboardController(
 
     // ------------------------------------------------------------ helpers
 
+    // ------------------------------------------------------------ F6: atividade por hora
+    /// <summary>
+    /// GET /api/v1/dashboard/activity-by-hour?from&amp;to[&amp;tag] (F6): distribuição do tempo
+    /// ativo/ocioso pelas 24 horas LOCAIS do tenant, lida de hourly_activity (preenchida na
+    /// mesma transação da agregação diária). Devices archived ficam fora, mesma régua do
+    /// summary. Agregado de equipe: sem auditoria.
+    ///
+    /// As 24 horas vêm SEMPRE, inclusive as vazias: o gráfico da Visão Geral desenha o dia
+    /// inteiro e um buraco no meio da série leria como "sem dado" em vez de "ninguém ativo".
+    /// </summary>
+    [HttpGet("activity-by-hour")]
+    public async Task<IActionResult> ActivityByHour(
+        [FromQuery(Name = "from")] string? from,
+        [FromQuery(Name = "to")] string? to,
+        [FromQuery(Name = "tag")] string? tag,
+        CancellationToken ct)
+    {
+        var invalid = ValidateRange(from, to);
+        if (invalid is not null) return invalid;
+
+        var tenantId = Auth.CurrentUser.TenantId(User);
+        var normalizedTag = NormalizeTeamTag(tag);
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+
+        var rows = (await connection.QueryAsync<HourRow>(new CommandDefinition(
+            """
+            SELECT h.hour_local::int AS hour,
+                   COALESCE(sum(h.seconds_active), 0)::bigint AS seconds_active,
+                   COALESCE(sum(h.seconds_idle), 0)::bigint AS seconds_idle
+            FROM hourly_activity h
+            JOIN devices d ON d.id = h.device_id AND d.tenant_id = h.tenant_id
+            WHERE h.tenant_id = @TenantId
+              AND d.status <> 'archived'
+              AND h.summary_date BETWEEN @From::date AND @To::date
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
+            GROUP BY h.hour_local
+            """,
+            new { TenantId = tenantId, From = from, To = to, Tag = normalizedTag },
+            cancellationToken: ct))).ToDictionary(r => r.Hour);
+
+        // dias COM dado no recorte: denominador da média de pessoas simultâneas
+        var daysWithData = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT count(DISTINCT s.summary_date)::int
+            FROM daily_device_summaries s
+            JOIN devices d ON d.id = s.device_id AND d.tenant_id = s.tenant_id
+            WHERE s.tenant_id = @TenantId
+              AND d.status <> 'archived'
+              AND s.summary_date BETWEEN @From::date AND @To::date
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
+              AND s.seconds_on > 0
+            """,
+            new { TenantId = tenantId, From = from, To = to, Tag = normalizedTag },
+            cancellationToken: ct));
+
+        var hours = Enumerable.Range(0, 24).Select(h =>
+        {
+            rows.TryGetValue(h, out var row);
+            var active = row?.SecondsActive ?? 0;
+            var idle = row?.SecondsIdle ?? 0;
+            double? avg = daysWithData > 0 ? Math.Round(active / 3600.0 / daysWithData, 4) : null;
+            return new ActivityByHourItemResponse(h, active, idle, avg);
+        }).ToList();
+
+        return Ok(new ActivityByHourResponse(hours, daysWithData));
+    }
+
+    // ------------------------------------------------------------ F6: visão geral
+    /// <summary>
+    /// GET /api/v1/dashboard/overview?from&amp;to[&amp;tag][&amp;compare] (F6): a Visão Geral numa
+    /// chamada. O ÍNDICE DE PRODUTIVIDADE e a COBERTURA DA CLASSIFICAÇÃO são calculados aqui —
+    /// fonte única da fórmula (decisão 4 do spec de 07/09/2026), e o portal nunca recalcula.
+    /// compare=true devolve também o período imediatamente anterior de MESMA duração, que é a
+    /// base de toda variação exibida na tela. Agregado de equipe: sem auditoria.
+    /// </summary>
+    [HttpGet("overview")]
+    public async Task<IActionResult> Overview(
+        [FromQuery(Name = "from")] string? from,
+        [FromQuery(Name = "to")] string? to,
+        [FromQuery(Name = "tag")] string? tag,
+        [FromQuery(Name = "compare")] bool compare,
+        CancellationToken ct)
+    {
+        var invalid = ValidateRange(from, to);
+        if (invalid is not null) return invalid;
+
+        var fromDay = DateOnly.ParseExact(from!, "yyyy-MM-dd");
+        var toDay = DateOnly.ParseExact(to!, "yyyy-MM-dd");
+        var tenantId = Auth.CurrentUser.TenantId(User);
+        var normalizedTag = NormalizeTeamTag(tag);
+
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+
+        var days = await OverviewDaysAsync(connection, tenantId, fromDay, toDay, normalizedTag, ct);
+        var totals = await OverviewTotalsAsync(connection, tenantId, fromDay, toDay, normalizedTag, ct);
+
+        OverviewTotalsResponse? previous = null;
+        if (compare)
+        {
+            // período imediatamente anterior, de mesma duração (semana vs semana, mês vs mês)
+            var length = toDay.DayNumber - fromDay.DayNumber + 1;
+            var prevTo = fromDay.AddDays(-1);
+            var prevFrom = prevTo.AddDays(-(length - 1));
+            previous = await OverviewTotalsAsync(connection, tenantId, prevFrom, prevTo, normalizedTag, ct);
+        }
+
+        var goals = await connection.QuerySingleAsync<GoalsRow>(new CommandDefinition(
+            """
+            SELECT goal_weekly_active_hours AS weekly, goal_work_related_pct AS pct
+            FROM organizations WHERE id = @TenantId
+            """,
+            new { TenantId = tenantId }, cancellationToken: ct));
+
+        return Ok(new OverviewResponse(
+            new OverviewPeriodResponse(
+                fromDay.ToString("yyyy-MM-dd"), toDay.ToString("yyyy-MM-dd"),
+                toDay.DayNumber - fromDay.DayNumber + 1),
+            totals, previous, days,
+            new OverviewGoalsResponse(goals.Weekly, goals.Pct)));
+    }
+
+    /// <summary>Série por dia do overview: mesmos baldes do summary, sem a linha de totais.</summary>
+    private static async Task<List<DashboardSummaryDayResponse>> OverviewDaysAsync(
+        NpgsqlConnection connection, Guid tenantId, DateOnly from, DateOnly to, string? tag, CancellationToken ct) =>
+        (await connection.QueryAsync<SummaryRow>(new CommandDefinition(
+            """
+            SELECT s.summary_date::text AS date,
+                   COALESCE(sum(s.seconds_active), 0)::bigint AS seconds_active,
+                   COALESCE(sum(s.seconds_idle), 0)::bigint AS seconds_idle,
+                   COALESCE(sum(s.seconds_locked), 0)::bigint AS seconds_locked,
+                   COALESCE(sum(s.seconds_on), 0)::bigint AS seconds_on,
+                   COALESCE(sum(s.seconds_work_related), 0)::bigint AS seconds_work_related,
+                   COALESCE(sum(s.seconds_neutral), 0)::bigint AS seconds_neutral,
+                   COALESCE(sum(s.seconds_not_work_related), 0)::bigint AS seconds_not_work_related,
+                   COALESCE(sum(s.seconds_unclassified), 0)::bigint AS seconds_unclassified,
+                   COALESCE(bool_or(s.data_incomplete), false) AS data_incomplete,
+                   count(DISTINCT s.device_id)::int AS device_count
+            FROM daily_device_summaries s
+            JOIN devices d ON d.id = s.device_id AND d.tenant_id = s.tenant_id
+            WHERE s.tenant_id = @TenantId
+              AND d.status <> 'archived'
+              AND s.summary_date BETWEEN @From::date AND @To::date
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
+            GROUP BY s.summary_date
+            ORDER BY s.summary_date
+            """,
+            new
+            {
+                TenantId = tenantId,
+                From = from.ToString("yyyy-MM-dd"),
+                To = to.ToString("yyyy-MM-dd"),
+                Tag = tag,
+            },
+            cancellationToken: ct)))
+        .Select(r => new DashboardSummaryDayResponse(
+            r.Date!, r.SecondsActive, r.SecondsIdle, r.SecondsLocked, r.SecondsOn,
+            r.SecondsWorkRelated, r.SecondsNeutral, r.SecondsNotWorkRelated, r.SecondsUnclassified,
+            r.DataIncomplete, r.DeviceCount))
+        .ToList();
+
+    /// <summary>
+    /// Totais do período + índice e cobertura. person_count/person_days ignoram a lane-máquina
+    /// (UUID zero) porque máquina não é pessoa (decisão 8 do spec).
+    /// </summary>
+    private static async Task<OverviewTotalsResponse> OverviewTotalsAsync(
+        NpgsqlConnection connection, Guid tenantId, DateOnly from, DateOnly to, string? tag, CancellationToken ct)
+    {
+        var row = await connection.QuerySingleAsync<OverviewTotalsRow>(new CommandDefinition(
+            """
+            SELECT COALESCE(sum(s.seconds_on), 0)::bigint AS seconds_on,
+                   COALESCE(sum(s.seconds_active), 0)::bigint AS seconds_active,
+                   COALESCE(sum(s.seconds_idle), 0)::bigint AS seconds_idle,
+                   COALESCE(sum(s.seconds_locked), 0)::bigint AS seconds_locked,
+                   COALESCE(sum(s.seconds_work_related), 0)::bigint AS seconds_work_related,
+                   COALESCE(sum(s.seconds_neutral), 0)::bigint AS seconds_neutral,
+                   COALESCE(sum(s.seconds_not_work_related), 0)::bigint AS seconds_not_work_related,
+                   COALESCE(sum(s.seconds_unclassified), 0)::bigint AS seconds_unclassified,
+                   COALESCE(bool_or(s.data_incomplete), false) AS data_incomplete,
+                   count(DISTINCT s.device_id)::int AS device_count,
+                   count(DISTINCT s.device_user_id) FILTER (
+                       WHERE s.device_user_id <> '00000000-0000-0000-0000-000000000000'::uuid
+                         AND s.seconds_on > 0)::int AS person_count,
+                   count(*) FILTER (
+                       WHERE s.device_user_id <> '00000000-0000-0000-0000-000000000000'::uuid
+                         AND s.seconds_on > 0)::int AS person_days
+            FROM daily_device_summaries s
+            JOIN devices d ON d.id = s.device_id AND d.tenant_id = s.tenant_id
+            WHERE s.tenant_id = @TenantId
+              AND d.status <> 'archived'
+              AND s.summary_date BETWEEN @From::date AND @To::date
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
+            """,
+            new
+            {
+                TenantId = tenantId,
+                From = from.ToString("yyyy-MM-dd"),
+                To = to.ToString("yyyy-MM-dd"),
+                Tag = tag,
+            },
+            cancellationToken: ct));
+
+        var classified = row.SecondsWorkRelated + row.SecondsNeutral + row.SecondsNotWorkRelated;
+        double? index = classified > 0
+            ? Math.Round((double)row.SecondsWorkRelated / classified, 4)
+            : null;
+        double? coverage = row.SecondsActive > 0
+            ? Math.Round((double)(row.SecondsActive - row.SecondsUnclassified) / row.SecondsActive, 4)
+            : null;
+
+        return new OverviewTotalsResponse(
+            row.SecondsOn, row.SecondsActive, row.SecondsIdle, row.SecondsLocked,
+            row.SecondsWorkRelated, row.SecondsNeutral, row.SecondsNotWorkRelated, row.SecondsUnclassified,
+            index, coverage, row.DeviceCount, row.PersonCount, row.PersonDays, row.DataIncomplete);
+    }
+
     /// <summary>
     /// from/to no fuso do tenant, inclusivos, formato yyyy-MM-dd; from ≤ to e janela
     /// de no máximo 92 dias — fora disso, 400 ProblemDetails.
@@ -288,6 +503,24 @@ public class DashboardController(
         long SecondsUnclassified,
         bool DataIncomplete,
         int DeviceCount);
+
+    private sealed record HourRow(int Hour, long SecondsActive, long SecondsIdle);
+
+    private sealed record OverviewTotalsRow(
+        long SecondsOn,
+        long SecondsActive,
+        long SecondsIdle,
+        long SecondsLocked,
+        long SecondsWorkRelated,
+        long SecondsNeutral,
+        long SecondsNotWorkRelated,
+        long SecondsUnclassified,
+        bool DataIncomplete,
+        int DeviceCount,
+        int PersonCount,
+        int PersonDays);
+
+    private sealed record GoalsRow(int? Weekly, int? Pct);
 
     private sealed record TopAppRow(
         Guid AppId,
