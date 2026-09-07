@@ -8,7 +8,11 @@ import { cn } from "@/lib/utils";
 const baseTabs = [
   { to: "/configuracoes/usuarios", label: "Usuários" },
   { to: "/configuracoes/chaves", label: "Chaves de instalação" },
-  { to: "/configuracoes/categorias", label: "Categorias" },
+  // F6 (decisão 1): "Categorias" virou "Classificação" - a aba passou a
+  // hospedar também o vocabulário da organização, a fila por impacto e o
+  // recálculo de histórico, não só o CRUD de categorias. A ROTA continua
+  // /configuracoes/categorias de propósito (link salvo/compartilhado não quebra).
+  { to: "/configuracoes/categorias", label: "Classificação" },
   { to: "/configuracoes/privacidade", label: "Privacidade" },
   // Organização: campos de transparência (finalidade, DPO, vigência). GET é
   // PolicyAccess (qualquer papel lê); a edição é gated dentro da página.
@@ -44,7 +48,7 @@ export function ConfiguracoesLayout() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Administração da organização: usuários do portal, chaves de instalação, categorias,
+          Administração da organização: usuários do portal, chaves de instalação, classificação,
           privacidade e transparência.
         </p>
       </div>

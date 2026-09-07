@@ -1444,3 +1444,37 @@ export interface ReaggregationResponse {
   enqueued: number;
   days: number;
 }
+
+// =============================================================================
+// F6 — Classificação 2.0 (Configurações → Classificação): cobertura da
+// classificação em GET /app-catalog e vocabulário da organização em PATCH
+// /organization. Tipos À PARTE porque as fatias anteriores já fecharam
+// AppCatalogResponse e OrganizationPatchRequest acima e esta fatia não pode
+// editá-los — aqui entram só os campos NOVOS que o backend já devolve/aceita.
+// (O botão "Recalcular histórico" usa ReaggregationRequest/Response acima,
+// sem precisar de tipo novo.)
+// =============================================================================
+
+/**
+ * GET /app-catalog nesta fase (aceita também `sort=impacto`, sem mudar o
+ * formato dos itens): mesmo formato de AppCatalogResponse, mais a COBERTURA da
+ * classificação em TEMPO (decisão 4 do spec de 07/09/2026) -
+ * uncategorized_seconds_active e total_seconds_active, mesma janela de 30 dias
+ * dos itens. cobertura = (total_seconds_active − uncategorized_seconds_active)
+ * ÷ total_seconds_active (ver components/apps/classificationCoverage.ts).
+ */
+export interface AppCatalogResponseF6 extends AppCatalogResponse {
+  uncategorized_seconds_active: number;
+  total_seconds_active: number;
+}
+
+/**
+ * Body de `PATCH /api/v1/organization` usado só pelo seletor de vocabulário
+ * (F6, decisão 1) — o backend aceita este campo junto dos demais de
+ * OrganizationPatchRequest (acima), mas esta tela só precisa enviar este.
+ * Troca de vocabulário é só ROTULAGEM (nenhum balde muda de valor): o backend
+ * não reagrega nada quando este campo muda.
+ */
+export interface OrganizationVocabularyPatchRequest {
+  classification_vocabulary: "produtividade" | "trabalho";
+}

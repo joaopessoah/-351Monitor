@@ -1,36 +1,64 @@
 // =============================================================================
-// Configurações > Categorias (F3.3, Seção 8.7): duas abas internas.
-// - "Categorias": tabela nome/classificação/cor/apps mapeados com criar,
-//   editar (renomear/mudar classificação - reagrega 30 dias no backend) e
-//   excluir (confirmação textual: os apps mapeados viram Não categorizado e
-//   os últimos 30 dias são reagregados).
+// Configurações > Classificação (F3.3 + F6, Seção 8.7 e spec 07/09/2026): três
+// abas internas (a ROTA continua /configuracoes/categorias - link salvo/aba
+// renomeada em ConfiguracoesLayout.tsx não quebra).
+// - "Categorias": vocabulário da organização (seletor Produtividade/Trabalho),
+//   recálculo de histórico sob demanda e a tabela nome/classificação/cor/apps
+//   mapeados com criar, editar (renomear/mudar classificação - reagrega 30
+//   dias no backend) e excluir (confirmação textual: os apps mapeados viram
+//   Não categorizado e os últimos 30 dias são reagregados).
 // - "Mapeamento de apps": busca no catálogo do tenant (GET /app-catalog,
 //   janela fixa de 30 dias, máx. 500 itens), contador de não categorizados,
 //   select de categoria por linha e recategorização em LOTE (N PUTs
 //   sequenciais com progresso simples).
-// Admin/owner editam; viewer é somente leitura. Vocabulário FIXO da
-// classificação (lib/classification.ts) - jamais os adjetivos vetados.
+// - "Fila de classificação" (F6, decisão 4): cobertura da classificação em %
+//   + quanto falta em horas/apps para 95%, fila dos apps SEM categoria
+//   ordenada por impacto (GET /app-catalog?sort=impacto), sugestão do
+//   dicionário por linha e em lote com prévia obrigatória.
+// Admin/owner editam; viewer é somente leitura. Rótulos de classificação vêm
+// de lib/classification.ts (fixos OU no vocabulário da organização) - jamais
+// os adjetivos vetados.
 // =============================================================================
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Info, Pencil, Plus, Tags, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  History,
+  Info,
+  Lightbulb,
+  Pencil,
+  Plus,
+  Tags,
+  Trash2,
+} from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import {
+  CLASSIFICATION_FRAMING,
   classificationColor,
   classificationLabel,
+  classificationVocabularyOf,
   UNCATEGORIZED_LABEL,
+  VOCABULARY_OPTIONS,
 } from "@/lib/classification";
+import type { ClassificationVocabulary } from "@/lib/classification";
 import { formatDuration } from "@/lib/format";
 import { genericErrorMessage } from "@/lib/messages";
+import { formatHours, formatPct } from "@/lib/period";
 import { isAdmin } from "@/lib/roles";
 import type {
   AppCatalogResponse,
+  AppCatalogResponseF6,
   CategoriesResponse,
   CategoryCreateRequest,
   CategoryItem,
   CategoryUpdateRequest,
   MeResponse,
+  OrganizationVocabularyPatchRequest,
+  ReaggregationRequest,
+  ReaggregationResponse,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -49,7 +77,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   CategoryInlineSelect,
   invalidateAppCategoryData,
+  useSetAppCategory,
 } from "@/components/apps/CategoryInlineSelect";
+import {
+  appsToCloseGap,
+  classificationCoverage,
+  COVERAGE_TARGET,
+  coverageGap,
+} from "@/components/apps/classificationCoverage";
+import { useApplyCategoryBatch } from "@/components/apps/useApplyCategoryBatch";
 
 // Classes do grupo segmentado (mesmo padrão da timeline/dashboard).
 const segmentedButton = "rounded-[5px] px-3 text-xs font-medium transition-colors";
@@ -61,6 +97,12 @@ const selectClass = cn(
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
 );
 
+/** Select compacto (largura automática, h-9) - Vocabulário e Recalcular histórico. */
+const compactSelectClass = cn(
+  "h-9 rounded-md border border-input bg-card px-3 text-sm",
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+);
+
 /** 409 = nome duplicado no tenant; o resto cai na mensagem genérica. */
 function categoryErrorMessage(err: unknown): string {
   if (err instanceof ApiError && err.status === 409) {
@@ -69,8 +111,31 @@ function categoryErrorMessage(err: unknown): string {
   return genericErrorMessage(err);
 }
 
+type CategoriasTabId = "categorias" | "mapeamento" | "fila";
+
+/** ?tab= inválido ou ausente cai em "categorias" (o default de sempre, sem query na URL). */
+function parseTab(raw: string | null): CategoriasTabId {
+  return raw === "mapeamento" || raw === "fila" ? raw : "categorias";
+}
+
 export function CategoriasPage() {
-  const [tab, setTab] = useState<"categorias" | "mapeamento">("categorias");
+  // Tab na URL (não só em estado local): a AppsPage linka direto para
+  // ?tab=fila, e a rota base /configuracoes/categorias continua abrindo em
+  // "Categorias" - link salvo/compartilhado de antes da F6 não muda de aba.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = parseTab(searchParams.get("tab"));
+
+  function setTab(next: CategoriasTabId): void {
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (next === "categorias") params.delete("tab");
+        else params.set("tab", next);
+        return params;
+      },
+      { replace: true },
+    );
+  }
 
   const meQuery = useQuery({
     queryKey: ["me"],
@@ -83,7 +148,7 @@ export function CategoriasPage() {
     <div className="space-y-4">
       <div
         role="group"
-        aria-label="Seções de categorias"
+        aria-label="Seções de classificação"
         className="inline-flex h-9 items-stretch rounded-md border border-input bg-card p-0.5"
       >
         <button
@@ -102,9 +167,23 @@ export function CategoriasPage() {
         >
           Mapeamento de apps
         </button>
+        <button
+          type="button"
+          aria-pressed={tab === "fila"}
+          onClick={() => setTab("fila")}
+          className={cn(segmentedButton, tab === "fila" ? segmentedOn : segmentedOff)}
+        >
+          Fila de classificação
+        </button>
       </div>
 
-      {tab === "categorias" ? <CategoriasTab admin={admin} /> : <MapeamentoTab admin={admin} />}
+      {tab === "categorias" ? (
+        <CategoriasTab admin={admin} me={meQuery.data} />
+      ) : tab === "mapeamento" ? (
+        <MapeamentoTab admin={admin} />
+      ) : (
+        <FilaTab admin={admin} />
+      )}
     </div>
   );
 }
@@ -113,7 +192,7 @@ export function CategoriasPage() {
 // Aba "Categorias" - CRUD
 // -----------------------------------------------------------------------------
 
-function CategoriasTab({ admin }: { admin: boolean }) {
+function CategoriasTab({ admin, me }: { admin: boolean; me: MeResponse | undefined }) {
   const categoriesQuery = useQuery({
     queryKey: ["categories"],
     queryFn: () => api<CategoriesResponse>("/categories"),
@@ -126,6 +205,12 @@ function CategoriasTab({ admin }: { admin: boolean }) {
 
   return (
     <>
+      {/* F6 (decisões 1 e 7): vocabulário da organização e recálculo de
+          histórico são configuração GLOBAL da classificação - vivem acima do
+          CRUD de categorias em vez de dentro dele. */}
+      <VocabularyCard me={me} admin={admin} />
+      <ReaggregationCard admin={admin} />
+
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -861,5 +946,637 @@ function MapeamentoTab({ admin }: { admin: boolean }) {
         )}
       </div>
     </Card>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Vocabulário da organização (F6, decisão 1) - PATCH /organization
+// -----------------------------------------------------------------------------
+
+/**
+ * Seletor Produtividade/Trabalho: os DADOS por trás são os mesmos nos dois
+ * conjuntos (classification +1/0/-1 e o balde sem classificação) - só o
+ * RÓTULO muda, e o backend não reagrega nada nesta troca (é rotulagem pura).
+ * Lê o vigente do /me (classificationVocabularyOf) em vez de um GET /organization
+ * à parte: o /me já é a query de sessão do portal, toda tela que mostra
+ * classificação depende dela.
+ */
+function VocabularyCard({ me, admin }: { me: MeResponse | undefined; admin: boolean }) {
+  const queryClient = useQueryClient();
+  const current = classificationVocabularyOf(me);
+  const [pending, setPending] = useState<ClassificationVocabulary | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [justSaved, setJustSaved] = useState(false);
+
+  const mutation = useMutation({
+    mutationFn: (vocabulary: ClassificationVocabulary) => {
+      const body: OrganizationVocabularyPatchRequest = { classification_vocabulary: vocabulary };
+      return api<unknown>("/organization", { method: "PATCH", body });
+    },
+    onSuccess: async () => {
+      // /me carrega o rótulo em toda tela que mostra classificação; /organization
+      // é lido pela aba Organização se o admin passar por lá na mesma sessão.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["me"] }),
+        queryClient.invalidateQueries({ queryKey: ["organization"] }),
+      ]);
+      setPending(null);
+      setJustSaved(true);
+    },
+    onError: (err) => {
+      setPending(null);
+      setError(genericErrorMessage(err));
+    },
+  });
+
+  function choose(vocabulary: ClassificationVocabulary): void {
+    if (!admin || vocabulary === current || mutation.isPending) return;
+    setError(null);
+    setJustSaved(false);
+    setPending(vocabulary);
+    mutation.mutate(vocabulary);
+  }
+
+  const displayed = pending ?? current;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Vocabulário de classificação</CardTitle>
+        <CardDescription>
+          Como os rótulos aparecem em toda a interface. Os dados por trás são os mesmos nos dois
+          conjuntos - trocar não reagrega nada, só o texto muda.
+          {!admin && " Somente administradores e proprietários editam."}
+        </CardDescription>
+      </CardHeader>
+      <div className="space-y-3 px-6 pb-6">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {VOCABULARY_OPTIONS.map((opt) => {
+            const selected = displayed === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                aria-pressed={selected}
+                disabled={!admin || mutation.isPending}
+                onClick={() => choose(opt.value)}
+                className={cn(
+                  "rounded-md border px-4 py-3 text-left text-sm transition-colors",
+                  selected ? "border-primary bg-primary/5" : "border-input bg-card",
+                  admin && "hover:border-primary/60",
+                  "disabled:cursor-not-allowed",
+                  mutation.isPending && pending === opt.value && "opacity-70",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                )}
+              >
+                <span className="flex items-center gap-2 font-medium">
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0 rounded-full border-2",
+                      selected ? "border-primary bg-primary" : "border-input",
+                    )}
+                  />
+                  {opt.label}
+                </span>
+                <span className="mt-1 block text-xs text-muted-foreground">{opt.sample}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="flex items-start gap-2 text-xs text-muted-foreground">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>Enquadramento fixo ao lado dos rótulos, em toda tela: "{CLASSIFICATION_FRAMING}".</span>
+        </p>
+        {error !== null && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        {justSaved && error === null && (
+          <p role="status" className="text-sm text-viz-produtivo">
+            Vocabulário atualizado.
+          </p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Recalcular histórico (F6, decisão 7) - POST /reaggregation
+// -----------------------------------------------------------------------------
+
+/** Janelas oferecidas pela tela - todas dentro do teto de 366 dias do backend. */
+const REAGGREGATION_OPTIONS = [30, 90, 180, 365] as const;
+
+function reaggregationLabel(days: number): string {
+  return days === 365 ? "365 dias (12 meses)" : `${days} dias`;
+}
+
+/**
+ * Ação de custo alto (spec Seção 2.4/decisão 7): reaplica a classificação
+ * VIGENTE sobre um período passado, além dos 30 dias que a curadoria do dia a
+ * dia já reagrega sozinha. Só Admin+ - a tela nem renderiza o card para Viewer,
+ * não há nada para o Viewer observar aqui (é ação, não configuração salva).
+ */
+function ReaggregationCard({ admin }: { admin: boolean }) {
+  const [days, setDays] = useState<(typeof REAGGREGATION_OPTIONS)[number]>(30);
+  const [result, setResult] = useState<ReaggregationResponse | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      const body: ReaggregationRequest = { days };
+      return api<ReaggregationResponse>("/reaggregation", { method: "POST", body });
+    },
+    onSuccess: (response) => setResult(response),
+  });
+
+  if (!admin) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Recalcular histórico</CardTitle>
+        <CardDescription>
+          Reaplica a classificação vigente (categorias e mapeamentos de hoje) sobre um período
+          passado. Útil depois de reorganizar categorias: o dia a dia só reagrega automaticamente
+          os últimos 30 dias.
+        </CardDescription>
+      </CardHeader>
+      <div className="space-y-3 px-6 pb-6">
+        <div className="flex flex-wrap items-center gap-3">
+          <Label htmlFor="reaggregation-days" className="text-sm">
+            Janela
+          </Label>
+          <select
+            id="reaggregation-days"
+            value={days}
+            onChange={(e) => {
+              setDays(Number(e.target.value) as (typeof REAGGREGATION_OPTIONS)[number]);
+              setResult(null);
+            }}
+            disabled={mutation.isPending}
+            className={cn(compactSelectClass, "w-auto")}
+          >
+            {REAGGREGATION_OPTIONS.map((d) => (
+              <option key={d} value={d}>
+                {reaggregationLabel(d)}
+              </option>
+            ))}
+          </select>
+          <Button
+            size="sm"
+            className="h-9"
+            disabled={mutation.isPending}
+            onClick={() => {
+              setResult(null);
+              mutation.mutate();
+            }}
+          >
+            <History className="h-4 w-4" aria-hidden />
+            {mutation.isPending ? "Enfileirando…" : "Recalcular histórico"}
+          </Button>
+        </div>
+        <div
+          role="note"
+          className="flex items-start gap-2 rounded-md border border-viz-neutro/30 bg-viz-neutro/10 px-3 py-2 text-xs text-viz-neutro"
+        >
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>
+            Operação assíncrona: o servidor drena a fila em ciclos de 15 minutos, e numa frota
+            grande pode levar horas até terminar. O portal continua utilizável enquanto isso.
+          </span>
+        </div>
+        {mutation.isError && (
+          <p role="alert" className="text-sm text-destructive">
+            {genericErrorMessage(mutation.error)}
+          </p>
+        )}
+        {result !== null && (
+          <p role="status" className="text-sm text-viz-produtivo">
+            {result.enqueued === 0
+              ? `Nenhum par (dispositivo, dia) pendente nos últimos ${result.days} dias - o histórico já reflete a classificação vigente.`
+              : `${result.enqueued} pares (dispositivo, dia) enfileirados para reagregação nos últimos ${result.days} dias.`}
+          </p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Aba "Fila de classificação" (F6, decisão 4) - GET /app-catalog?sort=impacto
+// -----------------------------------------------------------------------------
+
+function FilaTab({ admin }: { admin: boolean }) {
+  const categoriesQuery = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => api<CategoriesResponse>("/categories"),
+  });
+  const categories = categoriesQuery.data?.items ?? [];
+
+  // Mesma janela de 30 dias da Mapeamento de apps, mas ordenada por IMPACTO
+  // (sem categoria primeiro, por tempo ativo desc) - é a fila em si.
+  const catalogQuery = useQuery({
+    queryKey: ["app-catalog", { uncategorized: true, sort: "impacto", q: "" }],
+    queryFn: () => api<AppCatalogResponseF6>("/app-catalog?uncategorized=true&sort=impacto"),
+    staleTime: 60_000,
+  });
+  const data = catalogQuery.data;
+  const items = useMemo(() => data?.items ?? [], [data]);
+
+  const coverage = useMemo(
+    () => (data === undefined ? null : classificationCoverage(data.total_seconds_active, data.uncategorized_seconds_active)),
+    [data],
+  );
+  const gap = useMemo(
+    () => (data === undefined ? null : coverageGap(data.total_seconds_active, data.uncategorized_seconds_active)),
+    [data],
+  );
+  // appsToCloseGap assume a fila JÁ ordenada por impacto (garantido pelo sort=impacto acima).
+  const appsGap = useMemo(() => (gap === null ? null : appsToCloseGap(items, gap.secondsToGo)), [items, gap]);
+
+  // Sugestão do dicionário por app - mesmo casamento nome->id da AppsPage
+  // (default_category é um NOME canônico; o lote e o PUT individual precisam de id).
+  const categoryIdByName = useMemo(() => {
+    const byName = new Map<string, string>();
+    for (const c of categories) if (c.name !== UNCATEGORIZED_LABEL) byName.set(c.name, c.id);
+    return byName;
+  }, [categories]);
+
+  const suggestionByApp = useMemo(() => {
+    const map = new Map<string, { categoryId: string; categoryName: string }>();
+    for (const item of items) {
+      if (item.default_category === null) continue;
+      const categoryId = categoryIdByName.get(item.default_category);
+      if (categoryId === undefined) continue;
+      map.set(item.app_id, { categoryId, categoryName: item.default_category });
+    }
+    return map;
+  }, [items, categoryIdByName]);
+
+  const [rowError, setRowError] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [appliedCount, setAppliedCount] = useState<number | null>(null);
+  // "Ver mesmo assim" no estado vazio (cobertura já alta, mas ainda há sobras de baixo impacto).
+  const [forceShow, setForceShow] = useState(false);
+
+  const applyOne = useSetAppCategory(() =>
+    setRowError("Não foi possível aplicar a categoria. Tente novamente."),
+  );
+  const batch = useApplyCategoryBatch();
+
+  // Candidatos ao lote: todo item da fila com sugestão casada (mesma trava da
+  // AppsPage - só o que a organização ainda NÃO categorizou entra, e aqui TODOS
+  // os itens já são "sem categoria" por definição do filtro uncategorized=true).
+  const previewItems = useMemo(() => items.filter((i) => suggestionByApp.has(i.app_id)), [items, suggestionByApp]);
+
+  const suggestionGroups = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const i of previewItems) {
+      const s = suggestionByApp.get(i.app_id)!;
+      counts.set(s.categoryName, (counts.get(s.categoryName) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "pt-BR"));
+  }, [previewItems, suggestionByApp]);
+
+  async function handleApplyBatch(): Promise<void> {
+    try {
+      const applied = await batch.apply(
+        previewItems.map((i) => ({ appId: i.app_id, categoryId: suggestionByApp.get(i.app_id)!.categoryId })),
+      );
+      setPreviewOpen(false);
+      setAppliedCount(applied);
+    } catch {
+      // erro já fica em batch.error - o diálogo continua aberto para o admin ver e tentar de novo.
+    }
+  }
+
+  const failed = catalogQuery.isError && data === undefined;
+  const targetPct = Math.round(COVERAGE_TARGET * 100);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Cobertura da classificação</CardTitle>
+          <CardDescription>
+            Últimos 30 dias · quanto do tempo ativo está em apps com categoria.
+          </CardDescription>
+        </CardHeader>
+        <div className="px-6 pb-6">
+          {failed ? (
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <AlertTriangle className="h-8 w-8 text-destructive" aria-hidden />
+              <p className="text-sm text-muted-foreground">{genericErrorMessage(catalogQuery.error)}</p>
+              <Button variant="outline" onClick={() => void catalogQuery.refetch()}>
+                Tentar novamente
+              </Button>
+            </div>
+          ) : data === undefined ? (
+            <div className="space-y-3">
+              <Skeleton className="h-8 w-32" />
+              <Skeleton className="h-2 w-full max-w-md" />
+              <Skeleton className="h-4 w-64" />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-baseline gap-3">
+                <span className="text-3xl font-semibold tabular-nums">{formatPct(coverage)}</span>
+                <span className="text-sm text-muted-foreground">cobertos nos últimos 30 dias</span>
+              </div>
+              <span aria-hidden className="block h-2 w-full max-w-md overflow-hidden rounded-full bg-secondary">
+                <span
+                  className="block h-full rounded-full bg-viz-produtivo"
+                  style={{ width: coverage !== null ? `${Math.round(coverage * 100)}%` : "0%" }}
+                />
+              </span>
+              {gap !== null && !gap.metTarget && appsGap !== null && (
+                <p className="text-sm text-muted-foreground">
+                  Faltam classificar{" "}
+                  <strong className="font-semibold text-foreground">
+                    {appsGap.exact ? "" : "pelo menos "}
+                    {appsGap.count === 1 ? "1 app" : `${appsGap.count} apps`}
+                  </strong>{" "}
+                  (~{formatHours(gap.secondsToGo)} h) para chegar a {targetPct}% de cobertura.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {rowError !== null && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
+          <span>{rowError}</span>
+          <Button variant="outline" size="sm" onClick={() => setRowError(null)}>
+            Fechar
+          </Button>
+        </div>
+      )}
+
+      {appliedCount !== null && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-viz-produtivo/30 bg-viz-produtivo/10 px-3 py-2 text-sm text-viz-produtivo"
+        >
+          <span>{appliedCount === 1 ? "1 app categorizado." : `${appliedCount} apps categorizados.`}</span>
+          <Button variant="outline" size="sm" onClick={() => setAppliedCount(null)}>
+            Fechar
+          </Button>
+        </div>
+      )}
+
+      {data !== undefined && gap !== null && gap.metTarget && (
+        // Estado vazio (Seção 8.9): cobertura já alta - desenhado, não só "lista vazia".
+        <Card>
+          <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-viz-produtivo/10">
+              <CheckCircle2 className="h-6 w-6 text-viz-produtivo" aria-hidden />
+            </span>
+            <p className="text-base font-medium">Cobertura acima da meta</p>
+            <p className="max-w-md text-sm text-muted-foreground">
+              {formatPct(coverage)} do tempo ativo dos últimos 30 dias já está em apps com
+              categoria - acima da meta de {targetPct}%.
+            </p>
+            {items.length > 0 && !forceShow && (
+              <Button variant="outline" size="sm" onClick={() => setForceShow(true)}>
+                {items.length === 1
+                  ? "Ver mesmo assim o 1 app sem categoria"
+                  : `Ver mesmo assim os ${items.length} apps sem categoria`}
+              </Button>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {data !== undefined && (gap === null || !gap.metTarget || forceShow) && (
+        <>
+          {admin && previewItems.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-viz-neutro/30 bg-viz-neutro/10 px-3 py-2 text-sm">
+              <span className="flex items-start gap-2 text-viz-neutro">
+                <Lightbulb className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                <span>
+                  O dicionário sugere categoria para{" "}
+                  <strong className="font-semibold tabular-nums">
+                    {previewItems.length === 1 ? "1 app" : `${previewItems.length} apps`}
+                  </strong>{" "}
+                  desta fila. Nada é aplicado sem a sua confirmação.
+                </span>
+              </span>
+              <Button variant="outline" size="sm" className="h-8" onClick={() => setPreviewOpen(true)}>
+                Ver sugestões
+              </Button>
+            </div>
+          )}
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Apps sem categoria</CardTitle>
+              <CardDescription>Ordenado por horas de impacto nos últimos 30 dias.</CardDescription>
+            </CardHeader>
+            <div className="pb-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      <th scope="col" className={cn("py-2", admin ? "px-2" : "px-6")}>
+                        App
+                      </th>
+                      {admin && (
+                        <th scope="col" className="px-3 py-2">
+                          Categoria
+                        </th>
+                      )}
+                      <th scope="col" className="px-3 py-2 text-right">
+                        Impacto (30 dias)
+                      </th>
+                      <th scope="col" className="px-6 py-2 text-right">
+                        Dispositivos
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.length === 0 ? (
+                      <tr>
+                        <td colSpan={admin ? 4 : 3} className="px-6 py-10 text-center text-sm text-muted-foreground">
+                          Nenhum app sem categoria.
+                        </td>
+                      </tr>
+                    ) : (
+                      items.map((item) => {
+                        const name = item.custom_display_name ?? item.display_name;
+                        const suggestion = suggestionByApp.get(item.app_id) ?? null;
+                        return (
+                          <tr key={item.app_id} className="border-b transition-colors last:border-b-0 hover:bg-accent/50">
+                            <td className={cn("py-2", admin ? "px-2" : "px-6")}>
+                              <p className="max-w-[20rem] truncate font-medium">{name}</p>
+                              <p className="max-w-[20rem] truncate text-xs text-muted-foreground">
+                                {item.process_name}
+                              </p>
+                            </td>
+                            {admin && (
+                              <td className="px-3 py-2">
+                                <div className="space-y-1">
+                                  <CategoryInlineSelect
+                                    appId={item.app_id}
+                                    categoryId={null}
+                                    categoryName={null}
+                                    customDisplayName={item.custom_display_name}
+                                    categories={categories}
+                                    disabled={batch.progress !== null}
+                                    onError={() =>
+                                      setRowError("Não foi possível salvar a categoria. Tente novamente.")
+                                    }
+                                  />
+                                  {suggestion !== null && (
+                                    <button
+                                      type="button"
+                                      disabled={batch.progress !== null || applyOne.isPending}
+                                      title={`Aplicar a categoria ${suggestion.categoryName} a este app`}
+                                      onClick={() =>
+                                        applyOne.mutate({
+                                          appId: item.app_id,
+                                          categoryId: suggestion.categoryId,
+                                          customDisplayName: item.custom_display_name,
+                                        })
+                                      }
+                                      className={cn(
+                                        "inline-flex max-w-full items-center gap-1 rounded-sm text-left text-xs text-muted-foreground",
+                                        "transition-colors hover:text-viz-neutro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                        "disabled:cursor-not-allowed disabled:opacity-50",
+                                      )}
+                                    >
+                                      <Lightbulb className="h-3 w-3 shrink-0" aria-hidden />
+                                      <span className="truncate">Sugestão: {suggestion.categoryName} · aplicar</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            )}
+                            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                              {formatDuration(item.seconds_active_30d)}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-2 text-right tabular-nums">
+                              {item.device_count_30d}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {/* Cap de 500 itens do contrato (mesmo teto da Mapeamento de apps). */}
+              {items.length >= 500 && (
+                <p className="border-t px-6 py-3 text-xs text-muted-foreground">
+                  Mostrando os 500 apps sem categoria com mais impacto.
+                </p>
+              )}
+            </div>
+          </Card>
+        </>
+      )}
+
+      {/* Prévia obrigatória do lote - mesmo padrão da AppsPage (nada aplica sem confirmação). */}
+      <Dialog
+        open={previewOpen}
+        onOpenChange={(open) => {
+          if (!open && batch.progress === null) setPreviewOpen(false);
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="pr-8">Sugestões do dicionário de apps</DialogTitle>
+            <DialogDescription>
+              {previewItems.length === 1
+                ? "1 app sem categoria receberá a categoria abaixo."
+                : `${previewItems.length} apps sem categoria receberão as categorias abaixo.`}{" "}
+              A categoria vale para toda a organização e reagrega os últimos 30 dias.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-wrap gap-1.5">
+            {suggestionGroups.map((g) => (
+              <span
+                key={g.name}
+                className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-0.5 text-xs text-secondary-foreground"
+              >
+                {g.name}
+                <span className="tabular-nums text-muted-foreground">{g.count}</span>
+              </span>
+            ))}
+          </div>
+
+          <div className="max-h-64 overflow-y-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-card">
+                <tr className="border-b text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <th scope="col" className="px-3 py-2">
+                    App
+                  </th>
+                  <th scope="col" className="px-3 py-2">
+                    Categoria sugerida
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {previewItems.map((i) => {
+                  const s = suggestionByApp.get(i.app_id)!;
+                  return (
+                    <tr key={i.app_id} className="border-b last:border-b-0">
+                      <td className="px-3 py-1.5">
+                        <span className="block max-w-[16rem] truncate">
+                          {i.custom_display_name ?? i.display_name}
+                        </span>
+                        <span className="block max-w-[16rem] truncate text-xs text-muted-foreground">
+                          {i.process_name}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5">{s.categoryName}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {batch.error !== null && (
+            <p role="alert" className="text-sm text-destructive">
+              {batch.error}
+            </p>
+          )}
+
+          <DialogFooter>
+            {batch.progress !== null && (
+              <span className="mr-auto self-center text-xs tabular-nums text-muted-foreground">
+                Aplicando {batch.progress.done} de {batch.progress.total}…
+              </span>
+            )}
+            <Button variant="outline" disabled={batch.progress !== null} onClick={() => setPreviewOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={batch.progress !== null || previewItems.length === 0}
+              onClick={() => {
+                void handleApplyBatch();
+              }}
+            >
+              {batch.progress !== null
+                ? "Aplicando…"
+                : previewItems.length === 1
+                  ? "Aplicar sugestão em 1 app"
+                  : `Aplicar sugestões em ${previewItems.length} apps`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
