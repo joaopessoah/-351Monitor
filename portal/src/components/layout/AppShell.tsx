@@ -35,6 +35,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { GlobalSearch } from "@/components/search/GlobalSearch";
 import { PendenciasBell } from "./PendenciasBell";
 import { ShellSkeleton } from "./ShellSkeleton";
 import { FormError } from "@/components/FormError";
@@ -269,6 +270,8 @@ export function AppShell() {
             <span className="hidden rounded-full bg-secondary px-2.5 py-0.5 text-xs text-secondary-foreground sm:inline">
               {timezoneBadge(me.organization.timezone)}
             </span>
+            {/* Busca Global (F6): pessoas, apps, dispositivos e telas - Ctrl+K/⌘K. */}
+            <GlobalSearch />
           </div>
           <div className="flex items-center gap-1">
             {/* Sino de pendências: consolida o que espera ação, das mesmas

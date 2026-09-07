@@ -4,10 +4,10 @@
 // seletor segmentado, todos com estado na URL (?nivel=, ?date=, ?window=,
 // ?view=, ?tag=, ?device= - sempre replace, sem histórico):
 //
-// - MÊS (?nivel=mes): mapa de calor por colaborador × SEMANA (ordem
-//   ALFABÉTICA, jamais por índice - decisão 2 do spec). Clique numa célula
-//   abre o nível DIA naquela data. Ver MonthHeatmap.tsx para o porquê da
-//   semana no lugar do dia.
+// - MÊS (?nivel=mes): mapa de calor por colaborador × DIA (ordem ALFABÉTICA,
+//   jamais por índice - decisão 2 do spec). Clique numa célula abre o nível
+//   DIA naquela data. O mês inteiro vem de UMA consulta a /people/daily, que
+//   é a quebra (pessoa, dia) que a listagem agregada de /people não tem.
 // - DIA (?nivel=dia, DEFAULT): as faixas do dia com o resumo à direita e a
 //   navegação de dia (◀ ▶, Hoje, Ontem, teclas ← →). Clique numa faixa abre o
 //   nível DISPOSITIVO daquela máquina. Ver DayLanesPanel.tsx para o porquê de
@@ -42,7 +42,6 @@ import {
   gmtLabel,
   isIsoDate,
   localDateOf,
-  mondayOf,
   parseHmToMinutes,
   stateLabels,
 } from "@/lib/format";
@@ -55,7 +54,9 @@ import type {
   DeviceItem,
   MeResponse,
   PagedResponse,
+  PeopleDailyResponse,
   PeopleReportResponse,
+  PersonDay,
   TeamTimelineResponse,
   TimelineResponse,
 } from "@/lib/types";
@@ -82,7 +83,7 @@ import {
   MonthHeatmapSkeleton,
   MonthTable,
 } from "@/components/timeline/MonthHeatmap";
-import type { MonthPersonRow, MonthWeek } from "@/components/timeline/MonthHeatmap";
+import type { MonthPersonRow } from "@/components/timeline/MonthHeatmap";
 
 /** "terça-feira, 10 de junho" - rótulo humano do dia exibido. */
 function formatDateLabel(dateStr: string): string {
@@ -123,26 +124,19 @@ function monthLabel(dateStr: string): string {
 }
 
 /**
- * Semanas (segunda a domingo, a MESMA régua de lib/period.ts, das metas e do
- * resumo semanal) que cruzam o mês de `dateStr`, recortadas pelo primeiro dia
- * do mês e por hoje: nenhuma consulta olha para o futuro. São 4 a 6 semanas -
- * é o número de requisições do mapa.
+ * Dias do mês de `dateStr`, do dia 1 até hoje (nunca além): são as COLUNAS do
+ * mapa. O recorte por hoje é o que impede a tela de desenhar coluna de dia que
+ * ainda não aconteceu - e mantém a janela sempre dentro dos 92 dias do
+ * endpoint, já que um mês tem no máximo 31.
  */
-function monthWeeks(dateStr: string, todayStr: string): MonthWeek[] {
+function monthDays(dateStr: string, todayStr: string): string[] {
   const first = monthFirst(dateStr);
   const last = monthLast(dateStr);
   const end = last > todayStr ? todayStr : last;
   if (end < first) return [];
-  const weeks: MonthWeek[] = [];
-  let cursor = mondayOf(first);
-  while (cursor <= end) {
-    const weekEnd = addDays(cursor, 6);
-    const from = cursor < first ? first : cursor;
-    const to = weekEnd > end ? end : weekEnd;
-    if (from <= to) weeks.push({ from, to });
-    cursor = addDays(cursor, 7);
-  }
-  return weeks;
+  const days: string[] = [];
+  for (let cursor = first; cursor <= end; cursor = addDays(cursor, 1)) days.push(cursor);
+  return days;
 }
 
 const deviceStatusSuffix: Record<DeviceItem["status"], string> = {
@@ -343,8 +337,8 @@ export function LinhaDoTempoPage() {
   const dayPeople = nivel === "dia" ? dayPeopleQuery.data : undefined;
 
   // ------------------------------------------------------------------ nível mês
-  const monthWeeksList = useMemo(
-    () => (dateStr !== null && todayStr !== null ? monthWeeks(dateStr, todayStr) : []),
+  const monthDaysList = useMemo(
+    () => (dateStr !== null && todayStr !== null ? monthDays(dateStr, todayStr) : []),
     [dateStr, todayStr],
   );
   const monthRange = useMemo(() => {
@@ -354,25 +348,26 @@ export function LinhaDoTempoPage() {
     return { first, end: last > todayStr ? todayStr : last };
   }, [dateStr, todayStr]);
 
-  // UMA useQuery com Promise.all: o mapa precisa das semanas E do total do mês
-  // (o índice do mês vem calculado do servidor, o portal nunca soma índices).
-  // São 5 a 7 requisições ao MESMO endpoint - contra ~150 se a célula fosse um
-  // dia, porque não existe (ainda) quebra por pessoa × dia na resposta.
+  // O MAPA sai de UMA consulta: /people/daily devolve (pessoa, dia) do mês
+  // inteiro de uma vez. A segunda chamada, ao /people agregado, não é do mapa -
+  // é do TOTAL do mês (índice e horas do período), que o portal não pode
+  // derivar dos dias porque índice não se soma nem se tira média; e é dela que
+  // vem o `total` do aviso de truncagem.
   const monthQuery = useQuery({
     queryKey: ["timeline", "month", monthRange?.first ?? null, monthRange?.end ?? null, teamTag],
     queryFn: async () => {
       const range = monthRange as { first: string; end: string };
-      const fetchRange = (from: string, to: string): Promise<PeopleReportResponse> =>
+      const [daily, total] = await Promise.all([
+        api<PeopleDailyResponse>(
+          `/people/daily?from=${range.first}&to=${range.end}${tagParam(teamTag)}`,
+        ),
         api<PeopleReportResponse>(
-          `/people?from=${from}&to=${to}&page_size=${PEOPLE_PAGE_SIZE}${tagParam(teamTag)}`,
-        );
-      const [total, ...perWeek] = await Promise.all([
-        fetchRange(range.first, range.end),
-        ...monthWeeksList.map((week) => fetchRange(week.from, week.to)),
+          `/people?from=${range.first}&to=${range.end}&page_size=${PEOPLE_PAGE_SIZE}${tagParam(teamTag)}`,
+        ),
       ]);
-      return { total, perWeek };
+      return { daily, total };
     },
-    enabled: nivel === "mes" && monthRange !== null && monthWeeksList.length > 0,
+    enabled: nivel === "mes" && monthRange !== null && monthDaysList.length > 0,
     staleTime: 60_000,
     placeholderData: (prev) => prev,
   });
@@ -380,20 +375,32 @@ export function LinhaDoTempoPage() {
 
   const monthRows = useMemo<MonthPersonRow[]>(() => {
     if (monthData === undefined) return [];
-    const bySid = monthData.perWeek.map(
-      (resp) => new Map(resp.items.map((person) => [person.windows_sid, person])),
-    );
+    // Um índice (sid -> dia -> linha) porque a resposta é uma lista plana de
+    // (pessoa, dia) e o mapa precisa de acesso por coluna.
+    const bySid = new Map<string, Map<string, PersonDay>>();
+    for (const day of monthData.daily.items) {
+      let porDia = bySid.get(day.windows_sid);
+      if (porDia === undefined) {
+        porDia = new Map<string, PersonDay>();
+        bySid.set(day.windows_sid, porDia);
+      }
+      porDia.set(day.date, day);
+    }
     // Ordem ALFABÉTICA, explícita: é a ordem que o backend já devolve por
     // default, mas a regra "sem ranking" não pode depender de um default de API.
     return [...monthData.total.items]
       .sort((a, b) => a.display_name.localeCompare(b.display_name, "pt-BR"))
-      .map((person) => ({
-        sid: person.windows_sid,
-        displayName: person.display_name,
-        month: person,
-        cells: bySid.map((week) => week.get(person.windows_sid) ?? null),
-      }));
-  }, [monthData]);
+      .map((person) => {
+        const porDia = bySid.get(person.windows_sid);
+        return {
+          sid: person.windows_sid,
+          displayName: person.display_name,
+          month: person,
+          // dia sem registro fica null - o mapa desenha ausência, não zero
+          cells: monthDaysList.map((date) => porDia?.get(date) ?? null),
+        };
+      });
+  }, [monthData, monthDaysList]);
 
   const monthTruncated =
     monthData !== undefined && monthData.total.total > monthData.total.items.length;
@@ -794,8 +801,8 @@ export function LinhaDoTempoPage() {
               <div>
                 <CardTitle className="text-base">Mapa do mês por colaborador</CardTitle>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Cada célula é uma SEMANA · cor = índice de produtividade · vazio = sem dados ·
-                  clique para abrir o dia
+                  Cada célula é um DIA · cor = índice de produtividade · vazio = sem dados (fim de
+                  semana, folga, máquina desligada) · clique para abrir o dia
                 </p>
               </div>
               {dateStr !== null && (
@@ -814,7 +821,7 @@ export function LinhaDoTempoPage() {
                 onRetry={() => void monthQuery.refetch()}
               />
             ) : monthData === undefined ? (
-              <MonthHeatmapSkeleton weeks={monthWeeksList.length} />
+              <MonthHeatmapSkeleton days={monthDaysList.length} />
             ) : monthRows.length === 0 ? (
               <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
                 <span className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
@@ -833,21 +840,21 @@ export function LinhaDoTempoPage() {
                 ) : (
                   <p className="text-sm text-muted-foreground">
                     Quando houver dias registrados neste mês, cada pessoa aparece aqui como uma
-                    linha de semanas.
+                    linha de dias.
                   </p>
                 )}
               </div>
             ) : view === "canvas" ? (
               <div className={cn(monthQuery.isPlaceholderData && "opacity-70 transition-opacity")}>
-                <MonthHeatmap weeks={monthWeeksList} rows={monthRows} onSelectDay={goToDay} />
+                <MonthHeatmap days={monthDaysList} rows={monthRows} onSelectDay={goToDay} />
                 <MonthHeatmapLegend />
                 {/* Fallback de screen reader: os MESMOS números, invisível. */}
                 <div className="sr-only">
-                  <MonthTable weeks={monthWeeksList} rows={monthRows} />
+                  <MonthTable days={monthDaysList} rows={monthRows} />
                 </div>
               </div>
             ) : (
-              <MonthTable weeks={monthWeeksList} rows={monthRows} />
+              <MonthTable days={monthDaysList} rows={monthRows} />
             )}
           </CardContent>
         </Card>

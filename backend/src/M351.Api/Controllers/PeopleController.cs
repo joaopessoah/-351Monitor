@@ -224,6 +224,138 @@ public class PeopleController(NpgsqlDataSource dataSource) : ApiControllerBase
     }
 
     /// <summary>
+    /// GET /api/v1/people/daily?from&amp;to[&amp;tag] (Viewer+): uma linha por (PESSOA, DIA) com
+    /// os quatro baldes que o mapa do mês desenha e o índice do dia.
+    ///
+    /// POR QUE ESTE ENDPOINT EXISTE: o mapa do mês da Linha do Tempo desenha pessoa × DIA, e a
+    /// listagem agregada de /people só responde pelo período INTEIRO. Sem quebra por dia, o mapa
+    /// teria de chamar /people uma vez por dia — ordem de 150 requisições para pintar uma tela.
+    /// Aqui a quebra é do banco (GROUP BY sid, summary_date) e o mês inteiro sai em UMA consulta.
+    ///
+    /// MESMA RÉGUA da listagem, de propósito: janela de 92 dias (ValidateRange), devices
+    /// archived fora, lane-máquina fora, identidade por windows_sid resolvido pela mesclagem de
+    /// people, display_name resolvido no servidor e a MESMA auditoria — view_report com
+    /// target_type "people" (decisão 2: linha com produtividade de pessoa identificada é dado
+    /// pessoal e deixa rastro, mesmo sem alvo individual).
+    ///
+    /// Sem sort e sem paginação: a resposta é matéria-prima de um mapa, e a ordem de desenho
+    /// (ALFABÉTICA, jamais por índice — decisão 2, nada de ranking) o cliente já garante. Sai
+    /// ordenada por nome e data só para a resposta ser estável e diffável.
+    /// </summary>
+    [HttpGet("daily")]
+    [AuditRead] // mesma decisão 2 da listagem: leitura de dado pessoal grava view_report
+    public async Task<IActionResult> Daily(
+        [FromQuery(Name = "from")] string? from,
+        [FromQuery(Name = "to")] string? to,
+        [FromQuery(Name = "tag")] string? tag,
+        [FromServices] AuditReadContext readAudit = null!,
+        CancellationToken ct = default)
+    {
+        var invalid = ValidateRange(from, to, out var fromDay, out var toDay);
+        if (invalid is not null) return invalid;
+
+        var tenantId = CurrentUser.TenantId(User);
+        var normalizedTag = NormalizeTeamTag(tag);
+
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+
+        var rows = (await connection.QueryAsync<PersonDayRow>(new CommandDefinition(
+            """
+            WITH lanes AS (
+                SELECT COALESCE(p.merged_into_sid, du.windows_sid) AS sid,
+                       du.display_name AS lane_display_name,
+                       du.windows_username,
+                       du.last_seen_at,
+                       s.summary_date,
+                       s.seconds_on, s.seconds_active, s.seconds_idle, s.seconds_unclassified,
+                       s.seconds_work_related, s.seconds_neutral, s.seconds_not_work_related
+                FROM daily_device_summaries s
+                JOIN device_users du ON du.tenant_id = s.tenant_id AND du.id = s.device_user_id
+                JOIN devices d ON d.tenant_id = s.tenant_id AND d.id = s.device_id
+                LEFT JOIN people p ON p.tenant_id = du.tenant_id AND p.windows_sid = du.windows_sid
+                WHERE s.tenant_id = @TenantId
+                  AND s.device_user_id <> @MachineLane
+                  AND d.status <> 'archived'
+                  AND s.summary_date BETWEEN @From::date AND @To::date
+                  AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
+            ),
+            -- o nome é da PESSOA, não do dia: resolvido uma vez sobre todas as lanes dela
+            -- (a mais recente ganha), senão 03/09 e 04/09 poderiam sair com nomes diferentes
+            names AS (
+                SELECT l.sid,
+                       (array_agg(l.lane_display_name ORDER BY l.last_seen_at DESC NULLS LAST)
+                            FILTER (WHERE l.lane_display_name IS NOT NULL))[1] AS lane_name,
+                       (array_agg(l.windows_username ORDER BY l.last_seen_at DESC NULLS LAST)
+                            FILTER (WHERE l.windows_username IS NOT NULL))[1] AS windows_username
+                FROM lanes l
+                GROUP BY l.sid
+            ),
+            -- a quebra que dá nome ao endpoint: duas máquinas no MESMO dia somam numa linha só
+            agg AS (
+                SELECT l.sid, l.summary_date,
+                       sum(l.seconds_on)::bigint AS seconds_on,
+                       sum(l.seconds_active)::bigint AS seconds_active,
+                       sum(l.seconds_idle)::bigint AS seconds_idle,
+                       sum(l.seconds_unclassified)::bigint AS seconds_unclassified,
+                       sum(l.seconds_work_related)::bigint AS seconds_work_related,
+                       sum(l.seconds_neutral)::bigint AS seconds_neutral,
+                       sum(l.seconds_not_work_related)::bigint AS seconds_not_work_related
+                FROM lanes l
+                GROUP BY l.sid, l.summary_date
+            ),
+            calc AS (
+                SELECT a.sid AS windows_sid,
+                       COALESCE(pp.display_name, n.lane_name, n.windows_username, a.sid) AS display_name,
+                       -- ::text porque o contrato expõe yyyy-MM-dd (mesma régua do dashboard)
+                       a.summary_date::text AS date,
+                       a.seconds_on, a.seconds_active, a.seconds_idle, a.seconds_unclassified,
+                       -- ::double precision de propósito: round() devolve numeric, que o Dapper
+                       -- materializaria como decimal e não casaria com o double? do contrato.
+                       -- Sem tempo classificado o CASE cai em NULL — "não sei", nunca 0%.
+                       CASE WHEN (a.seconds_work_related + a.seconds_neutral + a.seconds_not_work_related) > 0
+                            THEN round(a.seconds_work_related::numeric
+                                 / (a.seconds_work_related + a.seconds_neutral + a.seconds_not_work_related), 4)::double precision
+                       END AS productivity_index
+                FROM agg a
+                JOIN names n ON n.sid = a.sid
+                LEFT JOIN people pp ON pp.tenant_id = @TenantId AND pp.windows_sid = a.sid
+            )
+            SELECT c.* FROM calc c
+            ORDER BY c.display_name ASC, c.date ASC
+            """,
+            new
+            {
+                TenantId = tenantId,
+                MachineLane,
+                From = fromDay.ToString("yyyy-MM-dd"),
+                To = toDay.ToString("yyyy-MM-dd"),
+                Tag = normalizedTag,
+            },
+            cancellationToken: ct))).ToList();
+
+        // Mesmo rastro da listagem: sem alvo individual (a consulta é de várias pessoas), o
+        // recorte vai no detail. Um 400 de janela NÃO grava — quem decide é o AuditReadFilter.
+        readAudit.Record(tenantId, AuditActions.ViewReport,
+            CurrentUser.UserId(User),
+            targetType: "people", targetId: null,
+            detailJson: JsonSerializer.Serialize(new
+            {
+                granularity = "daily",
+                from = fromDay.ToString("yyyy-MM-dd"),
+                to = toDay.ToString("yyyy-MM-dd"),
+                tag = normalizedTag,
+                returned = rows.Count,
+            }));
+
+        var items = rows.Select(r => new PersonDayResponse(
+            r.WindowsSid, r.DisplayName, r.Date,
+            r.SecondsOn, r.SecondsActive, r.SecondsIdle, r.SecondsUnclassified,
+            r.ProductivityIndex)).ToList();
+
+        return Ok(new PeopleDailyResponse(items));
+    }
+
+    /// <summary>
     /// PATCH /api/v1/people/{sid} (AdminPlus): apelido e mesclagem.
     ///
     /// A mesclagem é o conserto manual do caso que o SID não resolve sozinho: a mesma pessoa com
@@ -329,6 +461,17 @@ public class PeopleController(NpgsqlDataSource dataSource) : ApiControllerBase
         int DaysWithData,
         string? Teams,
         int TotalCount);
+
+    /// <summary>Linha crua do /daily - nome ja resolvido, um registro por (pessoa, dia).</summary>
+    private sealed record PersonDayRow(
+        string WindowsSid,
+        string DisplayName,
+        string Date,
+        long SecondsOn,
+        long SecondsActive,
+        long SecondsIdle,
+        long SecondsUnclassified,
+        double? ProductivityIndex);
 
     /// <summary>Desfaz o array_to_string do SQL — vazio devolve lista vazia, nunca [""].</summary>
     private static IReadOnlyList<string> SplitTeams(string? joined) =>

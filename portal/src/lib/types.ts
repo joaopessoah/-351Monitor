@@ -1561,3 +1561,34 @@ export interface TeamComparisonRow {
   /** false quando a equipe tem menos de 3 pessoas (decisao 3). */
   meets_group_minimum: boolean;
 }
+
+/**
+ * Uma linha de `GET /people/daily`: o DIA de uma pessoa. Existe porque o mapa
+ * do mes desenha pessoa x DIA e a listagem de /people so agrega o periodo
+ * inteiro - com ela, pintar 31 colunas custaria uma requisicao por dia (ordem
+ * de 150 chamadas numa tela). Aqui o mes inteiro vem em UMA consulta.
+ *
+ * Identidade e nome seguem a MESMA regua da listagem: windows_sid resolvido
+ * pela mesclagem e display_name JA resolvido pelo servidor - renderize este
+ * campo, nao reimplemente a regra.
+ *
+ * productivity_index e do servidor (produtivo / classificado) e e null quando o
+ * dia nao teve NENHUM tempo classificado: null imprime "-", jamais 0%. Sao os
+ * quatro baldes que o mapa precisa; quem quer os seis continua no /people.
+ */
+export interface PersonDay {
+  windows_sid: string;
+  display_name: string;
+  /** Dia no fuso do tenant, yyyy-MM-dd. */
+  date: string;
+  seconds_on: number;
+  seconds_active: number;
+  seconds_idle: number;
+  seconds_unclassified: number;
+  productivity_index: number | null;
+}
+
+/** Resposta de `GET /people/daily?from&to[&tag]` - sem paginacao (ver o contrato). */
+export interface PeopleDailyResponse {
+  items: PersonDay[];
+}
