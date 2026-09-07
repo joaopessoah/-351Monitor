@@ -74,6 +74,11 @@
     },
     {
       "@type": "Question",
+      "name": "Quem decide o que é produtivo?",
+      "acceptedAnswer": { "@type": "Answer", "text": "A sua empresa. A plataforma mede o tempo de uso de cada aplicativo e aplica a classificação que a empresa configurou: Produtivo, Neutro, Improdutivo ou Sem classificação. Ocioso é estado da máquina, e não uma classificação de trabalho." }
+    },
+    {
+      "@type": "Question",
       "name": "Quais informações a +351 coleta?",
       "acceptedAnswer": { "@type": "Answer", "text": "Tempo ativo, períodos de ociosidade, aplicativos utilizados e jornada de atividade nos dispositivos corporativos. Nada de conteúdo pessoal, teclas digitadas ou imagens." }
     },
@@ -206,10 +211,14 @@
         </ul>
       </div>
 
-      <!-- Local preparado para screenshot REAL do software:
-           substitua o conteúdo de .shot-body abaixo por
-           <img src="assets/img/print-visao-geral.png" alt="Painel Visão geral da +351 Monitor" width="1280" height="800">
-           mantendo a moldura <figure class="shot"> para preservar o visual. -->
+      <!-- ===== PRINT REAL PENDENTE: VISÃO GERAL =====
+           Quando o print da nova Visão Geral existir, troque TODO o conteúdo de
+           .shot-body abaixo por uma única linha:
+           <img src="assets/img/print-visao-geral.png" alt="Painel Visão Geral da +351 Monitor com índice de produtividade, composição do tempo e aplicativos" width="1280" height="800" loading="eager" decoding="async">
+           Tamanho recomendado: exportar a 2560x800 px (2x) e salvar como 1280x800 px,
+           formato PNG, tema escuro do portal, dados do tenant de demonstração.
+           Mantenha a moldura <figure class="shot"> e a barra .shot-top para preservar o visual.
+           O mockup em HTML/CSS abaixo permanece até o print existir. -->
       <figure class="shot shot-hero reveal" role="img" aria-label="Interface da +351 Monitor: visão geral com tempo ativo, ociosidade, aplicativos e atividade ao longo do dia">
         <div class="shot-top" aria-hidden="true">
           <span class="shot-brand">
@@ -282,10 +291,13 @@
   <!-- ============ 2. A PLATAFORMA (mostrar o produto cedo) ============ -->
   <section class="section manage" id="produto">
     <div class="container manage-grid">
-      <!-- Local preparado para screenshot REAL da plataforma (colaboradores, equipes,
-           atividade, ociosidade, aplicativos e linha do tempo): substitua o conteúdo
-           de .shot-body por <img src="assets/img/print-colaboradores.png" alt="..."> -->
-      <figure class="shot shot-manage reveal" role="img" aria-label="Interface da +351 Monitor: lista de colaboradores com status, tempo ativo e composição da jornada">
+      <!-- ===== PRINT REAL PENDENTE: COLABORADORES =====
+           Troque TODO o conteúdo de .shot-body abaixo por:
+           <img src="assets/img/print-colaboradores.png" alt="Lista de colaboradores da +351 Monitor com tempo ativo e composição do período" width="1120" height="760" loading="lazy" decoding="async">
+           Tamanho recomendado: exportar a 2240x1520 px (2x) e salvar como 1120x760 px, PNG.
+           Use nomes fictícios no tenant de demonstração, nunca dados de cliente.
+           O mockup em HTML/CSS abaixo permanece até o print existir. -->
+      <figure class="shot shot-manage reveal" role="img" aria-label="Interface da +351 Monitor, lista de colaboradores com estado do dispositivo, tempo ativo e composição do tempo classificada pela empresa">
         <div class="shot-body shot-body-solo" aria-hidden="true">
           <aside class="shot-nav shot-nav-slim">
             <span>Visão geral</span>
@@ -306,18 +318,19 @@
             <div class="shot-tabs"><span class="on">Geral</span><span>Atividade</span><span>Aplicativos</span><span>Jornada</span></div>
             <div class="shot-table">
               <div class="srow srow-head"><span>Colaborador</span><span>Status</span><span>Tempo ativo</span><span>Jornada de hoje</span></div>
-              <div class="srow"><span class="sname"><i>AO</i>Ana Oliveira</span><span class="sstat on">Ativo</span><span class="stime">6h52</span><span class="sbar"><i class="p" style="width:62%"></i><i class="n" style="width:16%"></i><i class="d" style="width:6%"></i><i class="o" style="width:10%"></i></span></div>
-              <div class="srow"><span class="sname"><i>BS</i>Bruno Santos</span><span class="sstat on">Ativo</span><span class="stime">6h31</span><span class="sbar"><i class="p" style="width:58%"></i><i class="n" style="width:20%"></i><i class="d" style="width:8%"></i><i class="o" style="width:8%"></i></span></div>
-              <div class="srow"><span class="sname"><i>CF</i>Carla Ferreira</span><span class="sstat idle">Ocioso</span><span class="stime">4h58</span><span class="sbar"><i class="p" style="width:44%"></i><i class="n" style="width:12%"></i><i class="d" style="width:4%"></i><i class="o" style="width:30%"></i></span></div>
-              <div class="srow"><span class="sname"><i>DL</i>Diego Lima</span><span class="sstat on">Ativo</span><span class="stime">6h05</span><span class="sbar"><i class="p" style="width:55%"></i><i class="n" style="width:22%"></i><i class="d" style="width:9%"></i><i class="o" style="width:6%"></i></span></div>
-              <div class="srow"><span class="sname"><i>EC</i>Elisa Costa</span><span class="sstat off">Offline</span><span class="stime">2h40</span><span class="sbar"><i class="p" style="width:28%"></i><i class="n" style="width:8%"></i><i class="d" style="width:2%"></i><i class="o" style="width:6%"></i></span></div>
-              <div class="srow"><span class="sname"><i>FR</i>Fábio Ramos</span><span class="sstat on">Ativo</span><span class="stime">6h14</span><span class="sbar"><i class="p" style="width:60%"></i><i class="n" style="width:18%"></i><i class="d" style="width:5%"></i><i class="o" style="width:9%"></i></span></div>
+              <div class="srow"><span class="sname"><i>AO</i>Ana Oliveira</span><span class="sstat on">Ativo</span><span class="stime">6h52</span><span class="sbar"><i class="p" style="width:58%"></i><i class="n" style="width:15%"></i><i class="d" style="width:6%"></i><i class="u" style="width:7%"></i><i class="o" style="width:10%"></i></span></div>
+              <div class="srow"><span class="sname"><i>BS</i>Bruno Santos</span><span class="sstat on">Ativo</span><span class="stime">6h31</span><span class="sbar"><i class="p" style="width:54%"></i><i class="n" style="width:19%"></i><i class="d" style="width:8%"></i><i class="u" style="width:9%"></i><i class="o" style="width:8%"></i></span></div>
+              <div class="srow"><span class="sname"><i>CF</i>Carla Ferreira</span><span class="sstat idle">Ocioso</span><span class="stime">4h58</span><span class="sbar"><i class="p" style="width:41%"></i><i class="n" style="width:11%"></i><i class="d" style="width:4%"></i><i class="u" style="width:6%"></i><i class="o" style="width:30%"></i></span></div>
+              <div class="srow"><span class="sname"><i>DL</i>Diego Lima</span><span class="sstat on">Ativo</span><span class="stime">6h05</span><span class="sbar"><i class="p" style="width:52%"></i><i class="n" style="width:21%"></i><i class="d" style="width:9%"></i><i class="u" style="width:5%"></i><i class="o" style="width:6%"></i></span></div>
+              <div class="srow"><span class="sname"><i>EC</i>Elisa Costa</span><span class="sstat off">Offline</span><span class="stime">2h40</span><span class="sbar"><i class="p" style="width:26%"></i><i class="n" style="width:8%"></i><i class="d" style="width:2%"></i><i class="u" style="width:4%"></i><i class="o" style="width:6%"></i></span></div>
+              <div class="srow"><span class="sname"><i>FR</i>Fábio Ramos</span><span class="sstat on">Ativo</span><span class="stime">6h14</span><span class="sbar"><i class="p" style="width:56%"></i><i class="n" style="width:17%"></i><i class="d" style="width:5%"></i><i class="u" style="width:6%"></i><i class="o" style="width:9%"></i></span></div>
             </div>
             <div class="shot-legend-row">
               <span><i class="p"></i>Produtivo</span>
               <span><i class="n"></i>Neutro</span>
               <span><i class="d"></i>Improdutivo</span>
-              <span><i class="o"></i>Ocioso</span>
+              <span><i class="u"></i>Sem classificação</span>
+              <span><i class="o"></i>Ocioso (estado da máquina)</span>
             </div>
           </div>
         </div>
@@ -326,13 +339,21 @@
       <div class="manage-copy">
         <p class="eyebrow reveal">A plataforma</p>
         <h2 class="reveal">O que acontece entre o login e o fim do expediente?</h2>
-        <p class="reveal">A +351 Monitor transforma a jornada de trabalho nos dispositivos corporativos em dados objetivos sobre atividade, ociosidade, aplicativos, jornada e utilização da capacidade das equipes.</p>
+        <p class="reveal">A +351 Monitor transforma a jornada de trabalho nos dispositivos corporativos em dados objetivos sobre horas com a máquina ligada, tempo ativo, ociosidade, aplicativos e composição do tempo de trabalho por equipe e por colaborador.</p>
         <ul class="checks reveal-group" role="list">
           <li class="reveal"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Padrões de atividade e ociosidade ao longo do expediente</li>
-          <li class="reveal"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Onde o tempo de cada equipe está concentrado</li>
-          <li class="reveal"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Capacidade utilizada e capacidade disponível, por equipe e por colaborador</li>
+          <li class="reveal"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Onde o tempo de cada equipe está concentrado, ferramenta por ferramenta</li>
+          <li class="reveal"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Quanto do tempo com a máquina ligada virou tempo ativo, por equipe e por colaborador</li>
         </ul>
-        <a class="btn btn-ghost reveal" href="#funcionalidades">Ver todas as funcionalidades</a>
+        <ul class="class-legend reveal" role="list">
+          <li><i class="p" aria-hidden="true"></i>Produtivo</li>
+          <li><i class="n" aria-hidden="true"></i>Neutro</li>
+          <li><i class="d" aria-hidden="true"></i>Improdutivo</li>
+          <li><i class="u" aria-hidden="true"></i>Sem classificação</li>
+          <li class="sep"><i class="o" aria-hidden="true"></i>Ocioso, estado da máquina</li>
+        </ul>
+        <p class="manage-note reveal"><small>A classificação de cada aplicativo é definida pela sua empresa. A plataforma mede o tempo e aplica a regra que você configurou, sem julgar o trabalho de ninguém. <a href="como-medimos.html">Veja como medimos</a>.</small></p>
+        <a class="btn btn-ghost reveal" href="#funcionalidades">Ver o que cada tela responde</a>
       </div>
     </div>
   </section>
@@ -452,46 +473,55 @@
     </div>
   </section>
 
-  <!-- ============ 4. O QUE VOCÊ CONSEGUE DESCOBRIR ============ -->
-  <section class="section" id="descobertas">
+  <!-- ============ 4. PERGUNTA -> A TELA QUE RESPONDE ============
+       set/2026: fusão das antigas seções #descobertas ("Quantas destas perguntas
+       você responde hoje com dados?") e #funcionalidades ("Da atividade no
+       dispositivo ao indicador de gestão"), que repetiam o mesmo conteúdo em dois
+       formatos. Os dois id antigos continuam existindo como âncora.
+       ===== PRINTS REAIS PENDENTES =====
+       Quando existirem os prints da Visão Geral, da Linha do Tempo e de
+       Colaboradores, cada .pair pode receber a imagem da tela correspondente
+       logo acima de .pair-a:
+       <img src="assets/img/tela-visao-geral.png" alt="..." width="720" height="420" loading="lazy" decoding="async">
+       Tamanho recomendado: 720x420 px exibidos (exportar a 1440x840 px, 2x), PNG,
+       recorte apenas do bloco citado na resposta, tema escuro do portal. -->
+  <section class="section" id="funcionalidades">
+    <span class="anchor-alias anchor-alias-flow" id="descobertas" aria-hidden="true"></span>
     <div class="container">
-      <p class="eyebrow reveal">O que você consegue descobrir</p>
-      <h2 class="reveal">Quantas destas perguntas você responde hoje <span class="hl">com dados</span>?</h2>
+      <p class="eyebrow reveal">Perguntas e telas</p>
+      <h2 class="reveal">Seis perguntas de gestão e <span class="hl">a tela que responde</span> cada uma.</h2>
+      <p class="section-lead reveal">Da atividade no dispositivo ao indicador de gestão. Cada pergunta abaixo tem um lugar específico na plataforma, com a métrica que a responde.</p>
 
-      <div class="qcards reveal-group">
-        <article class="qcard reveal">
-          <span class="qmark" aria-hidden="true">?</span>
-          <h3>Seu time realmente está sem capacidade?</h3>
-          <p>Compare a capacidade contratada com a utilização real antes de aprovar novas vagas.</p>
+      <div class="pairs reveal-group">
+        <article class="pair reveal">
+          <h3 class="pair-q"><span class="qmark" aria-hidden="true">?</span>Onde o tempo da equipe está sendo utilizado?</h3>
+          <p class="pair-a"><span class="pair-screen">Visão Geral</span>Composição do tempo ativo em <b>produtivo, neutro, improdutivo e sem classificação</b>, com os aplicativos que concentram as horas. A classificação de cada aplicativo é definida pela sua empresa.</p>
         </article>
-        <article class="qcard reveal">
-          <span class="qmark" aria-hidden="true">?</span>
-          <h3>Onde o tempo da equipe está sendo utilizado?</h3>
-          <p>Veja a distribuição do tempo entre aplicativos e atividades ao longo do expediente.</p>
+        <article class="pair reveal">
+          <h3 class="pair-q"><span class="qmark" aria-hidden="true">?</span>Quanto da jornada fica sem uso de teclado e mouse?</h3>
+          <p class="pair-a"><span class="pair-screen">Visão Geral, tile de ociosidade</span><b>Ociosidade</b> é o tempo ocioso dividido pelas horas com a máquina ligada. Ocioso é estado da máquina, nunca uma classificação: reuniões, chamadas e leitura podem aparecer como ociosidade.</p>
         </article>
-        <article class="qcard reveal">
-          <span class="qmark" aria-hidden="true">?</span>
-          <h3>Quanto da jornada se perde em ociosidade?</h3>
-          <p>Identifique períodos recorrentes de inatividade por equipe e por colaborador.</p>
+        <article class="pair reveal">
+          <h3 class="pair-q"><span class="qmark" aria-hidden="true">?</span>Como o dia de trabalho se distribui de fato?</h3>
+          <p class="pair-a"><span class="pair-screen">Linha do Tempo</span>O mês em mapa de calor por pessoa e dia, o dia em faixas de atividade e ociosidade hora a hora. É onde se vê o padrão do expediente, e não só o total.</p>
         </article>
-        <article class="qcard reveal">
-          <span class="qmark" aria-hidden="true">?</span>
-          <h3>Quais aplicativos concentram o tempo de trabalho?</h3>
-          <p>Entenda quais ferramentas sustentam a operação e quanto tempo consomem.</p>
+        <article class="pair reveal">
+          <h3 class="pair-q"><span class="qmark" aria-hidden="true">?</span>Como cada colaborador usa o tempo de trabalho?</h3>
+          <p class="pair-a"><span class="pair-screen">Colaboradores</span>Lista com as métricas do período, em ordem alfabética. Sem ranking e sem gamificação: o acesso é restrito aos perfis de gestão autorizados pela empresa e fica registrado em auditoria.</p>
         </article>
-        <article class="qcard reveal">
-          <span class="qmark" aria-hidden="true">?</span>
-          <h3>Há equipes sobrecarregadas enquanto outras têm capacidade disponível?</h3>
-          <p>Compare padrões entre áreas e redistribua o trabalho com critério.</p>
+        <article class="pair reveal">
+          <h3 class="pair-q"><span class="qmark" aria-hidden="true">?</span>Há equipes com padrões diferentes entre si?</h3>
+          <p class="pair-a"><span class="pair-screen">Visão Geral, equipes lado a lado</span>Comparação entre áreas no mesmo período. Equipes com menos de três pessoas exibem apenas totais, nunca médias comparativas, para não expor o indivíduo dentro do grupo.</p>
         </article>
-        <article class="qcard reveal">
-          <span class="qmark" aria-hidden="true">?</span>
-          <h3>Antes de contratar mais pessoas, você conhece a capacidade que já possui?</h3>
-          <p>Use dados de utilização para dimensionar o time com base na operação real.</p>
+        <article class="pair reveal">
+          <h3 class="pair-q"><span class="qmark" aria-hidden="true">?</span>Posso confiar no número que estou vendo?</h3>
+          <p class="pair-a"><span class="pair-screen">Cobertura da classificação</span>Mostra quanto do tempo ativo ainda está em aplicativos que a sua empresa não classificou. O <b>índice de produtividade</b> nunca aparece sem a cobertura ao lado, e a fila de classificação indica o que corrigir primeiro.</p>
         </article>
       </div>
 
-      <p class="discover-cta reveal"><a class="link-arrow" href="#funcionalidades">Ver como a plataforma responde a cada uma <span aria-hidden="true">→</span></a></p>
+      <p class="pairs-note reveal">Todas as definições e fórmulas ficam publicadas, sem caixa-preta: <a href="como-medimos.html">como medimos</a>. Relatórios de jornada, de aplicativos e de atividade fora do horário complementam as telas acima, e a exportação sai em CSV. A comparação entre capacidade contratada e capacidade utilizada está em desenvolvimento e ainda não faz parte do que a plataforma entrega.</p>
+
+      <p class="tagline reveal">A +351 Monitor <span>mede.</span> Você <span>entende.</span> Sua empresa <span>decide.</span></p>
     </div>
   </section>
 
@@ -517,62 +547,7 @@
   </section>
   -->
 
-  <!-- ============ 6. FUNCIONALIDADES ============ -->
-  <section class="section" id="funcionalidades">
-    <div class="container">
-      <p class="eyebrow reveal">Funcionalidades</p>
-      <h2 class="reveal">Da atividade no dispositivo ao <span class="hl">indicador de gestão</span>.</h2>
-
-      <!-- Quando houver prints reais da plataforma, cada card pode ganhar uma imagem:
-           <img src="assets/img/func-visao-geral.png" alt="..."> acima do h3. -->
-      <div class="monitors features reveal-group">
-        <article class="mcard reveal">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4.5 14.8a7.5 7.5 0 1 1 15 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M12 14.8l3.4-3.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M4.5 18.6h15" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-          <h3>Visão geral da operação</h3>
-          <p>Indicadores de atividade, produtividade e ociosidade reunidos em um só painel.</p>
-        </article>
-        <article class="mcard reveal">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8.2" r="3.4" stroke="currentColor" stroke-width="1.7"/><path d="M5.6 19.6c.8-3.2 3.4-5 6.4-5s5.6 1.8 6.4 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-          <h3>Análise por colaborador</h3>
-          <p>Como o tempo de trabalho está sendo utilizado individualmente.</p>
-        </article>
-        <article class="mcard reveal">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="3" stroke="currentColor" stroke-width="1.7"/><path d="M3.6 18.8c.7-2.7 2.9-4.2 5.4-4.2s4.7 1.5 5.4 4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="16.8" cy="9.8" r="2.4" stroke="currentColor" stroke-width="1.7"/><path d="M16.4 14.8c2.2.2 3.6 1.5 4.2 3.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-          <h3>Análise por equipe</h3>
-          <p>Padrões comparados entre áreas e diferenças de capacidade.</p>
-        </article>
-        <article class="mcard reveal">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="13.4" y="4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="4" y="13.4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="13.4" y="13.4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/></svg>
-          <h3>Aplicativos utilizados</h3>
-          <p>Onde o tempo da equipe está concentrado, ferramenta por ferramenta.</p>
-        </article>
-        <article class="mcard reveal">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.5 12h5l2.2-4.6 2.6 9.2 2.2-4.6h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <h3>Jornada de trabalho</h3>
-          <p>Como atividade e ociosidade se distribuem durante o expediente.</p>
-        </article>
-        <article class="mcard reveal">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.4" stroke="currentColor" stroke-width="1.7"/><path d="M12 7.6V12l3 1.9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <h3>Tempo ativo e ociosidade</h3>
-          <p>Períodos recorrentes de atividade e de inatividade, identificados com precisão.</p>
-        </article>
-        <article class="mcard reveal">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 19.5h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M7 19.5v-6.2M12 19.5V8.8M17 19.5V5.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-          <h3>Indicadores de produtividade</h3>
-          <p>A jornada de trabalho traduzida em indicadores que apoiam decisões.</p>
-        </article>
-        <article class="mcard reveal">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 3.5h7l4 4v13H7z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M14 3.5v4h4" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9.8 13h4.4M9.8 16h4.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-          <h3>Relatórios</h3>
-          <p>Informações centralizadas para análise da operação.</p>
-        </article>
-      </div>
-
-      <p class="tagline reveal">A +351 Monitor <span>mede.</span> Você <span>entende.</span> Sua empresa <span>decide.</span></p>
-    </div>
-  </section>
-
-  <!-- ============ 7. MONITORAR NÃO É VIGIAR ============ -->
+  <!-- ============ 6. MONITORAR NÃO É VIGIAR ============ -->
   <section class="section spy" id="transparencia">
     <div class="container">
       <p class="eyebrow center reveal">Monitoramento transparente</p>
@@ -624,7 +599,7 @@
     </div>
   </section>
 
-  <!-- ============ 8. COMO FUNCIONA ============ -->
+  <!-- ============ 7. COMO FUNCIONA ============ -->
   <section class="section" id="como-funciona">
     <div class="container">
       <p class="eyebrow reveal">Como funciona</p>
@@ -644,7 +619,7 @@
         <article class="step reveal">
           <span class="step-num" aria-hidden="true">03</span>
           <h3>Analise</h3>
-          <p>Gestores visualizam padrões de atividade, ociosidade, utilização e produtividade por equipe e colaborador.</p>
+          <p>Gestores visualizam atividade, ociosidade e composição do tempo por equipe e colaborador, segundo a classificação de aplicativos que a própria empresa definiu.</p>
         </article>
         <article class="step reveal">
           <span class="step-num" aria-hidden="true">04</span>
@@ -657,7 +632,7 @@
     </div>
   </section>
 
-  <!-- ============ 9. SEGURANÇA E LGPD ============ -->
+  <!-- ============ 8. SEGURANÇA E LGPD ============ -->
   <section class="section" id="seguranca-lgpd">
     <div class="container">
       <p class="eyebrow reveal">Segurança e LGPD</p>
@@ -691,7 +666,7 @@
     </div>
   </section>
 
-  <!-- ============ 10. PROVA SOCIAL ============
+  <!-- ============ 9. PROVA SOCIAL ============
        NÃO ATIVAR até existirem clientes, números e depoimentos AUTORIZADOS.
        Estrutura pronta: descomente e preencha com dados reais quando os pilotos liberarem.
        Os estilos .proof-* já estão prontos no home.css.
@@ -718,7 +693,7 @@
   </section>
   -->
 
-  <!-- ============ 11. FAQ ============ -->
+  <!-- ============ 10. FAQ ============ -->
   <section class="section" id="faq">
     <div class="container">
       <p class="eyebrow reveal">Perguntas frequentes</p>
@@ -740,6 +715,10 @@
         <details class="faq-item" name="faq">
           <summary>O colaborador precisa saber que está sendo monitorado?</summary>
           <p>A +351 Monitor foi desenhada para o monitoramento transparente. Recomendamos que a empresa comunique formalmente a prática, o que fortalece a segurança jurídica e a relação de confiança com as equipes.</p>
+        </details>
+        <details class="faq-item" name="faq">
+          <summary>Quem decide o que é produtivo?</summary>
+          <p>A sua empresa. A plataforma mede o tempo de uso de cada aplicativo e aplica a classificação que a empresa configurou: Produtivo, Neutro, Improdutivo ou Sem classificação. O mesmo aplicativo pode ser produtivo em uma área e improdutivo em outra. Ocioso é estado da máquina, e não uma classificação de trabalho. As definições e as fórmulas estão publicadas na página <a href="como-medimos.html">Como medimos</a>.</p>
         </details>
         <details class="faq-item" name="faq">
           <summary>Quais informações a +351 coleta?</summary>
@@ -769,7 +748,7 @@
     </div>
   </section>
 
-  <!-- ============ 12. QUEM SOMOS ============ -->
+  <!-- ============ 11. QUEM SOMOS ============ -->
   <section class="section who" id="quem-somos">
     <div class="container">
       <div class="who-intro">
@@ -809,7 +788,7 @@
     </div>
   </section>
 
-  <!-- ============ 13. CTA FINAL ============ -->
+  <!-- ============ 12. CTA FINAL ============ -->
   <section class="section final">
     <div class="container">
       <div class="final-panel reveal">
@@ -846,13 +825,14 @@
     <nav class="footer-col" aria-label="Páginas">
       <h4>Navegação</h4>
       <a href="#produto">Produto</a>
-      <a href="#funcionalidades">Funcionalidades</a>
+      <a href="#funcionalidades">Perguntas e telas</a>
       <a href="#como-funciona">Como funciona</a>
       <a href="#calculadora">Calculadora</a>
       <a href="#seguranca-lgpd">Segurança e LGPD</a>
       <a href="#faq">Perguntas frequentes</a>
       <a href="#quem-somos">Quem Somos</a>
       <a href="conteudos/">Conteúdos</a>
+      <a href="como-medimos.html">Como medimos</a>
       <a href="privacidade.html">Política de Privacidade</a>
       <a href="termos.html">Termos de Uso</a>
     </nav>
