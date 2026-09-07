@@ -28,7 +28,13 @@ public record MeOrganizationResponse(
     /// categorizado). Vem no /me porque TODA tela que mostra classificação precisa do rótulo
     /// certo antes do primeiro render, e o /me já é a query de sessão do portal.
     /// </summary>
-    string ClassificationVocabulary);
+    string ClassificationVocabulary,
+    /// <summary>
+    /// F6, decisão 5 — alertas de escopo PESSOA ligados pela organização. Vem no /me porque a
+    /// tela de alertas precisa saber, antes do primeiro render, se as duas regras individuais
+    /// estão sequer sendo avaliadas.
+    /// </summary>
+    bool PersonAlertsEnabled);
 
 /// <summary>
 /// GET/PATCH /me/email-prefs (F5): preferências de e-mail do próprio usuário. Sem linha no

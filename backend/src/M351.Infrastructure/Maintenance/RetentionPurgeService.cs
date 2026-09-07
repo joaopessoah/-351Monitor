@@ -65,9 +65,14 @@ public sealed class RetentionPurgeService(NpgsqlDataSource dataSource, ILogger<R
             var appUsageDeleted = await DeleteAsync(conn, tx, "daily_app_usage", cutoff, ct);
             // F6: hourly_activity e um agregado diario como os outros dois (mesma retencao N12)
             var hourlyDeleted = await DeleteAsync(conn, tx, "hourly_activity", cutoff, ct);
+            // F6: alerta de gestao JA RESOLVIDO e historico, e segue a mesma retencao. O alerta
+            // VIVO (resolved_at NULL) nunca e purgado, por mais antigo que seja o first_seen_at:
+            // enquanto a condicao persiste, a linha e estado corrente, nao historico.
+            var alertsDeleted = await DeleteResolvedAlertsAsync(conn, tx, cutoff, ct);
             detail["daily_device_summaries_deleted"] = summariesDeleted;
             detail["daily_app_usage_deleted"] = appUsageDeleted;
             detail["hourly_activity_deleted"] = hourlyDeleted;
+            detail["management_alerts_deleted"] = alertsDeleted;
             detail["cutoff"] = cutoff.ToString("yyyy-MM-dd");
 
             await tx.CommitAsync(ct);
@@ -100,6 +105,23 @@ public sealed class RetentionPurgeService(NpgsqlDataSource dataSource, ILogger<R
     {
         await using var command = new NpgsqlCommand(
             $"DELETE FROM {table} WHERE summary_date < @cutoff", conn, tx);
+        command.Parameters.AddWithValue("cutoff", cutoff);
+        return await command.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Alerta de gestao RESOLVIDO alem do corte. Chave propria (nao tem summary_date), e o
+    /// filtro por resolved_at e deliberado: alerta vivo e estado corrente, nao historico.
+    /// </summary>
+    private static async Task<int> DeleteResolvedAlertsAsync(
+        NpgsqlConnection conn, NpgsqlTransaction tx, DateOnly cutoff, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand(
+            """
+            DELETE FROM management_alerts
+            WHERE resolved_at IS NOT NULL
+              AND resolved_at < (@cutoff::date)::timestamptz
+            """, conn, tx);
         command.Parameters.AddWithValue("cutoff", cutoff);
         return await command.ExecuteNonQueryAsync(ct);
     }

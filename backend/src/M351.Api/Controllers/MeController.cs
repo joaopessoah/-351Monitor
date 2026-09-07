@@ -43,7 +43,8 @@ public class MeController(M351DbContext db) : ApiControllerBase
                 org.Id, org.Name, org.Slug, org.Timezone, businessHours,
                 org.Plan, org.DeviceLimit, org.OnboardingChecklistDismissedAt,
                 org.GoalWeeklyActiveHours, org.GoalWorkRelatedPct,
-                org.ClassificationVocabulary)));
+                org.ClassificationVocabulary,
+                org.PersonAlertsEnabled)));
     }
 
     /// <summary>

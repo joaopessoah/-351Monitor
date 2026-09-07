@@ -83,4 +83,10 @@ public record OrganizationResponse(
     /// "trabalho"). Repetido aqui (além do /me) porque é NESTA tela que se troca: a resposta
     /// do PATCH tem de devolver o valor efetivamente gravado.
     /// </summary>
-    string ClassificationVocabulary = "produtividade");
+    string ClassificationVocabulary = "produtividade",
+    /// <summary>
+    /// F6, decisão 5 — quando true, o motor de alertas passa a avaliar também as regras de
+    /// escopo PESSOA (dias longos e atividade fora do horário). Default false: o padrão do
+    /// produto é alertar sobre equipe.
+    /// </summary>
+    bool PersonAlertsEnabled = false);

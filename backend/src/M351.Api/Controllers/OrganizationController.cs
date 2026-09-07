@@ -126,6 +126,21 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
             }
         }
 
+        // F6, decisão 5 — alertas de PESSOA são opt-in da organização. O default é false: a
+        // régua padrão do produto é alertar sobre EQUIPE, e ligar o escopo individual é uma
+        // escolha declarada do cliente, que fica registrada na trilha.
+        var hasPersonAlerts = body.TryGetProperty("person_alerts_enabled", out var personAlertsEl);
+        bool? personAlerts = null;
+        if (hasPersonAlerts)
+        {
+            if (personAlertsEl.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                return ProblemResponse(StatusCodes.Status400BadRequest,
+                    "person_alerts_enabled deve ser true ou false.");
+            }
+            personAlerts = personAlertsEl.GetBoolean();
+        }
+
         var org = await db.Organizations.FirstAsync(ct);
 
         // aplica somente o que mudou e registra o de→para por campo (detail do audit)
@@ -171,6 +186,12 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
         {
             changes["classification_vocabulary"] = new { from = org.ClassificationVocabulary, to = vocabulary };
             org.ClassificationVocabulary = vocabulary!;
+        }
+
+        if (hasPersonAlerts && org.PersonAlertsEnabled != personAlerts)
+        {
+            changes["person_alerts_enabled"] = new { from = org.PersonAlertsEnabled, to = personAlerts };
+            org.PersonAlertsEnabled = personAlerts!.Value;
         }
 
         if (hasBusinessHours && !JsonEqual(org.BusinessHours, businessHours))
