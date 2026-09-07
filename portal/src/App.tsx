@@ -8,6 +8,7 @@ import { RedefinirSenhaPage } from "@/pages/RedefinirSenhaPage";
 import { TransparenciaPage } from "@/pages/TransparenciaPage";
 import { VisaoGeralPage } from "@/pages/VisaoGeralPage";
 import { LinhaDoTempoPage } from "@/pages/LinhaDoTempoPage";
+import { ColaboradoresPage } from "@/pages/ColaboradoresPage";
 import { AppsPage } from "@/pages/AppsPage";
 import { DispositivosPage } from "@/pages/DispositivosPage";
 import { PessoaPage } from "@/pages/PessoaPage";
@@ -47,6 +48,8 @@ export function App() {
           <Route path="/" element={<Navigate to="/visao-geral" replace />} />
           <Route path="/visao-geral" element={<VisaoGeralPage />} />
           <Route path="/linha-do-tempo" element={<LinhaDoTempoPage />} />
+          {/* F6 — a lista de colaboradores que o site promete desde sempre. */}
+          <Route path="/colaboradores" element={<ColaboradoresPage />} />
           <Route path="/apps" element={<AppsPage />} />
           <Route path="/relatorios">
             <Route index element={<RelatoriosHubPage />} />

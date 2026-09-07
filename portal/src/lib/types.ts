@@ -411,6 +411,8 @@ export interface DashboardSummaryDay {
   seconds_work_related: number;
   seconds_neutral: number;
   seconds_not_work_related: number;
+  /** F6 - tempo ativo em app SEM categoria no tenant (antes vinha somado no neutro). */
+  seconds_unclassified: number;
   data_incomplete: boolean;
   device_count: number;
 }
@@ -424,6 +426,8 @@ export interface DashboardSummaryTotals {
   seconds_work_related: number;
   seconds_neutral: number;
   seconds_not_work_related: number;
+  /** F6 - tempo ativo em app SEM categoria no tenant (antes vinha somado no neutro). */
+  seconds_unclassified: number;
   data_incomplete: boolean;
   device_count: number;
 }
@@ -625,6 +629,8 @@ export interface UsageDeviceItem {
   seconds_work_related: number;
   seconds_neutral: number;
   seconds_not_work_related: number;
+  /** F6 - tempo ativo em app SEM categoria no tenant. */
+  seconds_unclassified: number;
 }
 
 /** Item de `group_by=device_user` - device_user_id de UUID zero = "Máquina (sem usuário)". */
@@ -1320,4 +1326,121 @@ export interface BillableDevicesResponse {
   frozen: boolean;
   /** Instante do congelamento - null enquanto o mês não fechou. */
   frozen_at: string | null;
+}
+
+// =============================================================================
+// Contratos da F6: visão geral macro (GET /dashboard/overview), atividade por
+// hora (GET /dashboard/activity-by-hour) e colaboradores (GET/PATCH /people).
+// O ÍNDICE e a COBERTURA vêm calculados do servidor (fonte única da fórmula,
+// decisão 4 do spec de 07/09/2026): o portal NUNCA recalcula, só formata.
+// =============================================================================
+
+/** Período resolvido pelo servidor, inclusivo, no fuso da organização. */
+export interface OverviewPeriod {
+  from: string;
+  to: string;
+  /** Quantidade de dias do intervalo (base das médias por dia). */
+  days: number;
+}
+
+/**
+ * Totais do período com os seis baldes da composição e os dois indicadores.
+ * productivity_index e classification_coverage são frações de 0 a 1 e vêm
+ * `null` quando o denominador é zero - null é "sem dado", nunca "zero".
+ * person_count/person_days ignoram a lane-máquina (máquina não é pessoa).
+ */
+export interface OverviewTotals {
+  seconds_on: number;
+  seconds_active: number;
+  seconds_idle: number;
+  seconds_locked: number;
+  seconds_work_related: number;
+  seconds_neutral: number;
+  seconds_not_work_related: number;
+  seconds_unclassified: number;
+  productivity_index: number | null;
+  classification_coverage: number | null;
+  device_count: number;
+  person_count: number;
+  person_days: number;
+  data_incomplete: boolean;
+}
+
+/** Metas semanais da organização, repetidas na resposta para a tela não precisar do /me. */
+export interface OverviewGoals {
+  weekly_active_hours: number | null;
+  work_related_pct: number | null;
+}
+
+/** Resposta de `GET /dashboard/overview` - previous só vem com compare=true. */
+export interface OverviewResponse {
+  period: OverviewPeriod;
+  totals: OverviewTotals;
+  previous: OverviewTotals | null;
+  days: DashboardSummaryDay[];
+  goals: OverviewGoals;
+}
+
+/**
+ * Uma hora local do tenant. As 24 vêm SEMPRE, inclusive vazias (o gráfico
+ * desenha o dia inteiro). avg_people_active é a média de pessoas ativas
+ * simultâneas naquela hora no período; null quando não há dia com dado.
+ */
+export interface ActivityByHourItem {
+  hour: number;
+  seconds_active: number;
+  seconds_idle: number;
+  avg_people_active: number | null;
+}
+
+export interface ActivityByHourResponse {
+  hours: ActivityByHourItem[];
+  days_with_data: number;
+}
+
+/**
+ * Uma PESSOA do tenant no período. Identidade = windows_sid resolvido pela
+ * mesclagem; display_name já vem resolvido pelo backend (apelido > nome da
+ * lane > usuário do Windows > SID) - renderize este campo, não reimplemente a
+ * regra. teams são as etiquetas dos dispositivos em que ela apareceu.
+ */
+export interface PersonRow {
+  windows_sid: string;
+  display_name: string;
+  seconds_on: number;
+  seconds_active: number;
+  seconds_idle: number;
+  seconds_locked: number;
+  seconds_work_related: number;
+  seconds_neutral: number;
+  seconds_not_work_related: number;
+  seconds_unclassified: number;
+  productivity_index: number | null;
+  classification_coverage: number | null;
+  device_count: number;
+  days_with_data: number;
+  teams: string[];
+}
+
+export interface PeopleReportResponse {
+  items: PersonRow[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+/** PATCH /people/{sid}: apelido e mesclagem (Admin+). */
+export interface PersonPatchRequest {
+  display_name?: string | null;
+  merged_into_sid?: string | null;
+}
+
+/** POST /reaggregation: janela em dias (1 a 366); resposta é 202. */
+export interface ReaggregationRequest {
+  days: number;
+}
+
+export interface ReaggregationResponse {
+  enqueued: number;
+  days: number;
 }
