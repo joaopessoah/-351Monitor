@@ -170,3 +170,26 @@ O histórico anterior mostra "sem classificação" perto de zero e o neutro infl
 coluna nasceu com valor padrão. Isso se corrige em **Configurações › Classificação ›
 Recalcular histórico**, escolhendo a janela. É assíncrono, roda em ciclos de 15 min e pode
 levar horas numa frota grande.
+
+---
+
+## COMECE POR AQUI numa sessão nova (07/09/2026, fim do dia)
+
+As oito fases estão entregues e implantadas. Faltam **três itens do estudo**, confirmados
+por leitura de código, em ordem de valor:
+
+1. **Índice explicável** — era o diferencial nº 1 do estudo e nenhum dos 26 concorrentes tem.
+   Falta a decomposição do "por que o índice mudou" por aplicativo, equipe e dia, do tipo
+   "menos 4 pontos: mais 6 h em WhatsApp na equipe Comercial na terça". O que existe é o
+   cartão "Resumo do período" com três frases, uma versão reduzida. Precisa de endpoint que
+   compare dois períodos por app e por equipe e devolva as maiores contribuições, com sinal.
+2. **Transparência como produto, metade que falta** — a anotação e a contestação existem
+   (`person_notes`), mas `portal/src/pages/TransparenciaPage.tsx` **não mostra ao colaborador
+   os próprios números** (zero métrica no arquivo hoje): só a política de coleta. O digest
+   pessoal por e-mail cobre em parte. Falta a visão dele, no produto, pelo link tokenizado
+   `/t/{token}` que já existe.
+3. **Agregados mensais** — não existem (`grep` por `monthly_summar`/`rollup` volta vazio). O
+   teto de 92 dias continua valendo, então trimestre e ano são impossíveis. O estudo lista
+   isso como pré-requisito para prometer essas janelas.
+
+Nada disso precisa de decisão do dono: as nove decisões da seção 7 do spec já cobrem tudo.
