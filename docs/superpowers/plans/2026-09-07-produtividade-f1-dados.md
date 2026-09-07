@@ -10,6 +10,20 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-07-produto-produtividade-design.md` (decisões 1, 3, 4, 7 e 8 da seção 7)
 
+**Status: EXECUTADO em 07/09/2026** na branch `feat/produtividade-f6`, cinco commits, suíte
+completa em 419 testes verdes. Desvios do plano, todos registrados no código:
+- a migration do balde saiu por `dotnet ef migrations add` (o repo exige o `.Designer.cs` com o
+  atributo `[Migration]`; migration escrita à mão não é reconhecida) e o corpo é DDL cru, porque
+  `daily_device_summaries` não é entidade do EF;
+- `hour_local` é `smallint` e precisou de `::int` no SELECT: o Dapper não casa `Int16` com `int`
+  no construtor do record;
+- `round(numeric)` precisou de `::double precision` no `/people` pelo mesmo motivo (decimal vs double);
+- `text[]` materializa como `System.Array` e o Dapper não casa com `string[]`: as etiquetas de
+  equipe vêm juntadas por `chr(31)` e o C# divide de volta;
+- a identidade de pessoa ficou chaveada pelo próprio `windows_sid` (tabela `people` só com
+  apelido e mesclagem), em vez de um `id` novo com `person_id` em `device_users`: dá identidade
+  cross-device sem tocar no caminho quente da ingestão e sem backfill.
+
 ## Global Constraints
 
 - **Multi-tenant desde a primeira linha:** `tenant_id uuid NOT NULL` em toda tabela nova; todo SQL filtra por `tenant_id`; todo endpoint novo entra na suíte canônica de isolamento (`TenantIsolationTests`).
@@ -43,7 +57,7 @@ Hoje `seconds_neutral` é resto (`active - work - not_work`), então app sem map
 - Consumes: nada de tarefas anteriores.
 - Produces: coluna `daily_device_summaries.seconds_unclassified int NOT NULL DEFAULT 0`; campo `seconds_unclassified` (long) em `DashboardSummaryDayResponse`, `DashboardSummaryTotalsResponse`, `UsageDeviceRowResponse` e `UsageDeviceUserRowResponse`.
 
-- [ ] **Step 1: Escrever o teste que falha**
+- [x] **Step 1: Escrever o teste que falha**
 
 Em `DailyAggregationTests.cs`, seguindo o padrão dos testes existentes da classe (mesmos helpers de seed e pipeline):
 
@@ -139,12 +153,12 @@ private async Task<SummaryRowDto> ReadSummaryAsync(Guid tenantId, Guid deviceId,
 }
 ```
 
-- [ ] **Step 2: Rodar o teste e ver falhar**
+- [x] **Step 2: Rodar o teste e ver falhar**
 
 Run: `cd backend && dotnet test --filter "FullyQualifiedName~DailyAggregationTests.Agregacao_AppSemMapeamento"`
 Expected: FAIL — `column "seconds_unclassified" does not exist`.
 
-- [ ] **Step 3: Migration da coluna**
+- [x] **Step 3: Migration da coluna**
 
 `20260907130000_BaldeSemClassificacaoF6.cs`:
 
@@ -183,7 +197,7 @@ namespace M351.Infrastructure.Data.Migrations
 }
 ```
 
-- [ ] **Step 4: SQL da agregação**
+- [x] **Step 4: SQL da agregação**
 
 Em `DailyAggregationService.ProcessDayAsync`, o INSERT de `daily_device_summaries` passa a ter a coluna e o balde. Substituir a lista de colunas, a projeção e a subquery:
 
@@ -242,12 +256,12 @@ No cabeçalho da classe, trocar as duas linhas de regra:
 ///    truncamento por balde;
 ```
 
-- [ ] **Step 5: Rodar o teste e ver passar**
+- [x] **Step 5: Rodar o teste e ver passar**
 
 Run: `cd backend && dotnet test --filter "FullyQualifiedName~DailyAggregationTests"`
 Expected: PASS (inclusive os testes antigos da classe — o neutro de app mapeado em categoria 0 não muda).
 
-- [ ] **Step 6: Expor no contrato do dashboard e do relatório de uso**
+- [x] **Step 6: Expor no contrato do dashboard e do relatório de uso**
 
 Em `DashboardContracts.cs`, acrescentar o campo **depois** de `SecondsNotWorkRelated` nos dois records (posição importa: são records posicionais consumidos pelo controller):
 
@@ -281,12 +295,12 @@ private sealed record SummaryRow(
 
 O mesmo em `ReportsContracts.cs` / `ReportsController` para `group_by=device` e `group_by=device_user` (as duas linhas que já trazem os três baldes).
 
-- [ ] **Step 7: Rodar a suíte de leitura afetada**
+- [x] **Step 7: Rodar a suíte de leitura afetada**
 
 Run: `cd backend && dotnet test --filter "FullyQualifiedName~DashboardEndpointTests|FullyQualifiedName~UsageReportEndpointTests|FullyQualifiedName~DailyAggregationTests"`
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/src/M351.Infrastructure/Data/Migrations/20260907130000_BaldeSemClassificacaoF6.cs \
@@ -317,7 +331,7 @@ O gráfico "Atividade ao longo do dia" da nova Visão Geral não tem fonte: o en
 - Consumes: Task 1 (mesma transação de `ProcessDayAsync`).
 - Produces: tabela `hourly_activity`; `GET /api/v1/dashboard/activity-by-hour?from&to[&tag]` devolvendo `ActivityByHourResponse(IReadOnlyList<ActivityByHourItemResponse> Hours, int DaysWithData)` com `ActivityByHourItemResponse(int Hour, long SecondsActive, long SecondsIdle, double? AvgPeopleActive)`.
 
-- [ ] **Step 1: Escrever o teste que falha**
+- [x] **Step 1: Escrever o teste que falha**
 
 `ActivityByHourTests.cs` (novo arquivo, no padrão de `DashboardEndpointTests`):
 
@@ -411,12 +425,12 @@ public class ActivityByHourTests(ApiTestFixture fixture)
 }
 ```
 
-- [ ] **Step 2: Rodar o teste e ver falhar**
+- [x] **Step 2: Rodar o teste e ver falhar**
 
 Run: `cd backend && dotnet test --filter "FullyQualifiedName~ActivityByHourTests"`
 Expected: FAIL — 404 no endpoint.
 
-- [ ] **Step 3: Migration da tabela**
+- [x] **Step 3: Migration da tabela**
 
 `20260907131000_AtividadePorHoraF6.cs`:
 
@@ -470,7 +484,7 @@ namespace M351.Infrastructure.Data.Migrations
 }
 ```
 
-- [ ] **Step 4: Preencher na transação da agregação diária**
+- [x] **Step 4: Preencher na transação da agregação diária**
 
 Em `ProcessDayAsync`, depois do DELETE de `daily_app_usage` acrescentar o DELETE novo, e depois do INSERT de `daily_app_usage` o INSERT novo:
 
@@ -520,11 +534,11 @@ No cabeçalho da classe, acrescentar à lista de regras:
 ///    no balde não é gravada (HAVING) — evita 24 linhas de ruído por dia e device;
 ```
 
-- [ ] **Step 5: Purga de retenção**
+- [x] **Step 5: Purga de retenção**
 
 Em `RetentionPurgeService`, acrescentar `hourly_activity` à mesma lista de tabelas `daily_*` purgadas em 24 meses, no mesmo formato das existentes (a classe tem um array/lista de comandos DELETE por tabela; seguir o padrão local do arquivo).
 
-- [ ] **Step 6: Contrato e endpoint**
+- [x] **Step 6: Contrato e endpoint**
 
 Em `DashboardContracts.cs`:
 
@@ -618,12 +632,12 @@ public async Task<IActionResult> ActivityByHour(
 private sealed record HourRow(int Hour, long SecondsActive, long SecondsIdle);
 ```
 
-- [ ] **Step 7: Rodar o teste e ver passar**
+- [x] **Step 7: Rodar o teste e ver passar**
 
 Run: `cd backend && dotnet test --filter "FullyQualifiedName~ActivityByHourTests"`
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/src/M351.Infrastructure/Data/Migrations/20260907131000_AtividadePorHoraF6.cs \
@@ -651,7 +665,7 @@ A Visão Geral nova precisa de seis KPIs, a composição em seis baldes, a compa
 - Produces: `GET /api/v1/dashboard/overview?from&to[&tag][&compare=true]` devolvendo
   `OverviewResponse(OverviewPeriodResponse Period, OverviewTotalsResponse Totals, OverviewPeriodTotalsResponse? Previous, IReadOnlyList<DashboardSummaryDayResponse> Days, OverviewGoalsResponse Goals)`.
 
-- [ ] **Step 1: Escrever o teste que falha**
+- [x] **Step 1: Escrever o teste que falha**
 
 `DashboardOverviewTests.cs`:
 
@@ -780,12 +794,12 @@ public class DashboardOverviewTests(ApiTestFixture fixture)
 }
 ```
 
-- [ ] **Step 2: Rodar o teste e ver falhar**
+- [x] **Step 2: Rodar o teste e ver falhar**
 
 Run: `cd backend && dotnet test --filter "FullyQualifiedName~DashboardOverviewTests"`
 Expected: FAIL — 404.
 
-- [ ] **Step 3: Contratos**
+- [x] **Step 3: Contratos**
 
 Em `DashboardContracts.cs`:
 
@@ -834,7 +848,7 @@ public sealed record OverviewTotalsResponse(
 public sealed record OverviewGoalsResponse(int? WeeklyActiveHours, int? WorkRelatedPct);
 ```
 
-- [ ] **Step 4: Endpoint**
+- [x] **Step 4: Endpoint**
 
 No `DashboardController`:
 
@@ -968,12 +982,12 @@ private sealed record GoalsRow(int? Weekly, int? Pct);
 
 `ValidateRange` com `out` já existe no `ApiControllerBase`; a sobrecarga sem `out` usada pelos outros endpoints continua válida.
 
-- [ ] **Step 5: Rodar o teste e ver passar**
+- [x] **Step 5: Rodar o teste e ver passar**
 
 Run: `cd backend && dotnet test --filter "FullyQualifiedName~DashboardOverviewTests"`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/src/M351.Api/Contracts/DashboardContracts.cs \
@@ -999,7 +1013,7 @@ git commit -m "feat(backend): GET /dashboard/overview com índice e cobertura no
 - Consumes: Task 1 (`seconds_unclassified`), Task 3 (`OverviewTotalsResponse` não é reusado aqui — a linha de pessoa tem contrato próprio).
 - Produces: tabela `people`; `GET /api/v1/people?from&to[&tag][&q][&sort][&dir][&page][&page_size]` devolvendo `PeopleReportResponse(IReadOnlyList<PersonRowResponse> Items, int Total, int Page, int PageSize)`; `PATCH /api/v1/people/{sid}` para apelido e mesclagem.
 
-- [ ] **Step 1: Escrever o teste que falha**
+- [x] **Step 1: Escrever o teste que falha**
 
 `PeopleEndpointTests.cs`:
 
@@ -1120,12 +1134,12 @@ public class PeopleEndpointTests(ApiTestFixture fixture)
 
 Se `EventFactory` ainda não aceitar SID/usuário no construtor, acrescentar os dois parâmetros opcionais em `Support/EventFactory.cs` mantendo os defaults atuais (nenhum teste existente muda).
 
-- [ ] **Step 2: Rodar o teste e ver falhar**
+- [x] **Step 2: Rodar o teste e ver falhar**
 
 Run: `cd backend && dotnet test --filter "FullyQualifiedName~PeopleEndpointTests"`
 Expected: FAIL — 404.
 
-- [ ] **Step 3: Migration**
+- [x] **Step 3: Migration**
 
 `20260907132000_PessoasF6.cs`:
 
@@ -1177,7 +1191,7 @@ namespace M351.Infrastructure.Data.Migrations
 }
 ```
 
-- [ ] **Step 4: Contratos**
+- [x] **Step 4: Contratos**
 
 `PeopleContracts.cs`:
 
@@ -1222,7 +1236,7 @@ public sealed record PersonRowResponse(
 public sealed record PersonPatchRequest(string? DisplayName, string? MergedIntoSid);
 ```
 
-- [ ] **Step 5: Controller**
+- [x] **Step 5: Controller**
 
 `PeopleController.cs`:
 
@@ -1455,19 +1469,19 @@ public sealed class PeopleController(
 
 Acrescentar `UpdatePerson = "update_person"` em `AuditActions` (mesmo padrão das constantes existentes). O `Policies.AdminPlus` é o nome já usado pelos outros controllers — conferir a constante exata em `M351.Api/Security/Policies.cs` e usar a de lá.
 
-- [ ] **Step 6: Rodar o teste e ver passar**
+- [x] **Step 6: Rodar o teste e ver passar**
 
 Run: `cd backend && dotnet test --filter "FullyQualifiedName~PeopleEndpointTests"`
 Expected: PASS.
 
-- [ ] **Step 7: Entrar na suíte de isolamento**
+- [x] **Step 7: Entrar na suíte de isolamento**
 
 Em `TenantIsolationTests`, acrescentar o caso do endpoint novo no mesmo formato dos existentes: usuário do tenant A consultando `/api/v1/people?from&to` não vê nenhuma linha do tenant B, e `PATCH /api/v1/people/{sid}` com SID do tenant B devolve 404.
 
 Run: `cd backend && dotnet test --filter "FullyQualifiedName~TenantIsolationTests"`
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/src/M351.Infrastructure/Data/Migrations/20260907132000_PessoasF6.cs \
@@ -1494,7 +1508,7 @@ Decisão 7: mudar a classificação hoje só corrige 30 dias de histórico; rela
 - Consumes: Task 1 (a reagregação é o que corrige o histórico do balde novo).
 - Produces: `ReaggregationRequester.RequestAsync(Guid tenantId, int days, CancellationToken)` e a estática `RequestAsync(NpgsqlConnection, NpgsqlTransaction?, Guid, int, CancellationToken)`; `POST /api/v1/reaggregation` com corpo `{ "days": 365 }` devolvendo `{ "enqueued": N, "days": 365 }`.
 
-- [ ] **Step 1: Escrever o teste que falha**
+- [x] **Step 1: Escrever o teste que falha**
 
 `ReaggregationEndpointTests.cs`:
 
@@ -1571,12 +1585,12 @@ public class ReaggregationEndpointTests(ApiTestFixture fixture)
 }
 ```
 
-- [ ] **Step 2: Rodar o teste e ver falhar**
+- [x] **Step 2: Rodar o teste e ver falhar**
 
 Run: `cd backend && dotnet test --filter "FullyQualifiedName~ReaggregationEndpointTests"`
 Expected: FAIL — 404.
 
-- [ ] **Step 3: Janela parametrizável no requester**
+- [x] **Step 3: Janela parametrizável no requester**
 
 Em `ReaggregationRequester`, trocar as constantes e os dois métodos por versões com `days`, mantendo os nomes antigos como atalho para não quebrar chamadores:
 
@@ -1628,7 +1642,7 @@ public static Task<int> RequestLast30DaysAsync(
 
 O comentário do cabeçalho ganha a linha: `- janela sob demanda (F6, decisão 7): até 366 dias via POST /reaggregation; o default automático da curadoria segue 30 dias, e a folga de partition pruning acompanha a janela (days + 3).`
 
-- [ ] **Step 4: Controller**
+- [x] **Step 4: Controller**
 
 `ReaggregationController.cs`:
 
@@ -1683,17 +1697,17 @@ public sealed class ReaggregationController(
 
 Acrescentar `Reaggregate = "reaggregate"` em `AuditActions`. Conferir que `ReaggregationRequester` está registrado no DI da API (`Program.cs`); se só o Worker o registra, acrescentar `builder.Services.AddSingleton<ReaggregationRequester>()` no mesmo lugar em que os outros serviços de Infrastructure são registrados.
 
-- [ ] **Step 5: Rodar o teste e ver passar**
+- [x] **Step 5: Rodar o teste e ver passar**
 
 Run: `cd backend && dotnet test --filter "FullyQualifiedName~ReaggregationEndpointTests"`
 Expected: PASS.
 
-- [ ] **Step 6: Suíte inteira**
+- [x] **Step 6: Suíte inteira**
 
 Run: `cd backend && dotnet test`
 Expected: PASS (inclusive `CategoriesEndpointTests` e `AppCatalogEndpointTests`, que chamam os atalhos antigos do requester).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/src/M351.Infrastructure/Aggregation/ReaggregationRequester.cs \
