@@ -108,6 +108,13 @@ public static class AuditActions
     /// de trilha — mesmo padrão verbo_alvo do update_device.
     /// </summary>
     public const string UpdateDeviceUser = "update_device_user";
+
+    /// <summary>
+    /// F6 — PATCH /people/{sid}: apelido e mesclagem de PESSOA (identidade por windows_sid).
+    /// detail {windows_sid, display_name, merged_into_sid}. Irmão de update_device_user, mas o
+    /// alvo é a pessoa do tenant, não o par (dispositivo, usuário).
+    /// </summary>
+    public const string UpdatePerson = "update_person";
 }
 
 /// <summary>Tabela audit_log — append-only, particionada por mês, retenção 24 meses (N13).</summary>
