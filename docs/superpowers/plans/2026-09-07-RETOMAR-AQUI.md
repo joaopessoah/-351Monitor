@@ -37,7 +37,30 @@ Backend com **445 testes de integração verdes**; portal com typecheck e build 
 - **Site**: vocabulário alinhado, `como-medimos.html`, seções repetidas fundidas.
 - **Infra**: deploy de staging consertado (dois defeitos, ver seção de armadilhas).
 
-### Em voo quando o contexto acabou (três agentes)
+### Atualização de 07/09 22:1x — as cinco lacunas do mockup foram FECHADAS e implantadas
+Composição por dia com os quatro baldes ligada ao período global, aplicativos por período,
+seletor de período personalizado, mapa do mês por DIA (com `GET /people/daily` novo) e busca
+global com Ctrl+K. 449 testes verdes, bundle `index-BMaidHx2.js` no ar. Os dois botões do
+cabeçalho (Resumo em PDF e Enviar por e-mail) ficaram DESABILITADOS com o motivo no title.
+
+### Em voo depois disso (QUATRO agentes, fases F5 a F8)
+Se os arquivos abaixo estiverem modificados e não commitados, o trabalho chegou pela metade.
+
+| Agente | Entrega | Arquivos que possui |
+|---|---|---|
+| Anotação e contestação (F6, decisão 6, DIFERENCIAL) | tabela `person_notes`, `/api/v1/people/{sid}/notes` com GET/POST/PATCH (gestor revisa), bloco na página da pessoa. Contestação aceita NÃO altera agregado | migration nova, `PersonNotesController.cs`, `PersonNoteContracts.cs`, `AuditLogEntry.cs`, testes, `pages/PessoaPage.tsx`, `components/pessoa/**` |
+| Digest duplo e PDF (F6, DIFERENCIAL) | evolui o `WeeklyDigestService` (índice, variação, quatro baldes, cobertura, alertas, sem ranking), cria digest PESSOAL do colaborador, e o kind `resumo_pdf` no `/exports` com QuestPDF | `Infrastructure/Digest/**`, `Worker/**`, `Email/**`, `Exports/**`, `ExportsController.cs`, testes |
+| Equipes, feriados e regra por equipe (F5 + F7) | escopo de EQUIPE na regra de classificação (equipe vence organização), tabela `teams` ligada a PESSOA, feriados nacionais semeados, jornada por equipe, tela de Equipes em Configurações | migrations, `CategoriesController.cs`, `AppCatalogController.cs`, `OrganizationController.cs`, `TeamsController.cs`, `DailyAggregationService.cs`, `pages/configuracoes/**`, `AppsPage.tsx` |
+| Prints reais no site (F8) | substitui os mockups em CSS por capturas do painel novo, criando e APAGANDO um usuário temporário no staging | `site/index.html`, `site/assets/css/home.css`, `site/assets/img/**` |
+
+**Se algum não terminou:** o brief está resumido acima; o alvo visual é o mockup. Prioridade se
+faltar tempo: prints do site (destrava venda), depois anotação e contestação (diferencial),
+depois digest, e por último feriados e regra por equipe (refinamento).
+
+**Cuidado com o agente do site:** ele cria um usuário temporário no staging para capturar as
+telas. Se ele não terminou, CONFIRA no banco `m351_staging` se sobrou usuário de teste e apague.
+
+### Em voo na leva anterior (já commitado, mantido como histórico)
 Se os arquivos abaixo estiverem modificados e NÃO commitados, o trabalho chegou pela metade.
 Verifique com `git status` e decida: terminar ou reverter o arquivo.
 
