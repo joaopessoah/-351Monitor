@@ -89,6 +89,7 @@ import { journeyHoursOf } from "@/components/pessoa/pessoaMetrics";
 import { PersonDailyComposition } from "@/components/pessoa/PersonDailyComposition";
 import { PersonIdentityCard } from "@/components/pessoa/PersonIdentityCard";
 import { PersonKpis } from "@/components/pessoa/PersonKpis";
+import { PersonNotes } from "@/components/pessoa/PersonNotes";
 
 const MAX_DISPLAY_NAME = 200;
 
@@ -357,6 +358,22 @@ export function PessoaPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Anotação de período e contestação de classificação (F6, decisão 6):
+          o contexto que o número não tem, com a revisão de quem administra.
+          Recebe o id da ROTA (device_user_id) - a rota de anotações aceita o
+          device_user_id ou o windows_sid e resolve a pessoa no servidor, pelo
+          par (tenant, id), o que destrava aqui o que o bloco de identidade
+          acima ainda não consegue fazer. Aceitar uma contestação NÃO altera
+          nenhum agregado: a frase que a tela mostra depois da revisão vem do
+          próprio servidor. */}
+      <PersonNotes
+        personKey={id}
+        from={resolved?.from ?? null}
+        to={resolved?.to ?? null}
+        timezone={timezone}
+        canReview={canEdit}
+      />
 
       {/* Ausência EXPLÍCITA do uso por aplicativo (ver comentário do topo). */}
       <Card>
