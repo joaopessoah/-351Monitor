@@ -115,6 +115,13 @@ public static class AuditActions
     /// alvo é a pessoa do tenant, não o par (dispositivo, usuário).
     /// </summary>
     public const string UpdatePerson = "update_person";
+
+    /// <summary>
+    /// F6 — POST /reaggregation: reagregação retroativa sob demanda (decisão 7 do spec).
+    /// detail {days, enqueued}. Alvo é a própria organização: a operação reescreve agregados de
+    /// TODOS os dispositivos dela.
+    /// </summary>
+    public const string Reaggregate = "reaggregate";
 }
 
 /// <summary>Tabela audit_log — append-only, particionada por mês, retenção 24 meses (N13).</summary>

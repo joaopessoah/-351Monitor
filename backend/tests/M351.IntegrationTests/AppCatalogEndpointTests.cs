@@ -184,7 +184,7 @@ public class AppCatalogEndpointTests(ApiTestFixture fixture)
 
     // ------------------------------------------------------------ PUT muda baldes; DELETE volta ao neutro
     [Fact]
-    public async Task PutMapeamento_ReagregaEMudaBaldes_DeleteDaCategoriaVoltaAoNeutro()
+    public async Task PutMapeamento_ReagregaEMudaBaldes_DeleteDaCategoriaVoltaASemClassificacao()
     {
         var (client, tenantId, adminToken, _, fullKey) = await SetupAsync("CatalogoFlx");
         var device = await AgentClient.EnrollAsync(client, fullKey, hostname: "NB-CATALOGO-FLX");
@@ -196,11 +196,14 @@ public class AppCatalogEndpointTests(ApiTestFixture fixture)
 
         var summaryBefore = await TestDb.RowAsync(fixture.Database.ConnectionString,
             """
-            SELECT seconds_active, seconds_work_related, seconds_neutral, seconds_not_work_related
+            SELECT seconds_active, seconds_work_related, seconds_neutral, seconds_not_work_related,
+                   seconds_unclassified
             FROM daily_device_summaries WHERE tenant_id = @t AND device_id = @d
             """, ("t", tenantId), ("d", device.DeviceId));
         Assert.Equal(540, Convert.ToInt32(summaryBefore!["seconds_active"]));
-        Assert.Equal(540, Convert.ToInt32(summaryBefore["seconds_neutral"])); // sem mapeamento: neutro
+        // F6: sem mapeamento o tempo é "sem classificação", não neutro
+        Assert.Equal(540, Convert.ToInt32(summaryBefore["seconds_unclassified"]));
+        Assert.Equal(0, Convert.ToInt32(summaryBefore["seconds_neutral"]));
 
         // mapeia para uma categoria não relacionada ao trabalho
         var categoriaId = await PostCategoryAsync(client, adminToken, "Jogos", -1);
@@ -222,16 +225,18 @@ public class AppCatalogEndpointTests(ApiTestFixture fixture)
         Assert.Null(audit["de"]);
         Assert.Equal(categoriaId.ToString(), (string)audit["para"]!);
 
-        // agregação consome e os baldes mudam: neutro → não relacionado ao trabalho
+        // agregação consome e os baldes mudam: sem classificação → não relacionado ao trabalho
         await RunAggregationAsync();
         var afterMap = await TestDb.RowAsync(fixture.Database.ConnectionString,
             """
-            SELECT seconds_active, seconds_work_related, seconds_neutral, seconds_not_work_related
+            SELECT seconds_active, seconds_work_related, seconds_neutral, seconds_not_work_related,
+                   seconds_unclassified
             FROM daily_device_summaries WHERE tenant_id = @t AND device_id = @d
             """, ("t", tenantId), ("d", device.DeviceId));
         Assert.Equal(540, Convert.ToInt32(afterMap!["seconds_active"]));
         Assert.Equal(540, Convert.ToInt32(afterMap["seconds_not_work_related"]));
         Assert.Equal(0, Convert.ToInt32(afterMap["seconds_neutral"]));
+        Assert.Equal(0, Convert.ToInt32(afterMap["seconds_unclassified"]));
 
         // DELETE da categoria: mapeamentos saem (app volta a não categorizado) e reagrega
         var delete = await SendAsync(client, HttpMethod.Delete, $"/api/v1/categories/{categoriaId}", adminToken);
@@ -243,10 +248,12 @@ public class AppCatalogEndpointTests(ApiTestFixture fixture)
         await RunAggregationAsync();
         var afterDelete = await TestDb.RowAsync(fixture.Database.ConnectionString,
             """
-            SELECT seconds_active, seconds_neutral, seconds_not_work_related
+            SELECT seconds_active, seconds_neutral, seconds_not_work_related, seconds_unclassified
             FROM daily_device_summaries WHERE tenant_id = @t AND device_id = @d
             """, ("t", tenantId), ("d", device.DeviceId));
-        Assert.Equal(540, Convert.ToInt32(afterDelete!["seconds_neutral"]));
+        // apagar a categoria devolve o app ao balde "sem classificação" (F6), não ao neutro
+        Assert.Equal(540, Convert.ToInt32(afterDelete!["seconds_unclassified"]));
+        Assert.Equal(0, Convert.ToInt32(afterDelete["seconds_neutral"]));
         Assert.Equal(0, Convert.ToInt32(afterDelete["seconds_not_work_related"]));
     }
 
