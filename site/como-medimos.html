@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Como medimos | +351 Monitor</title>
+<meta name="description" content="As definições e as fórmulas do +351 Monitor em linguagem de gestão: horas com a máquina ligada, horas ativas, produtivo, neutro, improdutivo, sem classificação, índice de produtividade, cobertura da classificação e ociosidade.">
+<link rel="canonical" href="https://www.mais351monitor.com.br/como-medimos.html">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="pt_BR">
+<meta property="og:site_name" content="+351 Monitor">
+<meta property="og:title" content="Como medimos | +351 Monitor">
+<meta property="og:description" content="Toda métrica do painel com a definição e a fórmula publicadas. Sem caixa-preta, sem índice sem contexto.">
+<meta property="og:url" content="https://www.mais351monitor.com.br/como-medimos.html">
+<meta property="og:image" content="https://www.mais351monitor.com.br/assets/img/og.png">
+<link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+<link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+<meta name="theme-color" content="#0B0F1A">
+<link rel="stylesheet" href="assets/css/styles.css?v=20260907">
+</head>
+<body>
+
+<header class="nav scrolled">
+  <div class="container nav-inner">
+    <a class="brand" href="index.html" aria-label="+351 Monitor, página inicial">
+      <svg class="brand-mark" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <rect x="3" y="7" width="58" height="42" rx="7" stroke="currentColor" stroke-width="3.6"/>
+        <path class="brand-pulse" d="M11 30h7l5.5-11L31 41l5-11 3.5 6H53" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M23 57h18" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/>
+        <path d="M32 49v8" stroke="currentColor" stroke-width="3.6"/>
+      </svg>
+      <span class="brand-word"><em>+</em>351 <span>Monitor</span></span>
+    </a>
+    <a class="nav-back" href="index.html">← Voltar ao site</a>
+  </div>
+</header>
+
+<main>
+  <div class="container page-hero">
+    <p class="eyebrow"><span class="plus">+</span>Como medimos</p>
+    <h1>O que cada número do painel significa</h1>
+    <p class="page-meta">Última atualização: 7 de setembro de 2026</p>
+    <p class="page-note">Nenhum indicador de produtividade deveria chegar ao gestor sem a conta que o produziu. Esta página publica as definições e as fórmulas usadas no +351 Monitor, na mesma linguagem que aparece na tela. Quem quiser conferir, confere.</p>
+  </div>
+
+  <div class="container prose">
+
+    <h2 id="ponto-de-partida">O ponto de partida: quem classifica é a sua empresa</h2>
+    <p>A plataforma mede tempo. Ela não decide o que é bom ou ruim. Cada categoria de aplicativo recebe uma classificação <strong>definida pela sua empresa</strong>, e é essa regra que a plataforma aplica, sempre igual, todos os dias.</p>
+    <ul>
+      <li><strong>Produtivo</strong>, <strong>Neutro</strong> e <strong>Improdutivo</strong> são classificações de <strong>aplicativos</strong>, nunca de pessoas.</li>
+      <li>O mesmo aplicativo pode ser produtivo em uma área e improdutivo em outra. A regra pode ser configurada por equipe.</li>
+      <li><strong>Ativo</strong>, <strong>Ocioso</strong>, <strong>Bloqueado</strong>, <strong>Desligada</strong> e <strong>Sem comunicação</strong> são <strong>estados da máquina</strong>. São descrições técnicas e não recebem juízo de valor.</li>
+      <li>Nenhum indicador é usado para ranking, para leaderboard ou para exposição de comparação entre pessoas.</li>
+    </ul>
+
+    <h2 id="base">As duas medidas de base</h2>
+
+    <h3>Horas com a máquina ligada</h3>
+    <p class="formula">horas com a máquina ligada = tempo ativo + tempo ocioso + tempo bloqueado</p>
+    <p>É o tempo em que o computador esteve disponível para trabalhar, somando os três estados: em uso, sem uso de teclado e mouse, e com a sessão bloqueada. Máquina desligada, suspensa ou sem comunicação não entra.</p>
+    <p>É o denominador natural de qualquer conta de proporção. Quando o painel diz que a ociosidade foi de 18%, é 18% deste número.</p>
+
+    <h3>Horas ativas</h3>
+    <p class="formula">horas ativas = tempo com uso de teclado e mouse</p>
+    <p>Só isso. É o tempo em que houve interação com o computador. O que foi digitado nunca é coletado: registra-se apenas <strong>que houve</strong> atividade, jamais o conteúdo dela.</p>
+    <p>Todas as classificações a seguir dividem exclusivamente as horas ativas. Nada de tempo ocioso ou bloqueado entra em produtivo, neutro ou improdutivo.</p>
+
+    <h2 id="baldes">Como as horas ativas se dividem</h2>
+    <p>Toda hora ativa cai em um, e apenas um, dos quatro baldes abaixo, conforme o aplicativo que estava em uso:</p>
+
+    <table>
+      <thead>
+        <tr><th>Balde</th><th>O que é</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Produtivo</strong></td>
+          <td>Tempo ativo em aplicativos de categorias que a sua empresa classificou como produtivas.</td>
+        </tr>
+        <tr>
+          <td><strong>Neutro</strong></td>
+          <td>Tempo ativo em aplicativos de categorias que a sua empresa classificou como neutras: necessárias ao dia, sem entregar nem atrapalhar a entrega.</td>
+        </tr>
+        <tr>
+          <td><strong>Improdutivo</strong></td>
+          <td>Tempo ativo em aplicativos de categorias que a sua empresa classificou como improdutivas.</td>
+        </tr>
+        <tr>
+          <td><strong>Sem classificação</strong></td>
+          <td>Tempo ativo em aplicativo que <strong>ainda não foi classificado</strong> pela sua empresa. Não é um julgamento: é uma pendência de curadoria, e ela aparece em vez de ficar escondida.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="page-note">Por que "sem classificação" existe como balde próprio: porque a alternativa é pior. Empurrar o desconhecido para dentro de "neutro" faria o painel parecer completo quando não está, e faria o índice mudar sozinho conforme a curadoria avança. Preferimos mostrar o buraco.</p>
+
+    <h2 id="indice">Índice de produtividade</h2>
+    <p class="formula">índice de produtividade = produtivo ÷ (produtivo + neutro + improdutivo)</p>
+    <p>É a parcela do <strong>tempo já classificado</strong> que caiu no balde produtivo. Um índice de 62% significa: de cada hora ativa que a sua empresa já sabe classificar, 62% foi em aplicativos que ela mesma chamou de produtivos.</p>
+
+    <h3>Por que "sem classificação" fica fora da divisão</h3>
+    <p>Se o tempo sem classificação entrasse no denominador, o índice cairia por um motivo errado: não porque a equipe produziu menos, mas porque a lista de aplicativos ainda está incompleta. A empresa seria punida no número por uma tarefa de configuração pendente, e o número pioraria justamente no começo, quando a curadoria está no início.</p>
+    <p>Deixando esse tempo fora da conta, o índice responde a uma pergunta limpa: <em>do que eu sei classificar, quanto foi produtivo?</em> A parte que ainda não sei aparece separada, no indicador seguinte.</p>
+
+    <h2 id="cobertura">Cobertura da classificação</h2>
+    <p class="formula">cobertura da classificação = (horas ativas - tempo sem classificação) ÷ horas ativas</p>
+    <p>É o quanto do tempo ativo a sua empresa já consegue interpretar. Cobertura de 91% quer dizer que 9% das horas ativas ficaram em aplicativos ainda sem classificação.</p>
+    <p><strong>O índice de produtividade nunca aparece sozinho no painel: a cobertura vem sempre ao lado.</strong> A razão é simples. Um índice de 80% com cobertura de 95% é uma informação. O mesmo 80% com cobertura de 40% é um palpite sobre menos da metade do tempo, e apresentá-lo sem esse aviso seria enganoso.</p>
+    <p>Quando a cobertura está baixa, a plataforma não se limita a avisar: ela ordena os aplicativos não classificados por quantidade de horas, para que a próxima meia hora de configuração seja gasta no que mais muda o resultado.</p>
+
+    <h2 id="ociosidade">Ociosidade</h2>
+    <p class="formula">ociosidade = tempo ocioso ÷ horas com a máquina ligada</p>
+
+    <p class="page-note"><strong>Leia esta ressalva antes de usar o número:</strong> ocioso significa <strong>sem uso de teclado e mouse</strong>. Reuniões, chamadas e leitura podem aparecer como ociosidade.</p>
+
+    <p>Isso não é um defeito da medição, é o limite honesto dela. Um analista em uma reunião de duas horas, uma advogada lendo um contrato de 40 páginas na tela e alguém que saiu para o café produzem o mesmo sinal técnico: ninguém tocou no teclado.</p>
+    <p>Por isso o tempo ocioso <strong>nunca é somado ao improdutivo</strong> e não entra no índice de produtividade. Ociosidade é um indicador de <strong>padrão</strong>, útil quando um horário se repete todos os dias ou quando um número foge muito do histórico da própria equipe. Serve para abrir uma conversa, não para fechar um julgamento.</p>
+
+    <h2 id="aproveitamento">Aproveitamento</h2>
+    <p class="formula">aproveitamento = horas ativas ÷ horas com a máquina ligada</p>
+    <p>O complemento da ociosidade: quanto do tempo em que a máquina esteve ligada virou tempo de interação. Vale a mesma ressalva acima, e o mesmo cuidado: comparar a equipe com o histórico dela própria diz mais do que comparar com qualquer referência de mercado.</p>
+
+    <h2 id="fora-do-horario">Atividade fora do horário</h2>
+    <p>São as horas ativas registradas fora da janela de expediente configurada pela empresa, incluindo fins de semana. O painel mostra o volume e a recorrência.</p>
+    <p>É um <strong>indicador de equilíbrio</strong>: existe para que o gestor perceba a pessoa que está trabalhando à noite três vezes por semana, ou a equipe que virou o hábito de responder no domingo, e possa agir sobre a carga antes que ela cobre a conta.</p>
+    <p class="page-note"><strong>O que este indicador não é:</strong> não é hora extra, não é banco de horas e não é controle de ponto. A plataforma não apura jornada, não calcula saldo de horas, não registra entrada e saída e não produz documento para essa finalidade. Quem faz o controle de ponto da sua empresa continua fazendo, com o sistema que já usa.</p>
+
+    <h2 id="cadencias">Períodos e comparações</h2>
+    <ul>
+      <li>Os números são fechados por <strong>dia</strong> e somados para <strong>semana</strong> e <strong>mês</strong>. Períodos personalizados vão até 92 dias.</li>
+      <li>A comparação com o período anterior usa a <strong>mesma duração e os mesmos dias da semana</strong>, para não comparar uma semana cheia com uma semana de feriado.</li>
+      <li>Agregados de equipe com <strong>menos de três pessoas</strong> exibem apenas totais, nunca médias comparativas: em um grupo de duas pessoas, a média é o indivíduo.</li>
+    </ul>
+
+    <h2 id="nunca-coletado">O que nunca é coletado</h2>
+    <p>Nenhuma das métricas desta página depende de olhar o trabalho de alguém. A lista abaixo é fechada, e nada dela existe no produto:</p>
+
+    <div class="lgpd-cols">
+      <div class="lgpd-col lgpd-col-never">
+        <h3 class="lgpd-title-no">Nunca coletamos</h3>
+        <ul role="list">
+          <li>Teclas digitadas <small>não existe keylogger, em nenhuma configuração</small></li>
+          <li>Imagens de tela <small>sem prints, sem gravação, sem captura periódica</small></li>
+          <li>Webcam <small>a plataforma não acessa câmera</small></li>
+          <li>Microfone <small>a plataforma não acessa áudio</small></li>
+          <li>Conteúdo de arquivos, e-mails, mensagens ou área de transferência</li>
+          <li>URLs de navegação <small>nem o endereço, nem os parâmetros das páginas visitadas</small></li>
+        </ul>
+      </div>
+    </div>
+
+    <p>O que a plataforma registra é o tempo de uso de cada aplicativo, os eventos de sessão da máquina e a ausência de atividade. Só isso alimenta as fórmulas desta página. A lista completa do que é coletado, os prazos de retenção e os direitos do titular estão na <a href="privacidade.html">Política de Privacidade</a>.</p>
+
+    <p class="page-note">Esta página descreve o comportamento do produto e é atualizada quando uma métrica muda. Se um número do seu painel não fecha com a fórmula publicada aqui, escreva para <a href="mailto:contato@mais351monitor.com.br">contato@mais351monitor.com.br</a>: é uma divergência que queremos saber.</p>
+  </div>
+</main>
+
+<footer class="footer">
+  <div class="container footer-grid">
+    <div class="footer-brand">
+      <a class="brand" href="index.html" aria-label="+351 Monitor, página inicial">
+        <svg class="brand-mark" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+          <rect x="3" y="7" width="58" height="42" rx="7" stroke="currentColor" stroke-width="3.6"/>
+          <path class="brand-pulse" d="M11 30h7l5.5-11L31 41l5-11 3.5 6H53" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M23 57h18" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/>
+          <path d="M32 49v8" stroke="currentColor" stroke-width="3.6"/>
+        </svg>
+        <span class="brand-word"><em>+</em>351 <span>Monitor</span></span>
+      </a>
+      <p class="footer-tag">Software de monitoramento de produtividade</p>
+    </div>
+
+    <nav class="footer-col" aria-label="Contato">
+      <h4>Contato</h4>
+      <a href="https://wa.me/5511925690601" target="_blank" rel="noopener">WhatsApp: +55 11 92569-0601</a>
+      <a href="mailto:contato@mais351monitor.com.br">contato@mais351monitor.com.br</a>
+    </nav>
+
+    <nav class="footer-col" aria-label="Redes sociais">
+      <h4>Redes</h4>
+      <a href="https://www.instagram.com/351monitor/" target="_blank" rel="noopener">Instagram</a>
+      <a href="https://www.linkedin.com/company/351-monitor/" target="_blank" rel="noopener">LinkedIn</a>
+    </nav>
+
+    <nav class="footer-col" aria-label="Institucional">
+      <h4>Institucional</h4>
+      <a href="conteudos/">Conteúdos</a>
+      <a href="como-medimos.html" aria-current="page">Como medimos</a>
+      <a href="privacidade.html">Política de Privacidade</a>
+      <a href="termos.html">Termos de Uso</a>
+      <a href="index.html#seguranca-lgpd">Segurança e LGPD</a>
+    </nav>
+  </div>
+
+  <div class="container footer-legal">
+    <p>© <span id="ano">2026</span> +351 Monitor. Monitoramento transparente de produtividade, sem keylogger, sem prints de tela.</p>
+  </div>
+</footer>
+
+<script src="assets/js/track.js?v=20260825" defer></script>
+<script src="assets/js/main.js" defer></script>
+</body>
+</html>

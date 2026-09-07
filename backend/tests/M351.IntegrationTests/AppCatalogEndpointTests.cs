@@ -184,7 +184,7 @@ public class AppCatalogEndpointTests(ApiTestFixture fixture)
 
     // ------------------------------------------------------------ PUT muda baldes; DELETE volta ao neutro
     [Fact]
-    public async Task PutMapeamento_ReagregaEMudaBaldes_DeleteDaCategoriaVoltaAoNeutro()
+    public async Task PutMapeamento_ReagregaEMudaBaldes_DeleteDaCategoriaVoltaASemClassificacao()
     {
         var (client, tenantId, adminToken, _, fullKey) = await SetupAsync("CatalogoFlx");
         var device = await AgentClient.EnrollAsync(client, fullKey, hostname: "NB-CATALOGO-FLX");
@@ -196,11 +196,14 @@ public class AppCatalogEndpointTests(ApiTestFixture fixture)
 
         var summaryBefore = await TestDb.RowAsync(fixture.Database.ConnectionString,
             """
-            SELECT seconds_active, seconds_work_related, seconds_neutral, seconds_not_work_related
+            SELECT seconds_active, seconds_work_related, seconds_neutral, seconds_not_work_related,
+                   seconds_unclassified
             FROM daily_device_summaries WHERE tenant_id = @t AND device_id = @d
             """, ("t", tenantId), ("d", device.DeviceId));
         Assert.Equal(540, Convert.ToInt32(summaryBefore!["seconds_active"]));
-        Assert.Equal(540, Convert.ToInt32(summaryBefore["seconds_neutral"])); // sem mapeamento: neutro
+        // F6: sem mapeamento o tempo é "sem classificação", não neutro
+        Assert.Equal(540, Convert.ToInt32(summaryBefore["seconds_unclassified"]));
+        Assert.Equal(0, Convert.ToInt32(summaryBefore["seconds_neutral"]));
 
         // mapeia para uma categoria não relacionada ao trabalho
         var categoriaId = await PostCategoryAsync(client, adminToken, "Jogos", -1);
@@ -222,16 +225,18 @@ public class AppCatalogEndpointTests(ApiTestFixture fixture)
         Assert.Null(audit["de"]);
         Assert.Equal(categoriaId.ToString(), (string)audit["para"]!);
 
-        // agregação consome e os baldes mudam: neutro → não relacionado ao trabalho
+        // agregação consome e os baldes mudam: sem classificação → não relacionado ao trabalho
         await RunAggregationAsync();
         var afterMap = await TestDb.RowAsync(fixture.Database.ConnectionString,
             """
-            SELECT seconds_active, seconds_work_related, seconds_neutral, seconds_not_work_related
+            SELECT seconds_active, seconds_work_related, seconds_neutral, seconds_not_work_related,
+                   seconds_unclassified
             FROM daily_device_summaries WHERE tenant_id = @t AND device_id = @d
             """, ("t", tenantId), ("d", device.DeviceId));
         Assert.Equal(540, Convert.ToInt32(afterMap!["seconds_active"]));
         Assert.Equal(540, Convert.ToInt32(afterMap["seconds_not_work_related"]));
         Assert.Equal(0, Convert.ToInt32(afterMap["seconds_neutral"]));
+        Assert.Equal(0, Convert.ToInt32(afterMap["seconds_unclassified"]));
 
         // DELETE da categoria: mapeamentos saem (app volta a não categorizado) e reagrega
         var delete = await SendAsync(client, HttpMethod.Delete, $"/api/v1/categories/{categoriaId}", adminToken);
@@ -243,10 +248,12 @@ public class AppCatalogEndpointTests(ApiTestFixture fixture)
         await RunAggregationAsync();
         var afterDelete = await TestDb.RowAsync(fixture.Database.ConnectionString,
             """
-            SELECT seconds_active, seconds_neutral, seconds_not_work_related
+            SELECT seconds_active, seconds_neutral, seconds_not_work_related, seconds_unclassified
             FROM daily_device_summaries WHERE tenant_id = @t AND device_id = @d
             """, ("t", tenantId), ("d", device.DeviceId));
-        Assert.Equal(540, Convert.ToInt32(afterDelete!["seconds_neutral"]));
+        // apagar a categoria devolve o app ao balde "sem classificação" (F6), não ao neutro
+        Assert.Equal(540, Convert.ToInt32(afterDelete!["seconds_unclassified"]));
+        Assert.Equal(0, Convert.ToInt32(afterDelete["seconds_neutral"]));
         Assert.Equal(0, Convert.ToInt32(afterDelete["seconds_not_work_related"]));
     }
 
@@ -354,5 +361,121 @@ public class AppCatalogEndpointTests(ApiTestFixture fixture)
         var rangeGrande = await SendAsync(client, HttpMethod.Get,
             $"/api/v1/app-catalog/{appId}/titles?from=2026-01-01&to=2026-04-03", viewerToken);
         Assert.Equal(HttpStatusCode.BadRequest, rangeGrande.StatusCode);
+    }
+
+    // ------------------------------------------------------------ cobertura em TEMPO + fila por impacto (F6)
+
+    /// <summary>
+    /// F6 — a curadoria passa a ter KPI: cobertura da classificação em TEMPO, não em contagem
+    /// de apps. uncategorized_count diz "faltam 2 apps" tanto para 2 minutos quanto para 200
+    /// horas; uncategorized_seconds_active / total_seconds_active dizem o tamanho real do
+    /// buraco, na MESMA janela de 30 dias das métricas por item (o cabeçalho fecha com a soma
+    /// das linhas da tela).
+    /// </summary>
+    [Fact]
+    public async Task Lista_CoberturaEmTempo_SomaOsDoisLadosNaJanelaDe30Dias()
+    {
+        var (client, tenantId, adminToken, viewerToken, fullKey) = await SetupAsync("CatalogoCob");
+        var device = await AgentClient.EnrollAsync(client, fullKey, hostname: "NB-COB-1");
+
+        // tenant vizinho com uso próprio: JAMAIS pode entrar na conta de cobertura de A
+        var (clientB, _, _, _, fullKeyB) = await SetupAsync("CatalogoCobB");
+        var deviceB = await AgentClient.EnrollAsync(clientB, fullKeyB, hostname: "NB-COB-B");
+
+        await SeedActiveAsync(client, device, "cob-produtivo.exe", T(9, 0), 6);  // 360 s
+        await SeedActiveAsync(client, device, "cob-semcat-a.exe", T(10, 0), 8);  // 480 s
+        await SeedActiveAsync(client, device, "cob-semcat-b.exe", T(11, 0), 4);  // 240 s
+        await SeedActiveAsync(clientB, deviceB, "cob-vizinho.exe", T(12, 0), 9);
+        await RunIntervalizationAsync();
+        await RunAggregationAsync();
+
+        // sem nenhuma curadoria: o buraco é o tempo inteiro (cobertura 0%)
+        using (var doc = await ReadAsync(
+            await SendAsync(client, HttpMethod.Get, "/api/v1/app-catalog", viewerToken), HttpStatusCode.OK))
+        {
+            Assert.Equal(1080, doc.RootElement.GetProperty("total_seconds_active").GetInt64());
+            Assert.Equal(1080, doc.RootElement.GetProperty("uncategorized_seconds_active").GetInt64());
+        }
+
+        var categoria = await PostCategoryAsync(client, adminToken, "Cob Trabalho", 1);
+        var appId = await AppIdAsync("cob-produtivo.exe");
+        (await ReadAsync(await SendAsync(client, HttpMethod.Put,
+            $"/api/v1/app-catalog/{appId}/category", adminToken,
+            new { category_id = categoria }), HttpStatusCode.OK)).Dispose();
+
+        using (var doc = await ReadAsync(
+            await SendAsync(client, HttpMethod.Get, "/api/v1/app-catalog", viewerToken), HttpStatusCode.OK))
+        {
+            // denominador não muda com a curadoria (é todo o tempo ativo do período)...
+            Assert.Equal(1080, doc.RootElement.GetProperty("total_seconds_active").GetInt64());
+            // ...e o buraco encolhe exatamente o tempo do app categorizado: 1080 − 360
+            Assert.Equal(720, doc.RootElement.GetProperty("uncategorized_seconds_active").GetInt64());
+            Assert.Equal(2, doc.RootElement.GetProperty("uncategorized_count").GetInt32());
+        }
+
+        // o filtro da listagem NÃO mexe no KPI: cobertura é do recorte inteiro do tenant
+        using (var doc = await ReadAsync(
+            await SendAsync(client, HttpMethod.Get, "/api/v1/app-catalog?uncategorized=true", viewerToken),
+            HttpStatusCode.OK))
+        {
+            Assert.Equal(1080, doc.RootElement.GetProperty("total_seconds_active").GetInt64());
+            Assert.Equal(720, doc.RootElement.GetProperty("uncategorized_seconds_active").GetInt64());
+        }
+
+        Assert.NotEqual(Guid.Empty, tenantId);
+    }
+
+    /// <summary>
+    /// F6 — sort=impacto é a ordem da FILA DE CLASSIFICAÇÃO: sem categoria primeiro, e dentro
+    /// do grupo por tempo ativo desc. O default continua sendo só tempo ativo desc (a tabela de
+    /// mapeamento, onde o gestor procura um app específico e não a próxima pendência).
+    /// </summary>
+    [Fact]
+    public async Task Lista_SortImpacto_PoeSemCategoriaNoTopo_DefaultSegueOTempoAtivo()
+    {
+        var (client, _, adminToken, viewerToken, fullKey) = await SetupAsync("CatalogoFila");
+        var device = await AgentClient.EnrollAsync(client, fullKey, hostname: "NB-FILA-1");
+
+        await SeedActiveAsync(client, device, "fila-alta.exe", T(9, 0), 8);  // 480 s, sem categoria
+        await SeedActiveAsync(client, device, "fila-media.exe", T(10, 0), 6); // 360 s, CATEGORIZADO
+        await SeedActiveAsync(client, device, "fila-baixa.exe", T(11, 0), 4); // 240 s, sem categoria
+        await RunIntervalizationAsync();
+        await RunAggregationAsync();
+
+        var categoria = await PostCategoryAsync(client, adminToken, "Fila Trabalho", 1);
+        var mediaId = await AppIdAsync("fila-media.exe");
+        (await ReadAsync(await SendAsync(client, HttpMethod.Put,
+            $"/api/v1/app-catalog/{mediaId}/category", adminToken,
+            new { category_id = categoria }), HttpStatusCode.OK)).Dispose();
+
+        // default: puro tempo ativo desc
+        using (var doc = await ReadAsync(
+            await SendAsync(client, HttpMethod.Get, "/api/v1/app-catalog", viewerToken), HttpStatusCode.OK))
+        {
+            Assert.Equal(new[] { "fila-alta.exe", "fila-media.exe", "fila-baixa.exe" },
+                doc.RootElement.GetProperty("items").EnumerateArray()
+                    .Select(i => i.GetProperty("process_name").GetString()).ToArray());
+        }
+
+        // impacto: os dois sem categoria sobem, entre si por tempo desc
+        using (var doc = await ReadAsync(
+            await SendAsync(client, HttpMethod.Get, "/api/v1/app-catalog?sort=impacto", viewerToken),
+            HttpStatusCode.OK))
+        {
+            Assert.Equal(new[] { "fila-alta.exe", "fila-baixa.exe", "fila-media.exe" },
+                doc.RootElement.GetProperty("items").EnumerateArray()
+                    .Select(i => i.GetProperty("process_name").GetString()).ToArray());
+        }
+
+        // sort desconhecido cai no default em vez de 400: ordenação é preferência de tela,
+        // não contrato de dado — quebrar a listagem por um parâmetro estranho seria pior
+        using (var doc = await ReadAsync(
+            await SendAsync(client, HttpMethod.Get, "/api/v1/app-catalog?sort=xyz", viewerToken),
+            HttpStatusCode.OK))
+        {
+            Assert.Equal("fila-media.exe",
+                doc.RootElement.GetProperty("items").EnumerateArray().ToList()[1]
+                    .GetProperty("process_name").GetString());
+        }
     }
 }

@@ -43,7 +43,7 @@ import { addDays, ddmm, formatDuration, isIsoDate, localDateOf } from "@/lib/for
 import { genericErrorMessage } from "@/lib/messages";
 import { isAdmin } from "@/lib/roles";
 import type {
-  AppCatalogResponse,
+  AppCatalogResponseF6,
   AppCategoryBatchRequest,
   AppCategoryBatchResponse,
   AppTitlesResponse,
@@ -58,6 +58,8 @@ import { APP_CATEGORY_BATCH_MAX } from "@/lib/types";
 import { useUrlState } from "@/lib/useUrlState";
 import type { UrlStateCodec } from "@/lib/useUrlState";
 import { cn } from "@/lib/utils";
+import { classificationCoverage } from "@/components/apps/classificationCoverage";
+import { CoverageBadge } from "@/components/apps/CoverageBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -265,13 +267,20 @@ export function AppsPage() {
 
   // Badge "N apps sem categoria": uncategorized_count vem em qualquer resposta
   // de /app-catalog; uncategorized=true mantém o payload pequeno.
+  // F6: a mesma resposta já traz uncategorized_seconds_active/total_seconds_active
+  // (janela de 30 dias) - o indicador de COBERTURA do topo usa os dois, sem
+  // chamada extra.
   const catalogQuery = useQuery({
     queryKey: ["app-catalog", { uncategorized: true, q: "" }],
-    queryFn: () => api<AppCatalogResponse>("/app-catalog?uncategorized=true"),
+    queryFn: () => api<AppCatalogResponseF6>("/app-catalog?uncategorized=true"),
     staleTime: 60_000,
   });
   const uncatCount = catalogQuery.data?.uncategorized_count ?? 0;
   const catalogItems = useMemo(() => catalogQuery.data?.items ?? [], [catalogQuery.data]);
+  const coverage =
+    catalogQuery.data !== undefined
+      ? classificationCoverage(catalogQuery.data.total_seconds_active, catalogQuery.data.uncategorized_seconds_active)
+      : null;
 
   // Nome da categoria -> id: default_category é um NOME canônico (o mesmo vocabulário
   // semeado na criação da organização) e o lote precisa de id. Quem renomeou ou excluiu
@@ -433,6 +442,13 @@ export function AppsPage() {
           : i.category !== null && i.category.classification === Number(classificationFilter),
       );
     }
+    // F6 (item 5, produtividade): com "sem categoria" ativo, tempo ativo É o
+    // impacto - mesma ordem da fila de classificação (sort=impacto). A query
+    // de group_by=app já vem ORDER BY seconds_active DESC do backend, então
+    // isto é defensivo/explícito (não depende de ordem incidental de outro filtro).
+    if (classificationFilter === "none") {
+      items = [...items].sort((a, b) => b.seconds_active - a.seconds_active);
+    }
     return items;
   }, [appsData, categoryFilter, classificationFilter]);
 
@@ -537,19 +553,28 @@ export function AppsPage() {
           Tempo de uso por aplicativo no período e curadoria de categorias.
         </p>
       </div>
-      {uncatCount > 0 && (
-        <button
-          type="button"
-          onClick={goToUncategorized}
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-full border border-viz-improdutivo/40 bg-viz-improdutivo/10 px-2.5 py-0.5 text-xs text-viz-improdutivo",
-            "transition-colors hover:bg-viz-improdutivo/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-          )}
-        >
-          <Tags className="h-3.5 w-3.5 shrink-0" aria-hidden />
-          {uncatCount === 1 ? "1 app sem categoria · revisar" : `${uncatCount} apps sem categoria · revisar`}
-        </button>
-      )}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* F6 (item 5): mesmo indicador da Fila de classificação, com link para lá -
+            os dois lêem GET /app-catalog e nunca podem mostrar números diferentes. */}
+        {catalogQuery.data !== undefined ? (
+          <CoverageBadge coverage={coverage} linkTo="/configuracoes/categorias?tab=fila" />
+        ) : (
+          <Skeleton className="h-6 w-40 rounded-full" />
+        )}
+        {uncatCount > 0 && (
+          <button
+            type="button"
+            onClick={goToUncategorized}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full border border-viz-improdutivo/40 bg-viz-improdutivo/10 px-2.5 py-0.5 text-xs text-viz-improdutivo",
+              "transition-colors hover:bg-viz-improdutivo/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            )}
+          >
+            <Tags className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            {uncatCount === 1 ? "1 app sem categoria · revisar" : `${uncatCount} apps sem categoria · revisar`}
+          </button>
+        )}
+      </div>
     </div>
   );
 

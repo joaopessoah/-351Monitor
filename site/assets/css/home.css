@@ -33,15 +33,17 @@
   --green-soft: #D8FFA3;
 
   --ink: #F2F6FC;
-  --ink-2: #A9B4C8;
-  --ink-3: #66738C;
+  /* set/2026: corpo de texto um passo mais claro (contraste sobre o fundo escuro) */
+  --ink-2: #C6D0E0;
+  --ink-3: #7D8AA4;
 
   --red: #FF8B8B;
 
   --viz-p: #A4E84D;
   --viz-n: #6FA9DD;
   --viz-d: #F2B45A;
-  --viz-o: #3A455C;
+  --viz-u: #8593AD;   /* sem classificacao: app que a empresa ainda nao classificou */
+  --viz-o: #3A455C;   /* ocioso: estado da maquina, nunca uma classificacao */
 
   --font-display: 'Space Grotesk', 'Segoe UI', sans-serif;
   --font-body: 'Open Sans', 'Segoe UI', sans-serif;
@@ -59,8 +61,8 @@ body {
   background: var(--bg);
   color: var(--ink-2);
   font-family: var(--font-body);
-  font-size: 1.045rem;
-  line-height: 1.7;
+  font-size: 1.12rem;
+  line-height: 1.72;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overflow-x: hidden;
@@ -305,7 +307,7 @@ h2 { font-size: clamp(1.9rem, 3.4vw, 2.6rem); }
   letter-spacing: -0.035em;
   margin-bottom: 0.5em;
 }
-.lead { font-size: 1.08rem; max-width: 34em; }
+.lead { font-size: 1.14rem; max-width: 34em; }
 
 .hero-indicators {
   display: flex;
@@ -534,7 +536,7 @@ h2 { font-size: clamp(1.9rem, 3.4vw, 2.6rem); }
 .sstat { font: 600 10px var(--font-body); display: flex; align-items: center; gap: 6px; }
 .sstat::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .sstat.on { color: var(--viz-p); }
-.sstat.idle { color: var(--viz-d); }
+.sstat.idle { color: #93A2BC; }
 .sstat.off { color: #5B6982; }
 .stime { font: 600 11px var(--font-display); color: #C6D1E4; }
 .sbar { display: flex; height: 8px; border-radius: 99px; background: #101927; overflow: hidden; }
@@ -542,6 +544,7 @@ h2 { font-size: clamp(1.9rem, 3.4vw, 2.6rem); }
 .sbar .p, .shot-legend-row .p { background: var(--viz-p); }
 .sbar .n, .shot-legend-row .n { background: var(--viz-n); }
 .sbar .d, .shot-legend-row .d { background: var(--viz-d); }
+.sbar .u, .shot-legend-row .u { background: var(--viz-u); }
 .sbar .o, .shot-legend-row .o { background: var(--viz-o); }
 
 .shot-legend-row {
@@ -572,7 +575,7 @@ h2 { font-size: clamp(1.9rem, 3.4vw, 2.6rem); }
 .mcard:hover { border-color: rgba(182, 255, 60, 0.35); transform: translateY(-3px); }
 .mcard svg { width: 26px; height: 26px; color: var(--green); margin-bottom: 18px; }
 .mcard h3 { font-size: 1.02rem; margin-bottom: 8px; letter-spacing: -0.01em; }
-.mcard p { font-size: 0.92rem; line-height: 1.6; margin: 0; }
+.mcard p { font-size: 0.98rem; line-height: 1.62; margin: 0; }
 
 .tagline {
   text-align: center;
@@ -591,6 +594,8 @@ h2 { font-size: clamp(1.9rem, 3.4vw, 2.6rem); }
   align-items: center;
 }
 .manage-copy > p { color: var(--ink-2); }
+.manage-note { margin: 14px 0 26px; color: var(--ink-3); }
+.manage-note small { font-size: 0.92rem; line-height: 1.6; }
 .checks { margin: 26px 0 30px; }
 .checks li {
   display: flex;
@@ -635,13 +640,21 @@ h2 { font-size: clamp(1.9rem, 3.4vw, 2.6rem); }
 .compare-no svg { color: var(--red); }
 .compare-no li { color: var(--ink-2); }
 .compare-badge svg { width: clamp(96px, 10vw, 122px); height: auto; }
-.spy-note { margin: clamp(36px, 5vw, 48px) 0 0; color: var(--ink-3); font-size: 0.95rem; }
+.spy-note { margin: clamp(36px, 5vw, 48px) 0 0; color: var(--ink-2); font-size: 1rem; }
 
 /* ---------- Calculadora ---------- */
 #calculadora h2 { max-width: 23em; }
 /* âncora legada #para-empresas (usada em campanhas e páginas de conteúdo) */
 #calculadora { position: relative; }
 .anchor-alias { position: absolute; top: 0; }
+/* variante em fluxo: a âncora antiga cai no topo da própria seção, e não no topo da página */
+.anchor-alias-flow {
+  position: static;
+  display: block;
+  height: 0;
+  overflow: hidden;
+  scroll-margin-top: calc(var(--nav-h) + 20px);
+}
 .calc {
   display: grid;
   grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
@@ -852,7 +865,7 @@ fieldset.field .segmented + .field-hint { margin-top: 10px; }
   text-wrap: balance;
   margin: 0 0 12px;
 }
-.calc-explica { font-size: 0.95rem; color: var(--ink-2); margin: 0 0 14px; }
+.calc-explica { font-size: 1rem; color: var(--ink-2); margin: 0 0 14px; }
 .calc-manifesto {
   font: 600 1.02rem var(--font-display);
   letter-spacing: -0.01em;
@@ -926,8 +939,8 @@ fieldset.field .segmented + .field-hint { margin-top: 10px; }
 .founder-head span { font: 600 0.8rem var(--font-body); color: var(--green); }
 .founder-card > p {
   margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.7;
+  font-size: 1rem;
+  line-height: 1.72;
   color: var(--ink-2);
   text-align: justify;
   -webkit-hyphens: auto;
@@ -1104,8 +1117,99 @@ fieldset.field .segmented + .field-hint { margin-top: 10px; }
   margin-bottom: 18px;
 }
 .qcard h3 { font-size: 1.06rem; margin-bottom: 8px; letter-spacing: -0.012em; }
-.qcard p { font-size: 0.92rem; line-height: 1.6; margin: 0; }
+.qcard p { font-size: 0.98rem; line-height: 1.62; margin: 0; }
 .discover-cta { margin: clamp(36px, 4.5vw, 48px) 0 0; }
+
+/* ---------- Pergunta -> a tela que responde (set/2026: fusao de
+   #descobertas com #funcionalidades, que diziam a mesma coisa) ---------- */
+.pairs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: clamp(30px, 3.4vw, 40px);
+}
+.pair {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid #151F30;
+  border-radius: 16px;
+  padding: 28px 26px;
+  background: linear-gradient(180deg, #090F1A, #070B13);
+  transition: border-color 0.3s ease, transform 0.3s ease;
+}
+.pair:hover { border-color: rgba(182, 255, 60, 0.35); transform: translateY(-3px); }
+.pair-q {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0;
+  font: 600 1.1rem var(--font-display);
+  line-height: 1.28;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+}
+.pair-q .qmark { flex: none; margin-bottom: 0; }
+.pair-a {
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid #141E2E;
+  font-size: 0.98rem;
+  line-height: 1.62;
+  color: var(--ink-2);
+}
+.pair-screen {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+  padding: 4px 11px;
+  border-radius: 99px;
+  background: rgba(182, 255, 60, 0.11);
+  border: 1px solid rgba(182, 255, 60, 0.26);
+  color: var(--green);
+  font: 600 0.78rem var(--font-display);
+  letter-spacing: 0.02em;
+}
+.pair-screen::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--green);
+}
+.pair-a b { color: var(--ink); font-weight: 600; }
+.pairs-note {
+  margin: clamp(30px, 3.6vw, 40px) 0 0;
+  color: var(--ink-3);
+  font-size: 0.95rem;
+  max-width: 76ch;
+}
+.pairs-note a { border-bottom: 1px solid rgba(182, 255, 60, 0.4); }
+
+/* legenda de classificacao usada fora do mockup */
+.class-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  margin: 22px 0 0;
+  padding: 0;
+  font-size: 0.95rem;
+  color: var(--ink-2);
+}
+.class-legend li { display: flex; align-items: center; gap: 8px; }
+.class-legend i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.class-legend .p { background: var(--viz-p); }
+.class-legend .n { background: var(--viz-n); }
+.class-legend .d { background: var(--viz-d); }
+.class-legend .u { background: var(--viz-u); }
+.class-legend .o { background: var(--viz-o); }
+.class-legend .sep {
+  padding-left: 18px;
+  border-left: 1px solid var(--line-2);
+  color: var(--ink-3);
+}
 
 /* ---------- Funcionalidades (8 cards na grade .monitors) ---------- */
 .features .mcard h3 { min-height: 2.2em; display: flex; align-items: flex-end; }
@@ -1151,11 +1255,11 @@ fieldset.field .segmented + .field-hint { margin-top: 10px; }
   margin-bottom: 14px;
 }
 .step h3 { font-size: 1.06rem; margin-bottom: 8px; letter-spacing: -0.01em; }
-.step p { font-size: 0.92rem; line-height: 1.6; margin: 0; }
+.step p { font-size: 0.98rem; line-height: 1.62; margin: 0; }
 .steps-note {
   margin: clamp(30px, 4vw, 40px) 0 0;
-  color: var(--ink-3);
-  font-size: 0.92rem;
+  color: var(--ink-2);
+  font-size: 0.98rem;
   text-align: center;
 }
 
@@ -1193,7 +1297,7 @@ fieldset.field .segmented + .field-hint { margin-top: 10px; }
   transition: transform 0.25s ease;
 }
 .faq-item[open] summary::after { transform: rotate(45deg); }
-.faq-item p { margin: 0; padding: 0 22px 20px; font-size: 0.95rem; color: var(--ink-2); max-width: 64ch; }
+.faq-item p { margin: 0; padding: 0 22px 20px; font-size: 1rem; color: var(--ink-2); max-width: 64ch; }
 
 /* ---------- Vídeo de demonstração (seção pendente, pronta para ativar) ---------- */
 .video-frame {
@@ -1236,7 +1340,8 @@ fieldset.field .segmented + .field-hint { margin-top: 10px; }
   .steps { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 640px) {
-  .qcards { grid-template-columns: 1fr; }
+  .qcards, .pairs { grid-template-columns: 1fr; }
+  .class-legend .sep { padding-left: 0; border-left: none; }
   .steps { grid-template-columns: 1fr; }
   .assure { justify-content: flex-start; }
   .proof-metrics { grid-template-columns: 1fr; }

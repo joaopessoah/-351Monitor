@@ -3,7 +3,6 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
-  AppWindow,
   BarChart3,
   CalendarClock,
   ChevronDown,
@@ -16,6 +15,7 @@ import {
   Receipt,
   Settings,
   ShieldCheck,
+  Users,
   X,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -40,13 +40,33 @@ import { ShellSkeleton } from "./ShellSkeleton";
 import { FormError } from "@/components/FormError";
 import { genericErrorMessage } from "@/lib/messages";
 
-const navItems = [
-  { to: "/visao-geral", label: "Visão Geral", icon: LayoutDashboard },
-  { to: "/linha-do-tempo", label: "Linha do Tempo", icon: CalendarClock },
-  { to: "/apps", label: "Aplicativos", icon: AppWindow },
-  { to: "/relatorios", label: "Relatórios", icon: BarChart3 },
-  { to: "/dispositivos", label: "Dispositivos", icon: MonitorSmartphone },
-  { to: "/configuracoes", label: "Configurações", icon: Settings },
+/**
+ * F6 — a navegação passa a separar ANÁLISE (o que o gestor abre todo dia) de
+ * ADMINISTRAÇÃO (o que TI e proprietário usam pontualmente). Antes os seis itens
+ * viviam na mesma lista, e o gestor tropeçava em Dispositivos e Configurações no
+ * caminho dos relatórios.
+ *
+ * Aplicativos sai do menu: a análise de apps vive na Visão Geral e em Relatórios,
+ * e a curadoria (categorias + mapeamento) fica num lugar só, em Configurações. A
+ * rota /apps continua existindo para não quebrar link salvo.
+ */
+const navGroups = [
+  {
+    label: "Análise",
+    items: [
+      { to: "/visao-geral", label: "Visão Geral", icon: LayoutDashboard },
+      { to: "/linha-do-tempo", label: "Linha do Tempo", icon: CalendarClock },
+      { to: "/colaboradores", label: "Colaboradores", icon: Users },
+      { to: "/relatorios", label: "Relatórios", icon: BarChart3 },
+    ],
+  },
+  {
+    label: "Administração",
+    items: [
+      { to: "/dispositivos", label: "Dispositivos", icon: MonitorSmartphone },
+      { to: "/configuracoes", label: "Configurações", icon: Settings },
+    ],
+  },
 ] as const;
 
 // Extrato de cobrança: GET /billing/billable-devices é OwnerOnly, então o link
@@ -75,11 +95,32 @@ function ShellNav({
     );
   return (
     <nav className="flex-1 space-y-1 overflow-y-auto p-2" aria-label="Navegação principal">
-      {[...navItems, ...(owner ? [ownerNavItem] : [])].map(({ to, label, icon: Icon }) => (
-        <NavLink key={to} to={to} title={label} onClick={onNavigate} className={linkClass}>
-          <Icon className="h-4 w-4 shrink-0" />
-          {!collapsed && <span>{label}</span>}
-        </NavLink>
+      {navGroups.map((group) => (
+        <div key={group.label} className="space-y-1">
+          {!collapsed && (
+            <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              {group.label}
+            </p>
+          )}
+          {group.items.map(({ to, label, icon: Icon }) => (
+            <NavLink key={to} to={to} title={label} onClick={onNavigate} className={linkClass}>
+              <Icon className="h-4 w-4 shrink-0" />
+              {!collapsed && <span>{label}</span>}
+            </NavLink>
+          ))}
+          {/* Cobrança fecha Administração: só o Proprietário enxerga (o endpoint é OwnerOnly). */}
+          {group.label === "Administração" && owner && (
+            <NavLink
+              to={ownerNavItem.to}
+              title={ownerNavItem.label}
+              onClick={onNavigate}
+              className={linkClass}
+            >
+              <ownerNavItem.icon className="h-4 w-4 shrink-0" />
+              {!collapsed && <span>{ownerNavItem.label}</span>}
+            </NavLink>
+          )}
+        </div>
       ))}
       <NavLink
         to={`/transparencia/${slug}`}

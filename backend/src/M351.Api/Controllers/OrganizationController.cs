@@ -22,8 +22,8 @@ namespace M351.Api.Controllers;
 /// business_hours + os campos editáveis (finalidade_declarada, contato_dpo, data_vigencia).
 ///
 /// PATCH (PolicyAdminPlus — Owner/Admin; Viewer → 403): atualização PARCIAL dos campos de
-/// transparência (e business_hours). Corpo cru (JsonElement) para distinguir "campo ausente" (não
-/// muda) de "campo: null" (limpa). Mutação EF + trilha update_privacy_config (detail de→para por
+/// transparência (e business_hours, metas e classification_vocabulary). Corpo cru (JsonElement)
+/// para distinguir "campo ausente" (não muda) de "campo: null" (limpa). Mutação EF + trilha update_privacy_config (detail de→para por
 /// campo) no MESMO SaveChanges — padrão do PATCH /devices: a mudança jamais persiste sem a trilha
 /// (Seção 9.5: mudança de config de privacidade exige a trilha de→para).
 /// </summary>
@@ -34,6 +34,13 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
 {
     private const int MaxTextLength = 1000;
 
+    /// <summary>
+    /// F6, decisão 1 — vocabulários aceitos em classification_vocabulary. Mesmo conjunto do
+    /// CHECK da tabela: validar aqui devolve 400 explicando, em vez de deixar o banco estourar
+    /// 23514 e a tela mostrar erro genérico.
+    /// </summary>
+    private static readonly string[] ValidVocabularies = ["produtividade", "trabalho"];
+
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken ct)
     {
@@ -43,7 +50,8 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
         return Ok(new OrganizationResponse(
             org.Name, org.Slug, org.Timezone, ParseBusinessHours(org.BusinessHours),
             org.FinalidadeDeclarada, org.ContatoDpo, org.DataVigencia,
-            org.GoalWeeklyActiveHours, org.GoalWorkRelatedPct));
+            org.GoalWeeklyActiveHours, org.GoalWorkRelatedPct,
+            org.ClassificationVocabulary));
     }
 
     [HttpPatch]
@@ -103,6 +111,36 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
             out var hasGoalPct, out var goalPctError);
         if (goalPctError is not null) return goalPctError;
 
+        // ----- classification_vocabulary (F6, decisão 1): ausente = não muda -----
+        // NÃO aceita null: o vocabulário é NOT NULL com default no banco (toda org tem um
+        // rótulo vigente); "limpar" não existe como estado, só trocar entre os dois conjuntos.
+        var hasVocabulary = body.TryGetProperty("classification_vocabulary", out var vocabularyEl);
+        string? vocabulary = null;
+        if (hasVocabulary)
+        {
+            vocabulary = vocabularyEl.ValueKind == JsonValueKind.String ? vocabularyEl.GetString()?.Trim() : null;
+            if (vocabulary is null || !ValidVocabularies.Contains(vocabulary))
+            {
+                return ProblemResponse(StatusCodes.Status400BadRequest,
+                    "classification_vocabulary deve ser \"produtividade\" ou \"trabalho\".");
+            }
+        }
+
+        // F6, decisão 5 — alertas de PESSOA são opt-in da organização. O default é false: a
+        // régua padrão do produto é alertar sobre EQUIPE, e ligar o escopo individual é uma
+        // escolha declarada do cliente, que fica registrada na trilha.
+        var hasPersonAlerts = body.TryGetProperty("person_alerts_enabled", out var personAlertsEl);
+        bool? personAlerts = null;
+        if (hasPersonAlerts)
+        {
+            if (personAlertsEl.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                return ProblemResponse(StatusCodes.Status400BadRequest,
+                    "person_alerts_enabled deve ser true ou false.");
+            }
+            personAlerts = personAlertsEl.GetBoolean();
+        }
+
         var org = await db.Organizations.FirstAsync(ct);
 
         // aplica somente o que mudou e registra o de→para por campo (detail do audit)
@@ -141,6 +179,21 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
             org.DataVigencia = vigencia;
         }
 
+        // Troca de vocabulário é só ROTULAGEM: nenhum balde muda de valor, então — ao contrário
+        // da troca de classification de uma categoria — NÃO enfileira reagregação. A trilha
+        // (update_privacy_config, de→para) sai no mesmo SaveChanges dos outros campos.
+        if (hasVocabulary && org.ClassificationVocabulary != vocabulary)
+        {
+            changes["classification_vocabulary"] = new { from = org.ClassificationVocabulary, to = vocabulary };
+            org.ClassificationVocabulary = vocabulary!;
+        }
+
+        if (hasPersonAlerts && org.PersonAlertsEnabled != personAlerts)
+        {
+            changes["person_alerts_enabled"] = new { from = org.PersonAlertsEnabled, to = personAlerts };
+            org.PersonAlertsEnabled = personAlerts!.Value;
+        }
+
         if (hasBusinessHours && !JsonEqual(org.BusinessHours, businessHours))
         {
             changes["business_hours"] = new { from = org.BusinessHours, to = businessHours };
@@ -159,7 +212,8 @@ public class OrganizationController(M351DbContext db, AuditWriter audit) : ApiCo
         return Ok(new OrganizationResponse(
             org.Name, org.Slug, org.Timezone, ParseBusinessHours(org.BusinessHours),
             org.FinalidadeDeclarada, org.ContatoDpo, org.DataVigencia,
-            org.GoalWeeklyActiveHours, org.GoalWorkRelatedPct));
+            org.GoalWeeklyActiveHours, org.GoalWorkRelatedPct,
+            org.ClassificationVocabulary));
     }
 
     // =====================================================================================

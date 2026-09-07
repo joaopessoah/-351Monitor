@@ -55,7 +55,8 @@ public class DeviceUsersController(NpgsqlDataSource dataSource) : ApiControllerB
         SELECT du.id, du.device_id,
                COALESCE(d.display_name, d.hostname) AS device_name,
                du.windows_username, du.display_name,
-               du.first_seen_at, du.last_seen_at
+               du.first_seen_at, du.last_seen_at,
+               du.windows_sid
         FROM device_users du
         JOIN devices d ON d.id = du.device_id AND d.tenant_id = du.tenant_id
         """;
@@ -232,7 +233,8 @@ public class DeviceUsersController(NpgsqlDataSource dataSource) : ApiControllerB
 
     // ------------------------------------------------------------ helpers
     private static DeviceUserResponse ToResponse(DeviceUserRow r) =>
-        new(r.Id, r.DeviceId, r.DeviceName, r.WindowsUsername, r.DisplayName, r.FirstSeenAt, r.LastSeenAt);
+        new(r.Id, r.DeviceId, r.DeviceName, r.WindowsUsername, r.DisplayName, r.FirstSeenAt, r.LastSeenAt,
+            r.WindowsSid);
 
     private sealed record DeviceUserRow(
         Guid Id,
@@ -241,5 +243,6 @@ public class DeviceUsersController(NpgsqlDataSource dataSource) : ApiControllerB
         string WindowsUsername,
         string? DisplayName,
         DateTimeOffset FirstSeenAt,
-        DateTimeOffset LastSeenAt);
+        DateTimeOffset LastSeenAt,
+        string WindowsSid);
 }

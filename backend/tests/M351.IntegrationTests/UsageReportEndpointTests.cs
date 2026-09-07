@@ -244,7 +244,9 @@ public class UsageReportEndpointTests(ApiTestFixture fixture)
         Assert.Equal(0, d2.GetProperty("seconds_idle").GetInt64());
         Assert.Equal(540, d2.GetProperty("seconds_on").GetInt64());
         Assert.Equal(0, d2.GetProperty("seconds_work_related").GetInt64());
-        Assert.Equal(540, d2.GetProperty("seconds_neutral").GetInt64());
+        // F6: app sem mapeamento vai para "sem classificação"
+        Assert.Equal(0, d2.GetProperty("seconds_neutral").GetInt64());
+        Assert.Equal(540, d2.GetProperty("seconds_unclassified").GetInt64());
 
         var d1 = items[1];
         Assert.Equal(device1.DeviceId, d1.GetProperty("device_id").GetGuid());
@@ -255,6 +257,7 @@ public class UsageReportEndpointTests(ApiTestFixture fixture)
         Assert.Equal(180, d1.GetProperty("seconds_work_related").GetInt64());
         Assert.Equal(0, d1.GetProperty("seconds_neutral").GetInt64());
         Assert.Equal(0, d1.GetProperty("seconds_not_work_related").GetInt64());
+        Assert.Equal(0, d1.GetProperty("seconds_unclassified").GetInt64());
 
         Assert.Equal(2, doc.RootElement.GetProperty("total").GetInt32());
         Assert.Equal(720, doc.RootElement.GetProperty("total_seconds_active").GetInt64());

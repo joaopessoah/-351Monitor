@@ -411,6 +411,8 @@ export interface DashboardSummaryDay {
   seconds_work_related: number;
   seconds_neutral: number;
   seconds_not_work_related: number;
+  /** F6 - tempo ativo em app SEM categoria no tenant (antes vinha somado no neutro). */
+  seconds_unclassified: number;
   data_incomplete: boolean;
   device_count: number;
 }
@@ -424,6 +426,8 @@ export interface DashboardSummaryTotals {
   seconds_work_related: number;
   seconds_neutral: number;
   seconds_not_work_related: number;
+  /** F6 - tempo ativo em app SEM categoria no tenant (antes vinha somado no neutro). */
+  seconds_unclassified: number;
   data_incomplete: boolean;
   device_count: number;
 }
@@ -625,6 +629,8 @@ export interface UsageDeviceItem {
   seconds_work_related: number;
   seconds_neutral: number;
   seconds_not_work_related: number;
+  /** F6 - tempo ativo em app SEM categoria no tenant. */
+  seconds_unclassified: number;
 }
 
 /** Item de `group_by=device_user` - device_user_id de UUID zero = "Máquina (sem usuário)". */
@@ -1320,4 +1326,238 @@ export interface BillableDevicesResponse {
   frozen: boolean;
   /** Instante do congelamento - null enquanto o mês não fechou. */
   frozen_at: string | null;
+}
+
+// =============================================================================
+// Contratos da F6: visão geral macro (GET /dashboard/overview), atividade por
+// hora (GET /dashboard/activity-by-hour) e colaboradores (GET/PATCH /people).
+// O ÍNDICE e a COBERTURA vêm calculados do servidor (fonte única da fórmula,
+// decisão 4 do spec de 07/09/2026): o portal NUNCA recalcula, só formata.
+// =============================================================================
+
+/** Período resolvido pelo servidor, inclusivo, no fuso da organização. */
+export interface OverviewPeriod {
+  from: string;
+  to: string;
+  /** Quantidade de dias do intervalo (base das médias por dia). */
+  days: number;
+}
+
+/**
+ * Totais do período com os seis baldes da composição e os dois indicadores.
+ * productivity_index e classification_coverage são frações de 0 a 1 e vêm
+ * `null` quando o denominador é zero - null é "sem dado", nunca "zero".
+ * person_count/person_days ignoram a lane-máquina (máquina não é pessoa).
+ */
+export interface OverviewTotals {
+  seconds_on: number;
+  seconds_active: number;
+  seconds_idle: number;
+  seconds_locked: number;
+  seconds_work_related: number;
+  seconds_neutral: number;
+  seconds_not_work_related: number;
+  seconds_unclassified: number;
+  productivity_index: number | null;
+  classification_coverage: number | null;
+  device_count: number;
+  person_count: number;
+  person_days: number;
+  data_incomplete: boolean;
+}
+
+/** Metas semanais da organização, repetidas na resposta para a tela não precisar do /me. */
+export interface OverviewGoals {
+  weekly_active_hours: number | null;
+  work_related_pct: number | null;
+}
+
+/** Resposta de `GET /dashboard/overview` - previous só vem com compare=true. */
+export interface OverviewResponse {
+  period: OverviewPeriod;
+  totals: OverviewTotals;
+  previous: OverviewTotals | null;
+  days: DashboardSummaryDay[];
+  goals: OverviewGoals;
+}
+
+/**
+ * Uma hora local do tenant. As 24 vêm SEMPRE, inclusive vazias (o gráfico
+ * desenha o dia inteiro). avg_people_active é a média de pessoas ativas
+ * simultâneas naquela hora no período; null quando não há dia com dado.
+ */
+export interface ActivityByHourItem {
+  hour: number;
+  seconds_active: number;
+  seconds_idle: number;
+  avg_people_active: number | null;
+}
+
+export interface ActivityByHourResponse {
+  hours: ActivityByHourItem[];
+  days_with_data: number;
+}
+
+/**
+ * Uma PESSOA do tenant no período. Identidade = windows_sid resolvido pela
+ * mesclagem; display_name já vem resolvido pelo backend (apelido > nome da
+ * lane > usuário do Windows > SID) - renderize este campo, não reimplemente a
+ * regra. teams são as etiquetas dos dispositivos em que ela apareceu.
+ */
+export interface PersonRow {
+  windows_sid: string;
+  display_name: string;
+  seconds_on: number;
+  seconds_active: number;
+  seconds_idle: number;
+  seconds_locked: number;
+  seconds_work_related: number;
+  seconds_neutral: number;
+  seconds_not_work_related: number;
+  seconds_unclassified: number;
+  productivity_index: number | null;
+  classification_coverage: number | null;
+  device_count: number;
+  days_with_data: number;
+  teams: string[];
+}
+
+export interface PeopleReportResponse {
+  items: PersonRow[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+/** PATCH /people/{sid}: apelido e mesclagem (Admin+). */
+export interface PersonPatchRequest {
+  display_name?: string | null;
+  merged_into_sid?: string | null;
+}
+
+/** POST /reaggregation: janela em dias (1 a 366); resposta é 202. */
+export interface ReaggregationRequest {
+  days: number;
+}
+
+export interface ReaggregationResponse {
+  enqueued: number;
+  days: number;
+}
+
+// =============================================================================
+// F6 — Classificação 2.0 (Configurações → Classificação): cobertura da
+// classificação em GET /app-catalog e vocabulário da organização em PATCH
+// /organization. Tipos À PARTE porque as fatias anteriores já fecharam
+// AppCatalogResponse e OrganizationPatchRequest acima e esta fatia não pode
+// editá-los — aqui entram só os campos NOVOS que o backend já devolve/aceita.
+// (O botão "Recalcular histórico" usa ReaggregationRequest/Response acima,
+// sem precisar de tipo novo.)
+// =============================================================================
+
+/**
+ * GET /app-catalog nesta fase (aceita também `sort=impacto`, sem mudar o
+ * formato dos itens): mesmo formato de AppCatalogResponse, mais a COBERTURA da
+ * classificação em TEMPO (decisão 4 do spec de 07/09/2026) -
+ * uncategorized_seconds_active e total_seconds_active, mesma janela de 30 dias
+ * dos itens. cobertura = (total_seconds_active − uncategorized_seconds_active)
+ * ÷ total_seconds_active (ver components/apps/classificationCoverage.ts).
+ */
+export interface AppCatalogResponseF6 extends AppCatalogResponse {
+  uncategorized_seconds_active: number;
+  total_seconds_active: number;
+}
+
+/**
+ * Body de `PATCH /api/v1/organization` usado só pelo seletor de vocabulário
+ * (F6, decisão 1) — o backend aceita este campo junto dos demais de
+ * OrganizationPatchRequest (acima), mas esta tela só precisa enviar este.
+ * Troca de vocabulário é só ROTULAGEM (nenhum balde muda de valor): o backend
+ * não reagrega nada quando este campo muda.
+ */
+export interface OrganizationVocabularyPatchRequest {
+  classification_vocabulary: "produtividade" | "trabalho";
+}
+
+// =============================================================================
+// F6 - ALERTAS DE GESTAO (secao 4 do spec de 07/09/2026)
+// =============================================================================
+
+/**
+ * Um alerta de gestao VIVO, ja traduzido pelo servidor. `title` e `context`
+ * chegam prontos em portugues: o VOCABULARIO ("variacao e contexto, nunca
+ * julgamento", jamais ranking) tem fonte unica no backend, e a tela nao
+ * reescreve a frase nem recalcula numero nenhum.
+ *
+ * `detail` sao os numeros crus da regra, para exibir valor exato sem reparsear
+ * a frase. `severity` e so a faixa de cor do cartao - nao e nota nem juizo.
+ */
+export interface AlertItem {
+  kind: string;
+  scope_type: "organization" | "team" | "person" | "device";
+  scope_key: string;
+  scope_label: string | null;
+  severity: "atencao" | "informativo";
+  title: string;
+  context: string;
+  action: string;
+  /** Rota do portal (sempre relativa) que resolve o alerta. */
+  link: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  detail: Record<string, unknown>;
+}
+
+/**
+ * Resposta de `GET /alerts`.
+ *
+ * `person_alerts_enabled` e o opt-in da decisao 5: com `false` as duas regras
+ * de escopo pessoa nao sao avaliadas, e a tela precisa DIZER isso - omitir
+ * faria o gestor concluir que ninguem trabalha fora do horario quando na
+ * verdade ninguem esta medindo.
+ *
+ * `plan_includes_alerts` separa "nada a relatar" de "o plano nao inclui a
+ * feature": a diferenca entre um elogio e um upgrade.
+ */
+export interface AlertsResponse {
+  items: AlertItem[];
+  person_alerts_enabled: boolean;
+  plan_includes_alerts: boolean;
+  /** Ultima execucao OK do motor no worker; null se nunca rodou. */
+  evaluated_at: string | null;
+}
+
+/**
+ * Uma linha do comparativo de equipes (decisao 3), DERIVADA no portal de um
+ * `GET /dashboard/overview?tag=` por etiqueta (um Promise.all dentro de um
+ * useQuery so). O indice e a cobertura vem prontos do servidor por etiqueta -
+ * nada de recalculo aqui; o que a tela deriva sao divisoes dos totais do
+ * servidor (horas por pessoa-dia, ociosidade, capacidade).
+ *
+ * Metricas de TOTAL sempre existem; as COMPARATIVAS (medias por pessoa,
+ * ociosidade, capacidade) so com 3 pessoas ou mais - abaixo disso a linha
+ * mostra totais e imprime traco no resto, porque media de equipe com 2 pessoas
+ * e afirmacao sobre individuo com outro nome.
+ */
+export interface TeamComparisonRow {
+  tag: string;
+  people: number;
+  /** Pares (pessoa, dia) com dado: denominador das medias por pessoa por dia. */
+  person_days: number;
+  seconds_on: number;
+  seconds_active: number;
+  seconds_idle: number;
+  seconds_unclassified: number;
+  /** Do servidor, nunca recalculado no portal. */
+  productivity_index: number | null;
+  productivity_index_previous: number | null;
+  classification_coverage: number | null;
+  /** Media de horas ativas por pessoa por dia; null sem mínimo de grupo. */
+  active_seconds_per_person_day: number | null;
+  /** ocioso / ligada; null sem mínimo de grupo ou sem tempo ligado. */
+  idle_share: number | null;
+  /** ativo / (jornada declarada x dias uteis x pessoas); null sem base. */
+  capacity_used: number | null;
+  /** false quando a equipe tem menos de 3 pessoas (decisao 3). */
+  meets_group_minimum: boolean;
 }

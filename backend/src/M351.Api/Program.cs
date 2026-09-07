@@ -67,6 +67,8 @@ builder.Services.AddSingleton(provider =>
 builder.Services.AddSingleton<AgentConfigService>();
 builder.Services.AddSingleton<RawEventPartitionManager>();
 builder.Services.AddSingleton<M351.Infrastructure.Privacy.DsrService>(); // F4.5 — exclusão DSR (sem estado por request)
+// F6 — reagregação sob demanda (POST /reaggregation): sem estado, só enfileira dirty_days
+builder.Services.AddSingleton<M351.Infrastructure.Aggregation.ReaggregationRequester>();
 builder.Services.AddScoped<EnrollmentService>();
 builder.Services.AddScoped<IngestService>();
 builder.Services.AddRequestDecompression(); // Content-Encoding: gzip dos lotes (Seção 5.4)

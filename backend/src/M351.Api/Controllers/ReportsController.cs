@@ -513,7 +513,8 @@ public class ReportsController(
                    sum(s.seconds_on)::bigint AS seconds_on,
                    sum(s.seconds_work_related)::bigint AS seconds_work_related,
                    sum(s.seconds_neutral)::bigint AS seconds_neutral,
-                   sum(s.seconds_not_work_related)::bigint AS seconds_not_work_related
+                   sum(s.seconds_not_work_related)::bigint AS seconds_not_work_related,
+                   sum(s.seconds_unclassified)::bigint AS seconds_unclassified
             FROM daily_device_summaries s
             JOIN devices d ON d.id = s.device_id AND d.tenant_id = s.tenant_id
             WHERE s.tenant_id = @TenantId
@@ -534,7 +535,7 @@ public class ReportsController(
 
         var items = rows.Select(r => new UsageByDeviceItemResponse(
                 r.DeviceId, r.DeviceName, r.SecondsActive, r.SecondsIdle, r.SecondsLocked, r.SecondsOn,
-                r.SecondsWorkRelated, r.SecondsNeutral, r.SecondsNotWorkRelated))
+                r.SecondsWorkRelated, r.SecondsNeutral, r.SecondsNotWorkRelated, r.SecondsUnclassified))
             .ToList();
 
         return new UsageReportResponse<UsageByDeviceItemResponse>(
@@ -556,7 +557,8 @@ public class ReportsController(
                    sum(s.seconds_on)::bigint AS seconds_on,
                    sum(s.seconds_work_related)::bigint AS seconds_work_related,
                    sum(s.seconds_neutral)::bigint AS seconds_neutral,
-                   sum(s.seconds_not_work_related)::bigint AS seconds_not_work_related
+                   sum(s.seconds_not_work_related)::bigint AS seconds_not_work_related,
+                   sum(s.seconds_unclassified)::bigint AS seconds_unclassified
             FROM daily_device_summaries s
             JOIN devices d ON d.id = s.device_id AND d.tenant_id = s.tenant_id
             LEFT JOIN device_users du ON du.tenant_id = s.tenant_id AND du.id = s.device_user_id
@@ -581,7 +583,7 @@ public class ReportsController(
                 r.DeviceUserId, r.DeviceId, r.DeviceName, r.WindowsUser,
                 DeviceUserDisplayName(r),
                 r.SecondsActive, r.SecondsIdle, r.SecondsLocked, r.SecondsOn,
-                r.SecondsWorkRelated, r.SecondsNeutral, r.SecondsNotWorkRelated))
+                r.SecondsWorkRelated, r.SecondsNeutral, r.SecondsNotWorkRelated, r.SecondsUnclassified))
             .ToList();
 
         return new UsageReportResponse<UsageByDeviceUserItemResponse>(
@@ -629,7 +631,8 @@ public class ReportsController(
         long SecondsOn,
         long SecondsWorkRelated,
         long SecondsNeutral,
-        long SecondsNotWorkRelated);
+        long SecondsNotWorkRelated,
+        long SecondsUnclassified);
 
     private sealed record DeviceUserGroupRow(
         Guid DeviceUserId,
@@ -643,7 +646,8 @@ public class ReportsController(
         long SecondsOn,
         long SecondsWorkRelated,
         long SecondsNeutral,
-        long SecondsNotWorkRelated);
+        long SecondsNotWorkRelated,
+        long SecondsUnclassified);
 
     private sealed record JornadaRow(
         string Date,

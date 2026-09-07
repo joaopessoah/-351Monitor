@@ -535,6 +535,100 @@ public class TenantIsolationTests(ApiTestFixture fixture) : IAsyncLifetime
         Assert.Equal(0L, audits);
     }
 
+    // ------------------------------------------------------------ F6: pessoas, hora, overview
+    [Fact]
+    public async Task People_NaoVazaPessoasDoTenantB_EPatchCruzadoRetorna404()
+    {
+        // uma pessoa em cada tenant, com agregado no MESMO dia
+        var hoje = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-3).Date);
+        await SeedPessoaAsync(_deviceA.TenantId, _deviceA.Id, "S-1-5-21-ISO-A-0001", "A\alice", hoje);
+        await SeedPessoaAsync(_deviceB.TenantId, _deviceB.Id, "S-1-5-21-ISO-B-0001", "B\bob", hoje);
+
+        var response = await SendAsync(HttpMethod.Get, $"/api/v1/people?from={hoje:yyyy-MM-dd}&to={hoje:yyyy-MM-dd}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("S-1-5-21-ISO-A-0001", body);
+        Assert.DoesNotContain("S-1-5-21-ISO-B-0001", body);
+
+        // PATCH de pessoa do tenant B: 404, nunca 403, e sem gravar nada
+        var patch = await SendAsync(HttpMethod.Patch, "/api/v1/people/S-1-5-21-ISO-B-0001",
+            new { display_name = "Invasor" });
+        Assert.Equal(HttpStatusCode.NotFound, patch.StatusCode);
+
+        var vazou = await TestDb.ScalarAsync<long>(fixture.Database.ConnectionString,
+            "SELECT count(*) FROM people WHERE windows_sid = @s", ("s", "S-1-5-21-ISO-B-0001"));
+        Assert.Equal(0, vazou);
+    }
+
+    [Fact]
+    public async Task ActivityByHourEOverview_NaoVazamAgregadosDoTenantB()
+    {
+        var hoje = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-3).Date);
+        var dia = hoje.ToString("yyyy-MM-dd");
+
+        // tenant B com 1 h ativa na hora 9; tenant A sem nada no dia
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            """
+            INSERT INTO hourly_activity (tenant_id, summary_date, hour_local, device_id, device_user_id,
+                                         seconds_active, seconds_idle)
+            VALUES (@t, @day, 9, @d, '00000000-0000-0000-0000-000000000001'::uuid, 3600, 0)
+            ON CONFLICT DO NOTHING
+            """,
+            ("t", _deviceB.TenantId), ("d", _deviceB.Id), ("day", hoje));
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            """
+            INSERT INTO daily_device_summaries (tenant_id, summary_date, device_id, device_user_id,
+                                                seconds_active, seconds_idle, seconds_locked, seconds_on,
+                                                seconds_work_related, seconds_neutral, seconds_not_work_related,
+                                                seconds_unclassified, data_incomplete, computed_at)
+            VALUES (@t, @day, @d, '00000000-0000-0000-0000-000000000001'::uuid,
+                    3600, 0, 0, 3600, 3600, 0, 0, 0, false, now())
+            ON CONFLICT DO NOTHING
+            """,
+            ("t", _deviceB.TenantId), ("d", _deviceB.Id), ("day", hoje));
+
+        var hora = await SendAsync(HttpMethod.Get, $"/api/v1/dashboard/activity-by-hour?from={dia}&to={dia}");
+        Assert.Equal(HttpStatusCode.OK, hora.StatusCode);
+        using var horaJson = JsonDocument.Parse(await hora.Content.ReadAsStringAsync());
+        Assert.Equal(0, horaJson.RootElement.GetProperty("days_with_data").GetInt32());
+        Assert.All(horaJson.RootElement.GetProperty("hours").EnumerateArray(),
+            h => Assert.Equal(0, h.GetProperty("seconds_active").GetInt64()));
+
+        var overview = await SendAsync(HttpMethod.Get, $"/api/v1/dashboard/overview?from={dia}&to={dia}");
+        Assert.Equal(HttpStatusCode.OK, overview.StatusCode);
+        using var overviewJson = JsonDocument.Parse(await overview.Content.ReadAsStringAsync());
+        Assert.Equal(0, overviewJson.RootElement.GetProperty("totals").GetProperty("seconds_active").GetInt64());
+        Assert.Empty(overviewJson.RootElement.GetProperty("days").EnumerateArray());
+    }
+
+    /// <summary>Insere device_user + agregado do dia direto no banco (sem passar pelo pipeline).</summary>
+    private async Task SeedPessoaAsync(Guid tenantId, Guid deviceId, string sid, string username, DateOnly day)
+    {
+        var laneId = Uuid7.NewUuid7();
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            """
+            INSERT INTO device_users (id, tenant_id, device_id, windows_sid, windows_username,
+                                      first_seen_at, last_seen_at)
+            VALUES (@id, @t, @d, @sid, @user, now(), now())
+            ON CONFLICT (tenant_id, device_id, windows_sid) DO NOTHING
+            """,
+            ("id", laneId), ("t", tenantId), ("d", deviceId), ("sid", sid), ("user", username));
+
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            """
+            INSERT INTO daily_device_summaries (tenant_id, summary_date, device_id, device_user_id,
+                                                seconds_active, seconds_idle, seconds_locked, seconds_on,
+                                                seconds_work_related, seconds_neutral, seconds_not_work_related,
+                                                seconds_unclassified, data_incomplete, computed_at)
+            SELECT @t, @day, @d, du.id, 600, 0, 0, 600, 600, 0, 0, 0, false, now()
+            FROM device_users du
+            WHERE du.tenant_id = @t AND du.device_id = @d AND du.windows_sid = @sid
+            ON CONFLICT DO NOTHING
+            """,
+            ("t", tenantId), ("d", deviceId), ("day", day), ("sid", sid));
+    }
+
     [Fact]
     public async Task RespostaCruzada_NuncaEh403_SempreEh404()
     {

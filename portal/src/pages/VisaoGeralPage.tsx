@@ -1,976 +1,768 @@
-import { useEffect, useMemo, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
-import { Link, useNavigate } from "react-router-dom";
+// =============================================================================
+// Visão Geral (F6) — a tela macro que o gestor abre todo dia.
+//
+// O QUE MUDOU e POR QUÊ (spec de 07/09/2026, seções 1.1 e 3):
+// a tela antiga respondia "quem está online agora" com cinco cards de contagem
+// de dispositivos, e três dos cinco eram estado técnico de máquina. A pergunta
+// do gestor é outra: "quão produtiva foi a equipe no período, e o que eu preciso
+// fazer". Então a presença ao vivo virou uma FAIXA no topo (pedido explícito do
+// dono: "Agora" é o primeiro cabeçalho da tela) e o corpo passou a ser
+// indicador de produtividade.
+//
+// Blocos que saíram daqui e para onde foram:
+//  - faixa de saúde da frota  → Administração › Dispositivos (é da frota inteira,
+//    não de nenhuma equipe, e é problema de TI);
+//  - medidor de uso do plano  → Cobrança (é do Proprietário);
+//  - checklist de onboarding  → Configurações (é do Admin, e só até concluir);
+//  - tabela "Equipe agora"    → Linha do Tempo, nível do dia (o link da faixa
+//    "Agora" leva até lá).
+// Nada foi apagado do produto: o que saiu tem dono em outra tela.
+//
+// PERÍODO E EQUIPE são globais e vivem na URL (?periodo=&de=&ate=&tag=), então o
+// link reproduz exatamente o recorte visível. O ÍNDICE e a COBERTURA vêm
+// calculados do servidor (decisão 4 do spec) e esta tela apenas formata: fórmula
+// única, sem chance de a tela e o relatório divergirem.
+// =============================================================================
+
+import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import type { UseQueryResult } from "@tanstack/react-query";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  ChevronRight,
-  Info,
-  KeyRound,
-  MonitorSmartphone,
-  Moon,
-} from "lucide-react";
+import type { EChartsOption } from "echarts";
+import { ArrowRight, Info, Tags } from "lucide-react";
+
 import { api } from "@/lib/api";
+import { formatDuration } from "@/lib/format";
+import type { MeResponse, OverviewResponse } from "@/lib/types";
 import {
-  addDays,
-  ddmm,
-  formatDuration,
-  formatRelative,
-  localDateOf,
-  mondayOf,
-  stateLabels,
-} from "@/lib/format";
-import { genericErrorMessage } from "@/lib/messages";
-import type {
-  DashboardSummaryResponse,
-  DeviceHealthSummaryResponse,
-  ForaDoHorarioResponse,
-  MeResponse,
-  PresenceItem,
-  PresenceResponse,
-  PresenceState,
-} from "@/lib/types";
+  DEFAULT_PERIOD,
+  PERIOD_CODEC,
+  PERIOD_LABELS,
+  comparisonLabel,
+  formatPct,
+  resolvePeriod,
+  type PeriodPreset,
+  type ResolvedPeriod,
+} from "@/lib/period";
 import { useUrlState } from "@/lib/useUrlState";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { TAG_CODEC, TeamTagSelect, tagParam, useTeamTags } from "@/components/filters/TeamTagSelect";
-import { OnboardingChecklist } from "@/components/dashboard/OnboardingChecklist";
+import { Card } from "@/components/ui/card";
+import { EChart } from "@/components/charts/EChart";
+import { TAG_CODEC, TeamTagSelect, useTeamTags } from "@/components/filters/TeamTagSelect";
 import { WeeklyChartsRow } from "@/components/dashboard/WeeklyChartsRow";
+import { AgoraFaixa } from "@/components/dashboard/AgoraFaixa";
+import { KpisRow } from "@/components/dashboard/KpisRow";
+import { AlertasCard } from "@/components/dashboard/AlertasCard";
+import { EquipesLadoALado, useEquipesQuery } from "@/components/dashboard/EquipesLadoALado";
+import { ResumoDoPeriodo } from "@/components/dashboard/ResumoDoPeriodo";
 import {
-  businessHoursLabel,
-  foraDoHorarioEmptyState,
-  foraDoHorarioKey,
-  foraDoHorarioPct,
-  foraDoHorarioUrl,
-} from "@/components/reports/ForaDoHorario";
+  useActivityByHourQuery,
+  useOverviewQuery,
+  previousPeriodOf,
+} from "@/components/dashboard/overviewData";
+import {
+  BUCKET_LABELS,
+  BlockCard,
+  CHART_H,
+  ChartSkeleton,
+  EMPTY_GRAPHIC,
+  FRAMING,
+  HATCH_DECAL,
+  HATCH_STYLE,
+  IDLE_HINT,
+  InlineError,
+  LegendItem,
+  LegendRow,
+  VIZ,
+  ViewToggle,
+  hoursLabel,
+} from "@/components/dashboard/overviewKit";
 
-/** Tooltip pedagógico do estado Ocioso (Seção 8.4) - sempre presente via title. */
-const IDLE_HINT =
-  "Ocioso significa sem uso de teclado/mouse. Reuniões, chamadas e leitura podem aparecer como ociosidade.";
-
-/** Ordem default da tabela "Equipe agora": problemas primeiro (Seção 8.4). */
-const stateOrder: Record<PresenceState, number> = {
-  no_data: 0,
-  active: 1,
-  idle: 2,
-  locked: 3,
-  no_session: 4,
-  off_clean: 5,
-};
-
-/** Hachura diagonal vermelha do no_data - redundância NÃO-cromática (Seção 8.5). */
-const noDataHatch: CSSProperties = {
-  backgroundImage:
-    "repeating-linear-gradient(45deg, #dc2626 0px, #dc2626 2px, #fecaca 2px, #fecaca 4px)",
-};
-
-/**
- * Dashboard de presença "agora" (F2, Seção 8.4): cards de contagem + tabela
- * Equipe agora.
- *
- * O seletor de equipe (?tag=, F5) recorta presença, meta da semana, atividade
- * fora do horário e os gráficos da semana - uma equipe de cada vez, nunca duas
- * lado a lado. Fica FORA do recorte, de propósito, a faixa de saúde da frota,
- * que fala da frota INTEIRA por definição (agentes sem comunicação, relógio
- * dessincronizado, versão desatualizada) e é a porta de entrada de um problema
- * operacional que não pertence a nenhuma equipe.
- */
 export function VisaoGeralPage() {
-  const navigate = useNavigate();
-  const [noDataFilter, setNoDataFilter] = useState(false);
-  const [nowMs, setNowMs] = useState(() => Date.now());
-
-  // Recorte de equipe na URL (?tag=): o link reproduz o recorte visível.
+  const [period, setPeriod] = useUrlState(PERIOD_CODEC);
   const [tag, setTag] = useUrlState(TAG_CODEC);
   const { tags } = useTeamTags();
 
-  const presenceQuery = useQuery({
-    queryKey: ["dashboard", "presence", tag],
-    queryFn: () => api<PresenceResponse>(`/dashboard/presence?tag=${encodeURIComponent(tag ?? "")}`),
-    refetchInterval: 60_000,
-    refetchIntervalInBackground: false,
-    placeholderData: (prev) => prev,
-  });
-
-  // Saúde da FROTA INTEIRA (não da página de /dispositivos): mesmo polling de
-  // 60 s da presença, pausado em aba oculta. A key sob ["devices"] faz o PATCH
-  // de dispositivo (arquivar/reativar) invalidar estes contadores também.
-  const healthQuery = useQuery({
-    queryKey: ["devices", "health-summary"],
-    queryFn: () => api<DeviceHealthSummaryResponse>("/devices/health-summary"),
-    refetchInterval: 60_000,
-    refetchIntervalInBackground: false,
-    placeholderData: (prev) => prev,
-  });
-
-  // Mesma queryKey do AppShell: resolve do cache, sem requisição extra.
   const meQuery = useQuery({
     queryKey: ["me"],
     queryFn: () => api<MeResponse>("/me"),
     staleTime: 5 * 60 * 1000,
   });
   const organization = meQuery.data?.organization;
-  const goalHours = organization?.goal_weekly_active_hours ?? null;
-  const goalWorkPct = organization?.goal_work_related_pct ?? null;
-
-  // Semana corrente (segunda a domingo) no FUSO DA ORGANIZAÇÃO — a mesma janela
-  // dos gráficos da semana logo abaixo.
   const timezone = organization?.timezone ?? null;
-  const weekFrom = timezone !== null ? mondayOf(localDateOf(new Date(), timezone)) : null;
-  const weekTo = weekFrom !== null ? addDays(weekFrom, 6) : null;
 
-  /**
-   * MESMA queryKey e MESMA URL do WeeklyChartsRow para a semana atual: o
-   * TanStack Query compartilha o cache entre os dois observadores, então a
-   * barra de meta não gera requisição extra (e o card de gráficos segue dono
-   * do seu próprio arquivo, sem acoplamento de props).
-   */
-  const weekSummaryQuery = useQuery({
-    queryKey: ["dashboard", "summary", weekFrom, weekTo, tag],
-    queryFn: () =>
-      api<DashboardSummaryResponse>(
-        `/dashboard/summary?from=${weekFrom ?? ""}&to=${weekTo ?? ""}${tagParam(tag)}`,
-      ),
-    enabled: weekFrom !== null && goalHours !== null,
-    refetchInterval: 60_000,
-    refetchIntervalInBackground: false,
-    placeholderData: (prev) => prev,
-  });
+  // O período SÓ resolve com o fuso da organização em mãos: sem isso o dia do
+  // navegador vazaria para o recorte de quem viaja ou opera em outro fuso.
+  const resolved = useMemo(() => resolvePeriod(period, timezone), [period, timezone]);
 
-  /**
-   * Atividade fora do horário de trabalho na semana corrente. SEM
-   * include_devices: o card é um agregado de EQUIPE, e por isso a leitura não
-   * gera view_report (o recorte pessoal só existe na aba do relatório de Uso).
-   * Sem polling: o indicador é semanal, não muda a cada minuto.
-   */
-  const foraParams = {
-    from: weekFrom ?? "",
-    to: weekTo ?? "",
-    deviceIdsKey: "",
-    tag,
-    page: 1,
-    includeDevices: false,
-    pageSize: 1,
-  };
-  const foraQuery = useQuery({
-    queryKey: foraDoHorarioKey(foraParams),
-    queryFn: () => api<ForaDoHorarioResponse>(foraDoHorarioUrl(foraParams)),
-    enabled: weekFrom !== null,
-    staleTime: 5 * 60 * 1000,
-  });
+  const overview = useOverviewQuery(resolved, tag, true);
+  const totals = overview.data?.totals;
+  const previous = overview.data?.previous ?? null;
 
-  // Tick de 1s só para o badge "Atualizado há Xs" (relógio local vs server_time).
-  useEffect(() => {
-    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  const data = presenceQuery.data;
-
-  const counts = useMemo(() => {
-    const c = { active: 0, idle: 0, lockedNoSession: 0, offClean: 0, noData: 0 };
-    for (const item of data?.items ?? []) {
-      switch (item.presence_state) {
-        case "active":
-          c.active += 1;
-          break;
-        case "idle":
-          c.idle += 1;
-          break;
-        case "locked":
-        case "no_session":
-          c.lockedNoSession += 1;
-          break;
-        case "off_clean":
-          c.offClean += 1;
-          break;
-        case "no_data":
-          c.noData += 1;
-          break;
-      }
-    }
-    return c;
-  }, [data]);
-
-  const rows = useMemo(() => {
-    const items = data?.items ?? [];
-    const visible = noDataFilter ? items.filter((i) => i.presence_state === "no_data") : items;
-    return [...visible].sort((a, b) => {
-      const byState = stateOrder[a.presence_state] - stateOrder[b.presence_state];
-      if (byState !== 0) return byState;
-      return a.device_name.localeCompare(b.device_name, "pt-BR");
-    });
-  }, [data, noDataFilter]);
-
-  function openTimeline(deviceId: string) {
-    navigate(`/linha-do-tempo?device=${encodeURIComponent(deviceId)}`);
-  }
+  // A comparação de equipes é UMA consulta (Promise.all por etiqueta dentro de
+  // um useQuery só). Declarada aqui além de dentro do EquipesLadoALado porque o
+  // Resumo do Período também precisa das linhas: mesma queryKey, mesmo cache,
+  // dois observadores e ZERO requisição a mais.
+  const equipes = useEquipesQuery(resolved, tags, organization?.business_hours);
 
   const header = (
-    <div className="flex flex-wrap items-start justify-between gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Visão Geral</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Presença da equipe agora, atualizada a cada minuto.
-        </p>
-      </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <TeamTagSelect tags={tags} value={tag} onChange={setTag} />
-        {data !== undefined && (
-          <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs tabular-nums text-secondary-foreground">
-            Atualizado {formatRelative(data.server_time, new Date(nowMs).toISOString())}
-          </span>
-        )}
-      </div>
-    </div>
-  );
+    <div className="space-y-4">
+      <AgoraFaixa tag={tag} />
 
-  // Skeleton inicial com a geometria final (nunca spinner de página inteira).
-  if (presenceQuery.isPending) {
-    return (
-      <div className="space-y-6">
-        {header}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {Array.from({ length: 5 }, (_, i) => (
-            <Skeleton key={i} className="h-[74px] rounded-lg" />
-          ))}
-        </div>
-        {/* Mesma geometria da faixa de saúde da frota que carrega em seguida. */}
-        <Skeleton className="h-[76px] w-full rounded-lg" />
-        <Card>
-          <CardHeader className="pb-3">
-            <Skeleton className="h-5 w-32" />
-            <Skeleton className="h-4 w-72" />
-          </CardHeader>
-          <CardContent className="space-y-2 pb-4">
-            {Array.from({ length: 6 }, (_, i) => (
-              <Skeleton key={i} className="h-9 w-full" />
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // Erro sem nenhum dado em cache: estado inline com retry (nunca tela quebrada).
-  if (data === undefined) {
-    return (
-      <div className="space-y-6">
-        {header}
-        <Card>
-          <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
-            <AlertTriangle className="h-8 w-8 text-destructive" aria-hidden />
-            <p className="text-sm text-muted-foreground">{genericErrorMessage(presenceQuery.error)}</p>
-            <Button variant="outline" onClick={() => void presenceQuery.refetch()}>
-              Tentar novamente
-            </Button>
-          </div>
-        </Card>
-      </div>
-    );
-  }
-
-  // Recorte de equipe sem nenhum dispositivo: a organização TEM dispositivos, só
-  // não nesta etiqueta - mandar criar chave de instalação aqui seria enganoso.
-  if (data.items.length === 0 && tag !== null) {
-    return (
-      <div className="space-y-6">
-        {header}
-        <Card>
-          <div className="flex flex-col items-center gap-4 px-6 py-14 text-center">
-            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-              <MonitorSmartphone className="h-7 w-7 text-muted-foreground" aria-hidden />
-            </span>
-            <div className="space-y-1">
-              <p className="text-base font-medium">Nenhum dispositivo nesta equipe.</p>
-              <p className="text-sm text-muted-foreground">
-                Nenhum dispositivo ativo carrega a etiqueta “{tag}”. As etiquetas são editadas em
-                Dispositivos.
-              </p>
-            </div>
-            <Button variant="outline" onClick={() => setTag(null)}>
-              Ver todas as equipes
-            </Button>
-          </div>
-        </Card>
-      </div>
-    );
-  }
-
-  // Org sem nenhum device: estado vazio apontando para a chave de enrollment.
-  if (data.items.length === 0) {
-    return (
-      <div className="space-y-6">
-        {header}
-        <Card>
-          <div className="flex flex-col items-center gap-4 px-6 py-14 text-center">
-            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-              <MonitorSmartphone className="h-7 w-7 text-muted-foreground" aria-hidden />
-            </span>
-            <div className="space-y-1">
-              <p className="text-base font-medium">Nenhum dispositivo ainda.</p>
-              <p className="text-sm text-muted-foreground">
-                Crie uma chave em Configurações → Chaves e instale o agente.
-              </p>
-            </div>
-            <Link
-              to="/configuracoes/chaves"
-              className="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              <KeyRound className="h-4 w-4" aria-hidden />
-              Criar chave de instalação
-            </Link>
-          </div>
-        </Card>
-        <OnboardingChecklist />
-        <WeeklyChartsRow />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {header}
-
-      {presenceQuery.isError && (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-        >
-          <span>Não foi possível atualizar os dados. Mostrando a última leitura.</span>
-          <Button variant="outline" size="sm" onClick={() => void presenceQuery.refetch()}>
-            Tentar novamente
-          </Button>
-        </div>
-      )}
-
-      {/* Linha 1 - cards de contagem por estado de presença (Seção 8.5). */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Card>
-          <CountCardBody
-            count={counts.active}
-            label="Ativos"
-            swatch={<span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-full bg-viz-produtivo" />}
-          />
-        </Card>
-        <Card title={IDLE_HINT}>
-          <CountCardBody
-            count={counts.idle}
-            label="Ociosos"
-            swatch={<span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-full bg-viz-improdutivo" />}
-            labelIcon={<Info role="img" aria-label={IDLE_HINT} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-          />
-        </Card>
-        <Card>
-          <CountCardBody
-            count={counts.lockedNoSession}
-            label="Bloqueados / sem usuário"
-            swatch={<span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-full bg-brand-slate" />}
-          />
-        </Card>
-        {/* off_clean é estado esperado: cinza claro, apenas contorno, sem alerta. */}
-        <Card>
-          <CountCardBody
-            count={counts.offClean}
-            label="Desligadas"
-            swatch={<span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-full border-2 border-border" />}
-          />
-        </Card>
-        {/* no_data é clicável: filtra a tabela abaixo; clicar de novo desfaz. */}
-        <button
-          type="button"
-          onClick={() => setNoDataFilter((f) => !f)}
-          aria-pressed={noDataFilter}
-          title={noDataFilter ? "Clique para remover o filtro da tabela" : "Clique para filtrar a tabela"}
-          className={cn(
-            "rounded-lg border bg-card text-left text-card-foreground shadow-sm transition-colors hover:bg-accent",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            noDataFilter && "border-brand-red ring-2 ring-brand-red/30",
-          )}
-        >
-          <CountCardBody
-            count={counts.noData}
-            label="Sem comunicação"
-            swatch={<span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-sm" style={noDataHatch} />}
-            labelIcon={<AlertTriangle className="h-3.5 w-3.5 shrink-0 text-brand-red" aria-hidden />}
-          />
-        </button>
-      </div>
-
-      {/* Linha 1b - saúde da frota INTEIRA (F4.4 + health-summary). */}
-      <FleetHealthWidget query={healthQuery} />
-
-      {/* Linha 1c - meta da semana (só quando a organização definiu meta). */}
-      <MetaSemanaWidget
-        goalHours={goalHours}
-        goalWorkPct={goalWorkPct}
-        weekFrom={weekFrom}
-        weekTo={weekTo}
-        query={weekSummaryQuery}
-      />
-
-      {/* Linha 1c-bis - atividade fora do horário de trabalho na semana. */}
-      <ForaDoHorarioWidget query={foraQuery} weekFrom={weekFrom} weekTo={weekTo} />
-
-      {/* Linha 1d - uso do plano (só quando o plano tem teto de dispositivos). */}
-      <PlanoMedidor
-        deviceLimit={organization?.device_limit ?? null}
-        activeDevices={healthQuery.data?.active_devices ?? data.items.length}
-      />
-
-      {/* Linha 2 - tabela "Equipe agora" (Seção 8.4). */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="space-y-1.5">
-              <CardTitle className="text-base">Equipe agora</CardTitle>
-              <CardDescription>
-                Clique em um dispositivo para abrir a linha do tempo do dia.
-              </CardDescription>
-            </div>
-            {noDataFilter && (
-              <Button variant="outline" size="sm" onClick={() => setNoDataFilter(false)}>
-                Limpar filtro: Sem comunicação
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent className="px-0 pb-0">
-          <div className="overflow-x-auto rounded-b-lg">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  <th scope="col" className="px-6 py-2">Status</th>
-                  <th scope="col" className="px-3 py-2">Device / Usuário</th>
-                  <th scope="col" className="px-3 py-2">App em foco</th>
-                  <th scope="col" className="px-3 py-2 text-right">Neste app</th>
-                  <th scope="col" className="px-6 py-2 text-right">Último contato</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-sm text-muted-foreground">
-                      Nenhum dispositivo sem comunicação agora.
-                    </td>
-                  </tr>
-                ) : (
-                  rows.map((item) => (
-                    <PresenceRow
-                      key={item.device_id}
-                      item={item}
-                      serverTime={data.server_time}
-                      onOpen={openTimeline}
-                    />
-                  ))
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight">Visão Geral</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {resolved !== null ? (
+              <>
+                {resolved.label}
+                {totals !== undefined && (
+                  <>
+                    {" · "}
+                    {totals.person_count} {totals.person_count === 1 ? "colaborador" : "colaboradores"}
+                  </>
                 )}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Checklist de primeiros passos (funil de ativação) - admin/owner,
-          some após o dismiss. Acima dos gráficos, abaixo da presença. */}
-      <OnboardingChecklist />
-
-      {/* Linha 3 - gráficos da semana (F3.2, Seção 8.4). */}
-      <WeeklyChartsRow tag={tag} />
-    </div>
-  );
-}
-
-// -----------------------------------------------------------------------------
-// Saúde da frota inteira (GET /devices/health-summary)
-// -----------------------------------------------------------------------------
-
-/**
- * Dimensões de saúde com contagem > 0, no vocabulário neutro dos badges de
- * /dispositivos. Ex.: ["3 sem comunicação", "1 com ciência pendente"]. Nunca
- * soma as dimensões: um mesmo device pode acionar várias, e with_alert é a
- * contagem DISTINTA de dispositivos.
- */
-function healthAlertParts(summary: DeviceHealthSummaryResponse): string[] {
-  const parts: string[] = [];
-  if (summary.offline > 0) parts.push(`${summary.offline} sem comunicação`);
-  if (summary.clock_skewed > 0) parts.push(`${summary.clock_skewed} com relógio dessincronizado`);
-  if (summary.outdated > 0) parts.push(`${summary.outdated} com versão desatualizada`);
-  if (summary.tampered > 0) parts.push(`${summary.tampered} com adulteração`);
-  if (summary.notice_pending > 0) parts.push(`${summary.notice_pending} com ciência pendente`);
-  return parts;
-}
-
-/**
- * Card "Dispositivos precisam de atenção" com o with_alert da FROTA INTEIRA,
- * clicável para /dispositivos?filtro=alerta (que já abre a listagem filtrada
- * pelo mesmo predicado no servidor). Frota inteira respondendo: uma linha
- * discreta, jamais um card de erro. Skeleton com a geometria final e erro
- * inline com retry, no padrão dos vizinhos desta tela.
- */
-function FleetHealthWidget({ query }: { query: UseQueryResult<DeviceHealthSummaryResponse> }) {
-  const summary = query.data;
-
-  if (summary === undefined) {
-    if (query.isError) {
-      return (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-        >
-          <span>Não foi possível carregar a saúde da frota.</span>
-          <Button variant="outline" size="sm" onClick={() => void query.refetch()}>
-            Tentar novamente
-          </Button>
-        </div>
-      );
-    }
-    return <Skeleton className="h-[76px] w-full rounded-lg" />;
-  }
-
-  if (summary.with_alert === 0) {
-    return (
-      <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        <CheckCircle2 className="h-4 w-4 shrink-0 text-viz-produtivo" aria-hidden />
-        Toda a frota respondendo.
-        <span className="tabular-nums">
-          {summary.active_devices === 1
-            ? "1 dispositivo ativo"
-            : `${summary.active_devices} dispositivos ativos`}
-          .
-        </span>
-      </p>
-    );
-  }
-
-  const parts = healthAlertParts(summary);
-  const severeHint =
-    summary.offline_severe > 0
-      ? `${summary.offline_severe} sem comunicação há mais de 30 minutos em horário de trabalho`
-      : undefined;
-
-  return (
-    <Link
-      to="/dispositivos?filtro=alerta"
-      title={severeHint}
-      className={cn(
-        "flex items-center gap-4 rounded-lg border px-4 py-3 text-card-foreground shadow-sm transition-colors",
-        "border-brand-red/30 bg-brand-red/10 hover:bg-brand-red/15",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-      )}
-    >
-      <AlertTriangle className="h-5 w-5 shrink-0 text-brand-red" aria-hidden />
-      <span className="min-w-0 flex-1">
-        <span className="flex items-baseline gap-2">
-          <span className="text-2xl font-semibold leading-none tabular-nums">
-            {summary.with_alert}
-          </span>
-          <span className="text-sm font-medium">
-            {summary.with_alert === 1
-              ? "dispositivo precisa de atenção"
-              : "dispositivos precisam de atenção"}
-          </span>
-        </span>
-        <span className="mt-1 block truncate text-xs tabular-nums text-muted-foreground">
-          {parts.join(", ")}
-          {severeHint !== undefined && (
-            <span className="text-brand-red"> · {summary.offline_severe} há mais de 30 minutos</span>
-          )}
-        </span>
-      </span>
-      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-    </Link>
-  );
-}
-
-// -----------------------------------------------------------------------------
-// Meta da semana (goal_weekly_active_hours / goal_work_related_pct de GET /me)
-// -----------------------------------------------------------------------------
-
-/** Barra fina de progresso, com o mesmo desenho do medidor de plano. */
-function ProgressBar({
-  pct,
-  tone,
-  label,
-}: {
-  pct: number;
-  tone: "primary" | "atencao" | "ok";
-  label: string;
-}) {
-  const width = Math.min(100, Math.max(0, pct));
-  const fill =
-    tone === "ok" ? "bg-viz-produtivo" : tone === "atencao" ? "bg-viz-improdutivo" : "bg-primary";
-  return (
-    <div
-      role="progressbar"
-      aria-valuenow={pct}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-label={label}
-      className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
-    >
-      <div className={cn("h-full rounded-full", fill)} style={{ width: `${width}%` }} />
-    </div>
-  );
-}
-
-/**
- * Progresso da meta SEMANAL da organização. Vocabulário sempre de equipe:
- * "horas ativas da equipe" e "tempo em aplicativos relacionados ao trabalho".
- * Nunca meta individual, nunca ranking de pessoas. Organização sem meta
- * definida não renderiza nada.
- */
-function MetaSemanaWidget({
-  goalHours,
-  goalWorkPct,
-  weekFrom,
-  weekTo,
-  query,
-}: {
-  goalHours: number | null;
-  goalWorkPct: number | null;
-  weekFrom: string | null;
-  weekTo: string | null;
-  query: UseQueryResult<DashboardSummaryResponse>;
-}) {
-  if (goalHours === null || goalHours <= 0) return null;
-
-  const periodo =
-    weekFrom !== null && weekTo !== null ? `semana de ${ddmm(weekFrom)} a ${ddmm(weekTo)}` : "semana";
-  const data = query.data;
-
-  if (data === undefined) {
-    if (query.isError) {
-      return (
-        <Card className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-          <p className="text-sm text-muted-foreground">
-            Não foi possível carregar o progresso da meta da semana.
-          </p>
-          <Button variant="outline" size="sm" onClick={() => void query.refetch()}>
-            Tentar novamente
-          </Button>
-        </Card>
-      );
-    }
-    return <Skeleton className="h-[86px] w-full rounded-lg" />;
-  }
-
-  const activeSeconds = data.totals.seconds_active;
-  const goalSeconds = goalHours * 3600;
-  const pct = Math.round((activeSeconds / goalSeconds) * 100);
-  const atingida = pct >= 100;
-
-  // % do tempo ativo em apps relacionados ao trabalho (só com tempo ativo > 0).
-  const workPct =
-    activeSeconds > 0 ? Math.round((data.totals.seconds_work_related / activeSeconds) * 100) : null;
-
-  return (
-    <Card className="space-y-2 px-4 py-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <p className="text-sm font-medium tabular-nums">Meta da semana: {pct}% atingida</p>
-        <p className="text-xs tabular-nums text-muted-foreground">
-          {formatDuration(activeSeconds)} de {goalHours}h de horas ativas da equipe
-        </p>
-      </div>
-      <ProgressBar
-        pct={pct}
-        tone={atingida ? "ok" : "primary"}
-        label={`Meta da semana de horas ativas da equipe: ${pct}% atingida`}
-      />
-      <p className="text-xs text-muted-foreground">
-        Horas ativas da equipe na {periodo}, no fuso da organização.
-      </p>
-
-      {goalWorkPct !== null && goalWorkPct > 0 && (
-        <div className="space-y-2 border-t pt-2">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-            <p className="text-sm font-medium tabular-nums">
-              Tempo em aplicativos relacionados ao trabalho: {workPct ?? 0}%
-            </p>
-            <p className="text-xs tabular-nums text-muted-foreground">meta de {goalWorkPct}%</p>
-          </div>
-          <ProgressBar
-            pct={workPct !== null ? Math.round((workPct / goalWorkPct) * 100) : 0}
-            tone={workPct !== null && workPct >= goalWorkPct ? "ok" : "primary"}
-            label={`Meta de tempo em aplicativos relacionados ao trabalho: ${workPct ?? 0}% de ${goalWorkPct}%`}
-          />
-          <p className="text-xs text-muted-foreground">
-            Percentual do tempo ativo da equipe classificado como relacionado ao trabalho.
+                {" · "}
+                {comparisonLabel(resolved.preset)}
+              </>
+            ) : (
+              "Carregando o fuso da organização…"
+            )}
           </p>
         </div>
-      )}
-    </Card>
-  );
-}
 
-// -----------------------------------------------------------------------------
-// Atividade fora do horário de trabalho (GET /reports/fora-do-horario)
-// -----------------------------------------------------------------------------
-
-/**
- * Card de EQUILÍBRIO da semana: quanto tempo ativo a equipe registrou fora do
- * horário de trabalho declarado. Vocabulário fixo "atividade fora do horário de
- * trabalho" - o produto não calcula, e a tela não sugere, hora extra, jornada
- * extraordinária ou banco de horas.
- *
- * Os dois estados sem número (horário não configurado e coleta restrita ao
- * horário) viram uma linha discreta EXPLICATIVA: zero seria uma resposta falsa,
- * e o gestor precisa saber por que não há indicador em vez de ler "tudo certo".
- */
-function ForaDoHorarioWidget({
-  query,
-  weekFrom,
-  weekTo,
-}: {
-  query: UseQueryResult<ForaDoHorarioResponse>;
-  weekFrom: string | null;
-  weekTo: string | null;
-}) {
-  const data = query.data;
-
-  if (data === undefined) {
-    // Erro aqui não vira card de erro: é um indicador secundário da tela.
-    return query.isError ? null : <Skeleton className="h-[52px] w-full rounded-lg" />;
-  }
-
-  const periodo =
-    weekFrom !== null && weekTo !== null ? `semana de ${ddmm(weekFrom)} a ${ddmm(weekTo)}` : "semana";
-
-  const vazio = foraDoHorarioEmptyState(data);
-  if (vazio !== null) {
-    return (
-      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-        <Info className="h-4 w-4 shrink-0" aria-hidden />
-        <span>
-          Atividade fora do horário de trabalho: {vazio.titulo.toLocaleLowerCase("pt-BR")}.
-        </span>
-        {vazio.acao !== null && (
-          <Link
-            to={vazio.acao.to}
-            className="font-medium text-primary underline-offset-2 hover:underline"
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Presets do período: um grupo segmentado, estado na URL. */}
+          <div
+            role="group"
+            aria-label="Período"
+            className="inline-flex h-9 items-stretch rounded-md border border-input bg-card p-0.5"
           >
-            {vazio.acao.label}
-          </Link>
-        )}
-      </p>
-    );
-  }
-
-  const totals = data.totals;
-  if (totals === null || totals.seconds_outside === 0) {
-    return (
-      <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        <CheckCircle2 className="h-4 w-4 shrink-0 text-viz-produtivo" aria-hidden />
-        Nenhuma atividade fora do horário de trabalho na {periodo}.
-      </p>
-    );
-  }
-
-  const pct = foraDoHorarioPct(totals.seconds_outside, totals.seconds_active);
-  const dispositivos =
-    totals.devices_with_activity_outside === 1
-      ? "1 dispositivo"
-      : `${totals.devices_with_activity_outside} dispositivos`;
-
-  return (
-    <Link
-      to="/relatorios/uso?aba=fora-do-horario"
-      className={cn(
-        "flex items-center gap-4 rounded-lg border px-4 py-3 text-card-foreground shadow-sm transition-colors",
-        "hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-      )}
-    >
-      <Moon className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />
-      <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-baseline gap-2">
-          <span className="text-2xl font-semibold leading-none tabular-nums">
-            {formatDuration(totals.seconds_outside)}
-          </span>
-          <span className="text-sm font-medium">de atividade fora do horário de trabalho</span>
-        </span>
-        <span className="mt-1 block truncate text-xs tabular-nums text-muted-foreground">
-          {dispositivos} na {periodo}
-          {pct !== null && ` · ${pct}% do tempo ativo da equipe`}
-          {data.business_hours !== null && ` · horário declarado: ${businessHoursLabel(data.business_hours)}`}
-        </span>
-      </span>
-      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-    </Link>
-  );
-}
-
-// -----------------------------------------------------------------------------
-// Uso do plano (device_limit de GET /me)
-// -----------------------------------------------------------------------------
-
-/** Contato comercial para ampliação de plano (sem preço em tela: Seção 7.4). */
-const SUPORTE_EMAIL = "bruna@mais351monitor.com.br";
-
-/** A partir de 80% do teto o medidor troca de tom e convida a falar com a gente. */
-const PLANO_ATENCAO_PCT = 80;
-
-/**
- * Medidor discreto "X de Y dispositivos do plano". Sem device_limit (plano sem
- * teto) NÃO renderiza nada — o produto não inventa limite onde não existe.
- * Mostra apenas contagem, jamais valor em reais: preço é decisão comercial
- * fora do sistema.
- */
-function PlanoMedidor({
-  deviceLimit,
-  activeDevices,
-}: {
-  deviceLimit: number | null;
-  activeDevices: number;
-}) {
-  if (deviceLimit === null || deviceLimit <= 0) return null;
-
-  const pct = Math.min(100, Math.round((activeDevices / deviceLimit) * 100));
-  const atencao = pct >= PLANO_ATENCAO_PCT;
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
-        <span className={cn("tabular-nums", atencao ? "font-medium text-viz-improdutivo" : "text-muted-foreground")}>
-          {activeDevices} de {deviceLimit} dispositivos do plano
-        </span>
-        {atencao && (
-          <span className="text-xs text-muted-foreground">
-            <a
-              href={`mailto:${SUPORTE_EMAIL}?subject=${encodeURIComponent("Ampliação de plano, +351 Monitor")}`}
-              className="font-medium text-primary underline-offset-4 hover:underline"
-            >
-              Fale com a gente para ampliar o plano
-            </a>
-          </span>
-        )}
+            {(["dia", "semana", "mes"] as PeriodPreset[]).map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                aria-pressed={period.preset === preset}
+                onClick={() => setPeriod({ ...DEFAULT_PERIOD, preset })}
+                className={cn(
+                  "rounded-[5px] px-3 text-xs font-medium transition-colors",
+                  period.preset === preset
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                )}
+              >
+                {PERIOD_LABELS[preset]}
+              </button>
+            ))}
+          </div>
+          <TeamTagSelect tags={tags} value={tag} onChange={setTag} />
+        </div>
       </div>
-      <div
-        role="progressbar"
-        aria-valuenow={activeDevices}
-        aria-valuemin={0}
-        aria-valuemax={deviceLimit}
-        aria-label={`Uso do plano: ${activeDevices} de ${deviceLimit} dispositivos`}
-        className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
-      >
-        <div
-          className={cn("h-full rounded-full", atencao ? "bg-viz-improdutivo" : "bg-primary")}
-          style={{ width: `${pct}%` }}
+    </div>
+  );
+
+  if (meQuery.isError && meQuery.data === undefined) {
+    return (
+      <div className="space-y-6">
+        {header}
+        <InlineError
+          message="Não foi possível carregar a organização, e sem o fuso dela nenhum período é confiável."
+          onRetry={() => void meQuery.refetch()}
         />
       </div>
-    </div>
-  );
-}
+    );
+  }
 
-/** Conteúdo interno dos cards de contagem (densidade alta, contagem tabular). */
-function CountCardBody({
-  count,
-  label,
-  swatch,
-  labelIcon,
-}: {
-  count: number;
-  label: string;
-  swatch: ReactNode;
-  labelIcon?: ReactNode;
-}) {
   return (
-    <div className="flex items-center gap-3 p-4">
-      {swatch}
-      <div className="min-w-0">
-        <p className="text-2xl font-semibold leading-none tabular-nums">{count}</p>
-        <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-          <span className="truncate">{label}</span>
-          {labelIcon}
-        </p>
+    <div className="space-y-5">
+      {header}
+
+      {/* Linha 1 — os seis KPIs com minigráfico de 12 dias. */}
+      <KpisRow period={resolved} tag={tag} />
+
+      {/* Linha 2 — composição, atividade por hora, índice/meta/cobertura. */}
+      <div className="grid gap-4 lg:grid-cols-12">
+        <ComposicaoCard
+          className="lg:col-span-4"
+          query={overview}
+          personDays={totals?.person_days ?? 0}
+        />
+        <AtividadePorHoraCard className="lg:col-span-5" period={resolved} tag={tag} />
+        <IndiceMetaCard
+          className="lg:col-span-3"
+          data={overview.data}
+          isPending={overview.isPending}
+          onRetry={() => void overview.refetch()}
+          hasError={overview.isError}
+        />
       </div>
+
+      {/* Linha 3 — a composição por dia e o top de aplicativos continuam vindo
+          do WeeklyChartsRow, que já resolve os dois com tabela acessível e
+          comparação de semana. O recorte de equipe desce por prop. */}
+      <WeeklyChartsRow tag={tag} />
+
+      {/* Linha 4 — o RESUMO do período em três frases, geradas dos agregados que
+          os blocos acima já carregaram. Zero requisição nova: consome o mesmo
+          cache do overview e da comparação de equipes. O cartão desaparece
+          inteiro se nenhuma frase tiver número real para dizer. */}
+      <ResumoDoPeriodo data={overview.data} equipes={equipes.data ?? []} />
+
+      {/* Linha 5 — ALERTAS de gestão (motor de regras no worker, GET /alerts)
+          somados às pendências de administração que hoje só existem no sino, e
+          o comparativo de EQUIPES lado a lado com o mínimo de grupo da
+          decisão 3. Os dois lado a lado porque respondem à mesma pergunta em
+          dois níveis: "o que exige decisão" e "onde a diferença está". */}
+      <div className="grid gap-4 lg:grid-cols-12">
+        <AlertasCard className="lg:col-span-5" />
+        <EquipesLadoALado
+          className="lg:col-span-7"
+          period={resolved}
+          tags={tags}
+          businessHours={organization?.business_hours}
+        />
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        {FRAMING} Estados de máquina (ativo, ocioso, bloqueado) são fisiológicos e não recebem
+        julgamento: <span title={IDLE_HINT}>ocioso não é improdutivo</span>.
+      </p>
+
+      {previous !== null && previous.seconds_active === 0 && totals !== undefined && totals.seconds_active > 0 && (
+        <p className="text-xs text-muted-foreground">
+          O período anterior não tem dado, então as variações aparecem como “sem base”.
+        </p>
+      )}
     </div>
   );
 }
 
-/** Linha clicável da tabela Equipe agora - Enter/Espaço também navegam. */
-function PresenceRow({
-  item,
-  serverTime,
-  onOpen,
+// -----------------------------------------------------------------------------
+// Composição das horas com a máquina ligada (donut com o total ao centro)
+// -----------------------------------------------------------------------------
+
+/**
+ * Os SEIS baldes do tempo ligado: os quatro de classificação (que somam o tempo
+ * ativo) mais ocioso e bloqueado. O total no miolo é a leitura que o gestor
+ * procura primeiro, e a legenda dá horas e percentual de cada balde.
+ *
+ * Ocioso vai com hachura (decal) e bloqueado só com contorno: redundância
+ * não-cromática, e o âmbar continua reservado para "improdutivo" — a colisão de
+ * significado apontada na seção 1.2 do spec.
+ */
+function ComposicaoCard({
+  className,
+  query,
+  personDays,
 }: {
-  item: PresenceItem;
-  serverTime: string;
-  onOpen: (deviceId: string) => void;
+  className?: string;
+  query: ReturnType<typeof useOverviewQuery>;
+  personDays: number;
 }) {
-  const isNoData = item.presence_state === "no_data";
-  const appSinceSeconds =
-    item.app_since !== null
-      ? (new Date(serverTime).getTime() - new Date(item.app_since).getTime()) / 1000
-      : null;
+  const [view, setView] = useState<"chart" | "table">("chart");
+  const totals = query.data?.totals;
+
+  const buckets = useMemo(() => {
+    if (totals === undefined) return [];
+    return [
+      { key: "produtivo", label: BUCKET_LABELS.produtivo, value: totals.seconds_work_related, color: VIZ.produtivo },
+      { key: "neutro", label: BUCKET_LABELS.neutro, value: totals.seconds_neutral, color: VIZ.neutro },
+      { key: "improdutivo", label: BUCKET_LABELS.improdutivo, value: totals.seconds_not_work_related, color: VIZ.improdutivo },
+      { key: "semClassificacao", label: BUCKET_LABELS.semClassificacao, value: totals.seconds_unclassified, color: VIZ.semClassificacao },
+      { key: "ocioso", label: BUCKET_LABELS.ocioso, value: totals.seconds_idle, color: VIZ.ocioso, hatch: true },
+      { key: "bloqueado", label: BUCKET_LABELS.bloqueado, value: totals.seconds_locked, color: VIZ.bloqueado, outline: true },
+    ];
+  }, [totals]);
+
+  const total = totals?.seconds_on ?? 0;
+
+  const option = useMemo<EChartsOption>(() => {
+    const vazio = total === 0;
+    return {
+      aria: { enabled: true, decal: { show: true } },
+      animation: false,
+      tooltip: {
+        trigger: "item",
+        formatter: (params: unknown) => {
+          const p = params as { name: string; value: number };
+          const pctDoLigado = total > 0 ? Math.round((p.value / total) * 100) : 0;
+          return `<strong>${p.name}</strong><br/>${formatDuration(p.value)}<br/>${pctDoLigado}% do tempo ligado`;
+        },
+      },
+      series: vazio
+        ? []
+        : [
+            {
+              type: "pie",
+              radius: ["62%", "88%"],
+              center: ["50%", "50%"],
+              avoidLabelOverlap: false,
+              itemStyle: { borderColor: "transparent", borderWidth: 2 },
+              label: { show: false },
+              labelLine: { show: false },
+              data: buckets
+                .filter((b) => b.value > 0)
+                .map((b) => ({
+                  name: b.label,
+                  value: b.value,
+                  itemStyle: {
+                    color: b.outline === true ? "transparent" : b.color,
+                    borderColor: b.outline === true ? VIZ.contorno : "transparent",
+                    borderWidth: b.outline === true ? 2 : 2,
+                    decal:
+                      b.hatch === true
+                        ? {
+                            color: HATCH_DECAL.color,
+                            dashArrayX: [...HATCH_DECAL.dashArrayX],
+                            dashArrayY: [...HATCH_DECAL.dashArrayY],
+                            rotation: HATCH_DECAL.rotation,
+                          }
+                        : undefined,
+                  },
+                })),
+            },
+          ],
+      graphic: vazio
+        ? EMPTY_GRAPHIC
+        : [
+            {
+              type: "text",
+              left: "center",
+              top: "44%",
+              silent: true,
+              style: {
+                text: hoursLabel(total),
+                fill: VIZ.ink,
+                font: "600 22px 'Space Grotesk', sans-serif",
+                textAlign: "center",
+              },
+            },
+            {
+              type: "text",
+              left: "center",
+              top: "58%",
+              silent: true,
+              style: {
+                text: "máquina ligada",
+                fill: VIZ.axisText,
+                font: "11px 'Open Sans', sans-serif",
+                textAlign: "center",
+              },
+            },
+          ],
+    };
+  }, [buckets, total]);
+
+  const porPessoaDia = personDays > 0 ? formatDuration(total / personDays) : null;
 
   return (
-    <tr
-      tabIndex={0}
-      onClick={() => onOpen(item.device_id)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen(item.device_id);
-        }
-      }}
-      aria-label={`Abrir linha do tempo de ${item.device_name}`}
-      className={cn(
-        "cursor-pointer border-b transition-colors last:border-b-0",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-        isNoData ? "bg-brand-red/10 hover:bg-brand-red/15" : "hover:bg-accent",
-      )}
+    <BlockCard
+      className={className}
+      title="Composição das horas ligadas"
+      hint={
+        porPessoaDia !== null
+          ? `${hoursLabel(total)} no período · ${porPessoaDia} por pessoa por dia`
+          : "Ligada = ativa + ociosa + bloqueada"
+      }
+      tools={<ViewToggle view={view} onChange={setView} />}
     >
-      <td className="px-6 py-2.5">
-        <span className="flex items-center gap-2 whitespace-nowrap">
-          <StateDot state={item.presence_state} />
-          <span>{stateLabels[item.presence_state]}</span>
-          {isNoData && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-brand-red" aria-hidden />}
-        </span>
-      </td>
-      <td className="px-3 py-2.5">
-        <p className="max-w-[16rem] truncate font-medium">{item.device_name}</p>
-        <p className="max-w-[16rem] truncate text-xs text-muted-foreground">
-          {item.windows_username ?? "-"}
-        </p>
-      </td>
-      <td className="px-3 py-2.5">
-        {item.foreground_process !== null ? (
-          <p className="max-w-[24rem] truncate">
-            <span className="font-medium">{item.foreground_process}</span>
-            {item.foreground_title !== null && (
-              <span className="text-muted-foreground"> · {item.foreground_title}</span>
-            )}
-          </p>
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        )}
-      </td>
-      <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">
-        {appSinceSeconds !== null ? formatDuration(appSinceSeconds) : <span className="text-muted-foreground">-</span>}
-      </td>
-      <td className="whitespace-nowrap px-6 py-2.5 text-right tabular-nums text-muted-foreground">
-        {formatRelative(item.last_contact_at, serverTime)}
-      </td>
-    </tr>
+      {query.isPending && totals === undefined ? (
+        <ChartSkeleton />
+      ) : totals === undefined ? (
+        <InlineError
+          message="Não foi possível carregar a composição do período."
+          onRetry={() => void query.refetch()}
+        />
+      ) : view === "chart" ? (
+        <>
+          <EChart option={option} height={CHART_H} />
+          <ul className="mt-3 space-y-1 text-xs">
+            {buckets.map((b) => (
+              <li key={b.key} className="grid grid-cols-[12px_1fr_auto_auto] items-center gap-2">
+                <span
+                  aria-hidden
+                  className={cn("h-3 w-3 rounded-sm", b.outline === true && "border-2")}
+                  style={
+                    b.hatch === true
+                      ? HATCH_STYLE
+                      : b.outline === true
+                        ? { borderColor: VIZ.contorno }
+                        : { background: b.color }
+                  }
+                />
+                <span className="truncate text-muted-foreground">{b.label}</span>
+                <span className="font-display tabular-nums">{formatDuration(b.value)}</span>
+                <span className="w-10 text-right tabular-nums text-muted-foreground">
+                  {total > 0 ? `${Math.round((b.value / total) * 100)}%` : "–"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <div className="overflow-x-auto" style={{ minHeight: CHART_H }}>
+          <table className="w-full text-xs" aria-label="Composição das horas ligadas, em tabela">
+            <thead>
+              <tr className="border-b text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+                <th scope="col" className="py-1.5 pr-2">Balde</th>
+                <th scope="col" className="py-1.5 pr-2 text-right">Horas</th>
+                <th scope="col" className="py-1.5 text-right">Do tempo ligado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {buckets.map((b) => (
+                <tr key={b.key} className="border-b last:border-b-0">
+                  <td className="py-1.5 pr-2">{b.label}</td>
+                  <td className="py-1.5 pr-2 text-right tabular-nums">{formatDuration(b.value)}</td>
+                  <td className="py-1.5 text-right tabular-nums">
+                    {total > 0 ? `${Math.round((b.value / total) * 100)}%` : "–"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </BlockCard>
   );
 }
 
-/** Dot de status com redundância não-cromática (Seção 8.5). */
-function StateDot({ state }: { state: PresenceState }) {
-  if (state === "no_data") {
-    return <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-sm" style={noDataHatch} />;
-  }
-  if (state === "off_clean") {
-    return <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full border-2 border-border" />;
-  }
-  const solid: Record<"active" | "idle" | "locked" | "no_session", string> = {
-    active: "bg-viz-produtivo",
-    idle: "bg-viz-improdutivo",
-    locked: "bg-brand-slate",
-    no_session: "bg-brand-slate",
-  };
-  return <span aria-hidden className={cn("h-2.5 w-2.5 shrink-0 rounded-full", solid[state])} />;
+// -----------------------------------------------------------------------------
+// Atividade ao longo do dia
+// -----------------------------------------------------------------------------
+
+/**
+ * Pessoas ativas por hora, média do período, com a linha fina do período
+ * anterior atrás. É a resposta visual para "a que horas minha operação
+ * realmente acontece" — a pergunta que o mockup do site promete desde agosto e
+ * que o produto não tinha, porque o agregado por hora não existia.
+ *
+ * O denominador da média são os DIAS COM DADO, não os dias do calendário: com
+ * três dias de dado numa semana, dividir por sete faria a operação parecer
+ * metade do que é.
+ */
+function AtividadePorHoraCard({
+  className,
+  period,
+  tag,
+}: {
+  className?: string;
+  period: ResolvedPeriod | null;
+  tag: string | null;
+}) {
+  const [view, setView] = useState<"chart" | "table">("chart");
+  const atual = useActivityByHourQuery(period, tag);
+  const anterior = useActivityByHourQuery(previousPeriodOf(period), tag);
+
+  const horas = atual.data?.hours ?? [];
+  const horasAnteriores = anterior.data?.hours ?? [];
+
+  const option = useMemo<EChartsOption>(() => {
+    const serie = horas.map((h) => h.avg_people_active ?? 0);
+    const serieAnterior = horasAnteriores.map((h) => h.avg_people_active ?? 0);
+    const vazio = serie.every((v) => v === 0);
+
+    return {
+      aria: { enabled: true },
+      animation: false,
+      grid: { left: 34, right: 12, top: 22, bottom: 24 },
+      tooltip: {
+        trigger: "axis",
+        formatter: (params: unknown) => {
+          const lista = params as Array<{ dataIndex: number }>;
+          const i = lista[0]?.dataIndex ?? 0;
+          const hora = horas[i];
+          if (hora === undefined) return "";
+          const linhas = [
+            `<strong>${String(i).padStart(2, "0")}h</strong>`,
+            `Pessoas ativas (média): ${(hora.avg_people_active ?? 0).toFixed(1)}`,
+            `Ativo: ${formatDuration(hora.seconds_active)}`,
+            `Ocioso: ${formatDuration(hora.seconds_idle)}`,
+          ];
+          const ant = horasAnteriores[i];
+          if (ant !== undefined) {
+            linhas.push(`Período anterior: ${(ant.avg_people_active ?? 0).toFixed(1)}`);
+          }
+          return linhas.join("<br/>");
+        },
+      },
+      xAxis: {
+        type: "category",
+        data: horas.map((h) => `${String(h.hour).padStart(2, "0")}h`),
+        axisTick: { show: false },
+        axisLine: { lineStyle: { color: VIZ.grid } },
+        axisLabel: {
+          color: VIZ.axisText,
+          fontSize: 10,
+          interval: (index: number, _value: string) => index % 3 === 0,
+        },
+      },
+      yAxis: {
+        type: "value",
+        minInterval: 1,
+        axisLabel: { color: VIZ.axisText, fontSize: 10 },
+        splitLine: { lineStyle: { color: VIZ.grid } },
+      },
+      series: vazio
+        ? []
+        : [
+            {
+              name: "Período anterior",
+              type: "line",
+              smooth: true,
+              symbol: "none",
+              silent: true,
+              z: 1,
+              data: serieAnterior,
+              lineStyle: { color: VIZ.axisText, width: 1.2, opacity: 0.6 },
+            },
+            {
+              name: "Pessoas ativas",
+              type: "line",
+              smooth: true,
+              symbol: "none",
+              z: 2,
+              data: serie,
+              lineStyle: { color: VIZ.produtivo, width: 2 },
+              areaStyle: { color: VIZ.produtivo, opacity: 0.12 },
+            },
+          ],
+      graphic: vazio ? EMPTY_GRAPHIC : undefined,
+    };
+  }, [horas, horasAnteriores]);
+
+  return (
+    <BlockCard
+      className={className}
+      title="Atividade ao longo do dia"
+      hint={
+        atual.data !== undefined
+          ? `Pessoas ativas por hora, média de ${atual.data.days_with_data} ${atual.data.days_with_data === 1 ? "dia com dado" : "dias com dado"} · linha fina: período anterior`
+          : "Pessoas ativas por hora, média do período"
+      }
+      tools={<ViewToggle view={view} onChange={setView} />}
+    >
+      {atual.isPending && atual.data === undefined ? (
+        <ChartSkeleton />
+      ) : atual.data === undefined ? (
+        <InlineError
+          message="Não foi possível carregar a atividade por hora."
+          onRetry={() => void atual.refetch()}
+        />
+      ) : view === "chart" ? (
+        <>
+          <EChart option={option} height={CHART_H} />
+          <LegendRow>
+            <LegendItem color={VIZ.produtivo} label="Pessoas ativas (média)" />
+            <LegendItem color={VIZ.axisText} label="Período anterior" />
+          </LegendRow>
+        </>
+      ) : (
+        <div className="max-h-[216px] overflow-y-auto" style={{ minHeight: CHART_H }}>
+          <table className="w-full text-xs" aria-label="Atividade por hora, em tabela">
+            <thead className="sticky top-0 bg-card">
+              <tr className="border-b text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+                <th scope="col" className="py-1.5 pr-2">Hora</th>
+                <th scope="col" className="py-1.5 pr-2 text-right">Pessoas ativas</th>
+                <th scope="col" className="py-1.5 pr-2 text-right">Ativo</th>
+                <th scope="col" className="py-1.5 text-right">Ocioso</th>
+              </tr>
+            </thead>
+            <tbody>
+              {horas.map((h) => (
+                <tr key={h.hour} className="border-b last:border-b-0">
+                  <td className="py-1 pr-2 tabular-nums">{String(h.hour).padStart(2, "0")}h</td>
+                  <td className="py-1 pr-2 text-right tabular-nums">
+                    {h.avg_people_active === null ? "–" : h.avg_people_active.toFixed(1)}
+                  </td>
+                  <td className="py-1 pr-2 text-right tabular-nums">{formatDuration(h.seconds_active)}</td>
+                  <td className="py-1 text-right tabular-nums">{formatDuration(h.seconds_idle)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </BlockCard>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Índice, meta e cobertura da classificação
+// -----------------------------------------------------------------------------
+
+/**
+ * O anel do índice com a marca da meta, e logo abaixo a COBERTURA — os dois
+ * nunca aparecem separados (decisão 4 do spec). Índice alto com cobertura baixa
+ * não é operação produtiva: é curadoria incompleta, e a tela precisa dizer isso
+ * na mesma olhada.
+ *
+ * Desenho em SVG, não em ECharts: é um anel estático de 132 px, e carregar um
+ * gráfico inteiro para dois arcos custaria mais do que entrega.
+ */
+function IndiceMetaCard({
+  className,
+  data,
+  isPending,
+  hasError,
+  onRetry,
+}: {
+  className?: string;
+  data: OverviewResponse | undefined;
+  isPending: boolean;
+  hasError: boolean;
+  onRetry: () => void;
+}) {
+  const totals = data?.totals;
+  const indice = totals?.productivity_index ?? null;
+  const cobertura = totals?.classification_coverage ?? null;
+  const metaPct = data?.goals.work_related_pct ?? null;
+
+  const R = 54;
+  const CIRC = 2 * Math.PI * R;
+  const preenchido = indice !== null ? Math.min(1, Math.max(0, indice)) * CIRC : 0;
+  const metaAngulo = metaPct !== null ? -Math.PI / 2 + (metaPct / 100) * 2 * Math.PI : null;
+
+  const semClassificacao = totals !== undefined ? totals.seconds_unclassified : 0;
+
+  return (
+    <BlockCard
+      className={className}
+      title="Índice, meta e cobertura"
+      hint="A saúde da medição, não só o número"
+    >
+      {isPending && data === undefined ? (
+        <ChartSkeleton height={180} />
+      ) : data === undefined ? (
+        <InlineError
+          message={
+            hasError
+              ? "Não foi possível carregar o índice do período."
+              : "Sem dado no período para calcular o índice."
+          }
+          onRetry={onRetry}
+        />
+      ) : (
+        <div className="space-y-3">
+          <div className="flex items-center gap-4">
+            <svg
+              viewBox="0 0 132 132"
+              className="h-[124px] w-[124px] shrink-0"
+              role="img"
+              aria-label={
+                indice === null
+                  ? "Índice de produtividade sem dado no período"
+                  : `Índice de produtividade em ${formatPct(indice)}${metaPct !== null ? `, meta de ${metaPct}%` : ""}`
+              }
+            >
+              <circle cx="66" cy="66" r={R} fill="none" stroke={VIZ.grid} strokeWidth="12" />
+              {indice !== null && (
+                <circle
+                  cx="66"
+                  cy="66"
+                  r={R}
+                  fill="none"
+                  stroke={VIZ.produtivo}
+                  strokeWidth="12"
+                  strokeLinecap="round"
+                  strokeDasharray={`${preenchido} ${CIRC - preenchido}`}
+                  transform="rotate(-90 66 66)"
+                />
+              )}
+              {metaAngulo !== null && (
+                <line
+                  x1={66 + (R - 12) * Math.cos(metaAngulo)}
+                  y1={66 + (R - 12) * Math.sin(metaAngulo)}
+                  x2={66 + (R + 12) * Math.cos(metaAngulo)}
+                  y2={66 + (R + 12) * Math.sin(metaAngulo)}
+                  stroke={VIZ.ink}
+                  strokeWidth="2"
+                />
+              )}
+              <text
+                x="66"
+                y="70"
+                textAnchor="middle"
+                fill={VIZ.ink}
+                style={{ font: "600 24px 'Space Grotesk', sans-serif", letterSpacing: "-0.02em" }}
+              >
+                {formatPct(indice)}
+              </text>
+              <text
+                x="66"
+                y="86"
+                textAnchor="middle"
+                fill={VIZ.axisText}
+                style={{ font: "10px 'Open Sans', sans-serif" }}
+              >
+                índice
+              </text>
+            </svg>
+
+            <div className="min-w-0 space-y-1.5 text-xs">
+              <p className="text-muted-foreground">
+                Meta da equipe{" "}
+                <span className="font-display font-semibold text-foreground">
+                  {metaPct !== null ? `${metaPct}%` : "não definida"}
+                </span>
+              </p>
+              <div>
+                <p className="text-muted-foreground">
+                  Cobertura da classificação{" "}
+                  <span className="font-display font-semibold text-foreground">
+                    {formatPct(cobertura)}
+                  </span>
+                </p>
+                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: cobertura !== null ? `${Math.round(cobertura * 100)}%` : "0%",
+                      background: VIZ.neutro,
+                    }}
+                  />
+                </div>
+                <p className="mt-1 text-muted-foreground">
+                  {semClassificacao > 0
+                    ? `${formatDuration(semClassificacao)} sem classificar`
+                    : "Tudo classificado no período"}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <p className="border-l-2 border-border pl-2 text-[11px] leading-snug text-muted-foreground">
+            Índice = tempo em apps <span className="text-foreground">produtivos</span> ÷ tempo ativo{" "}
+            <span className="text-foreground">classificado</span>. Cobertura = tempo ativo com
+            categoria ÷ tempo ativo. {FRAMING}
+          </p>
+
+          {semClassificacao > 0 && (
+            <Link
+              to="/configuracoes/categorias"
+              className={cn(
+                "inline-flex h-9 w-full items-center justify-center gap-2 rounded-md",
+                "bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors",
+                "hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2",
+                "focus-visible:ring-ring focus-visible:ring-offset-2",
+              )}
+            >
+              <Tags className="h-4 w-4" aria-hidden />
+              Classificar aplicativos
+              <ArrowRight className="h-4 w-4" aria-hidden />
+            </Link>
+          )}
+
+          {indice === null && (
+            <Card className="flex items-start gap-2 p-3 text-xs text-muted-foreground">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span>
+                Sem tempo ativo classificado no período, o índice não existe. Ele aparece assim que
+                houver aplicativo classificado com uso registrado.
+              </span>
+            </Card>
+          )}
+        </div>
+      )}
+    </BlockCard>
+  );
 }

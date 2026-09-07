@@ -30,7 +30,10 @@ import {
 // referenciada pelos skeletons daquele modo).
 // -----------------------------------------------------------------------------
 
-const AXIS_H = 20; // rótulos HH:mm acima das lanes (igual ao modo device)
+// Exportado como TEAM_AXIS_H: a coluna de RESUMO à direita das faixas (nível
+// DIA, F4) precisa do mesmo offset de topo para alinhar linha a linha.
+export const TEAM_AXIS_H = 20; // rótulos HH:mm acima das lanes (igual ao modo device)
+const AXIS_H = TEAM_AXIS_H;
 export const TEAM_LANE_H = 28; // lane por device (Seção 8.5, linha 924)
 export const TEAM_LANE_GAP = 6;
 const PAD_BOTTOM = 6;
@@ -183,6 +186,8 @@ export function TeamTimelineCanvas({
 
     const emptyHatch = makeHatch(ctx, COLOR.emptyHatch, null);
     const noDataHatch = makeHatch(ctx, COLOR.noData, "rgba(255, 139, 139, 0.08)");
+    // Ocioso hachurado a 45° (Seção 1.2): âmbar era colisão com "Improdutivo".
+    const idleHatch = makeHatch(ctx, COLOR.idleHatch, COLOR.idle);
 
     indexedLanes.forEach(({ items }, i) => {
       const laneY = laneYOf(i);
@@ -209,9 +214,12 @@ export function TeamTimelineCanvas({
           const bw = Math.max(Math.min(rx1, w) - x0, 1);
           switch (iv.state) {
             case "active":
-            case "idle":
             case "locked":
               ctx.fillStyle = COLOR[iv.state];
+              ctx.fillRect(x0, laneY, bw, TEAM_LANE_H);
+              break;
+            case "idle":
+              ctx.fillStyle = idleHatch;
               ctx.fillRect(x0, laneY, bw, TEAM_LANE_H);
               break;
             case "off_clean":

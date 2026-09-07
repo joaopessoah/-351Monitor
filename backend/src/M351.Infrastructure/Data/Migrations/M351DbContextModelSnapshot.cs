@@ -361,6 +361,13 @@ namespace M351.Infrastructure.Data.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("business_hours");
 
+                    b.Property<string>("ClassificationVocabulary")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("produtividade")
+                        .HasColumnName("classification_vocabulary");
+
                     b.Property<string>("ContatoDpo")
                         .HasColumnType("text")
                         .HasColumnName("contato_dpo");
@@ -402,6 +409,12 @@ namespace M351.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("onboarding_checklist_dismissed_at");
 
+                    b.Property<bool>("PersonAlertsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("person_alerts_enabled");
+
                     b.Property<string>("Plan")
                         .IsRequired()
                         .HasColumnType("text")
@@ -427,7 +440,10 @@ namespace M351.Infrastructure.Data.Migrations
                     b.HasIndex("Slug")
                         .IsUnique();
 
-                    b.ToTable("organizations", (string)null);
+                    b.ToTable("organizations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_organizations_classification_vocabulary", "classification_vocabulary IN ('produtividade','trabalho')");
+                        });
                 });
 
             modelBuilder.Entity("M351.Domain.Entities.PasswordResetToken", b =>

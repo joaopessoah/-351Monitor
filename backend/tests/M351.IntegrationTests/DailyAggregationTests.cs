@@ -79,7 +79,7 @@ public class DailyAggregationTests(ApiTestFixture fixture)
         RowsAsync("""
             SELECT summary_date, device_user_id, seconds_active, seconds_idle, seconds_locked,
                    seconds_on, seconds_work_related, seconds_neutral, seconds_not_work_related,
-                   first_event_at, last_event_at, data_incomplete
+                   seconds_unclassified, first_event_at, last_event_at, data_incomplete
             FROM daily_device_summaries WHERE device_id = @d
             ORDER BY summary_date, device_user_id
             """, ("d", deviceId));
@@ -145,10 +145,11 @@ public class DailyAggregationTests(ApiTestFixture fixture)
         Assert.Equal(T(9, 33), Ts(lane["last_event_at"]));
         Assert.False((bool)lane["data_incomplete"]!);
 
-        // sem categoria mapeada: tudo cai em neutral ("Não categorizado")
+        // F6: sem categoria mapeada, tudo cai em seconds_unclassified (não em neutral)
         Assert.Equal(0, I(lane["seconds_work_related"]));
-        Assert.Equal(1200, I(lane["seconds_neutral"]));
+        Assert.Equal(0, I(lane["seconds_neutral"]));
         Assert.Equal(0, I(lane["seconds_not_work_related"]));
+        Assert.Equal(1200, I(lane["seconds_unclassified"]));
 
         var usage = await AppUsageAsync(device.DeviceId);
         Assert.Equal(2, usage.Count);
@@ -357,8 +358,14 @@ public class DailyAggregationTests(ApiTestFixture fixture)
     }
 
     // ------------------------------------------------------------ (e) classificação
+    /// <summary>
+    /// F6: app SEM mapeamento no tenant vai para seconds_unclassified, não para o neutro — o
+    /// neutro passa a ser só o que o cliente classificou como neutro de propósito. Os QUATRO
+    /// baldes somam seconds_active, e mapear o app numa categoria de classificação 0 move o
+    /// tempo de "sem classificação" para "neutro".
+    /// </summary>
     [Fact]
-    public async Task Classificacao_TresBaldes_SomamSecondsActive()
+    public async Task Classificacao_QuatroBaldes_SomamSecondsActive()
     {
         var (client, device, tenantId) = await SetupAsync("NB-AGG-CLASS");
         var f = new EventFactory();
@@ -393,10 +400,33 @@ public class DailyAggregationTests(ApiTestFixture fixture)
         var lane = Assert.Single(await SummariesAsync(device.DeviceId));
         Assert.Equal(1140, I(lane["seconds_active"]));
         Assert.Equal(540, I(lane["seconds_work_related"]));      // agg-work.exe (+1)
-        Assert.Equal(300, I(lane["seconds_not_work_related"]));  // agg-fun.exe (−1)
-        Assert.Equal(300, I(lane["seconds_neutral"]));           // agg-unknown.exe sem mapeamento
+        Assert.Equal(300, I(lane["seconds_not_work_related"]));  // agg-fun.exe (-1)
+        Assert.Equal(300, I(lane["seconds_unclassified"]));      // agg-unknown.exe SEM mapeamento
+        Assert.Equal(0, I(lane["seconds_neutral"]));             // nada mapeado em categoria 0
         Assert.Equal(I(lane["seconds_active"]),
-            I(lane["seconds_work_related"]) + I(lane["seconds_neutral"]) + I(lane["seconds_not_work_related"]));
+            I(lane["seconds_work_related"]) + I(lane["seconds_neutral"])
+            + I(lane["seconds_not_work_related"]) + I(lane["seconds_unclassified"]));
+
+        // categoria neutra DE PROPÓSITO (classification 0) não é "sem classificação": mapear
+        // agg-unknown.exe nela move o tempo de um balde para o outro, sem mexer no total.
+        var catNeutra = Uuid7.NewUuid7();
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString, """
+            INSERT INTO categories (id, tenant_id, name, classification)
+            VALUES (@cn, @t, 'Navegação', 0)
+            """, ("cn", catNeutra), ("t", tenantId));
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString, """
+            INSERT INTO tenant_app_categories (tenant_id, app_id, category_id)
+            SELECT @t, a.id, @c FROM app_catalog a WHERE a.process_name = 'agg-unknown.exe'
+            """, ("t", tenantId), ("c", catNeutra));
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            "INSERT INTO dirty_days (tenant_id, device_id, day) VALUES (@t, @d, @day) ON CONFLICT DO NOTHING",
+            ("t", tenantId), ("d", device.DeviceId), ("day", LocalDay(T(10, 0))));
+        await RunAggregationAsync();
+
+        var relane = Assert.Single(await SummariesAsync(device.DeviceId));
+        Assert.Equal(300, I(relane["seconds_neutral"]));
+        Assert.Equal(0, I(relane["seconds_unclassified"]));
+        Assert.Equal(1140, I(relane["seconds_active"]));
     }
 
     // ------------------------------------------------------------ (f) idempotência

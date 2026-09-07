@@ -33,7 +33,11 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
 
         modelBuilder.Entity<Organization>(e =>
         {
-            e.ToTable("organizations");
+            // CHECK do vocabulário no banco (F6): o rótulo é contrato de produto, não string
+            // livre — valor fora do conjunto quebraria a resolução de rótulos no portal.
+            e.ToTable("organizations", t => t.HasCheckConstraint(
+                "ck_organizations_classification_vocabulary",
+                "classification_vocabulary IN ('produtividade','trabalho')"));
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
             e.Property(x => x.Name).HasColumnName("name").HasColumnType("text");
@@ -56,6 +60,13 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
             // F5 — metas semanais AGREGADAS da organização (nunca por pessoa)
             e.Property(x => x.GoalWeeklyActiveHours).HasColumnName("goal_weekly_active_hours");
             e.Property(x => x.GoalWorkRelatedPct).HasColumnName("goal_work_related_pct");
+            // F6 — vocabulário dos rótulos de classificação escolhido pela organização
+            e.Property(x => x.ClassificationVocabulary)
+                .HasColumnName("classification_vocabulary").HasColumnType("text")
+                .HasDefaultValue("produtividade");
+            // F6 — opt-in das regras de alerta de escopo pessoa (decisão 5); padrão desligado
+            e.Property(x => x.PersonAlertsEnabled)
+                .HasColumnName("person_alerts_enabled").HasDefaultValue(false);
 
             // a organização É o tenant: visível apenas para o próprio tenant autenticado
             e.HasQueryFilter(x => _tenant.TenantId != null && x.Id == _tenant.TenantId.Value);
