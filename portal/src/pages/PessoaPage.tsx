@@ -8,31 +8,47 @@
 //    dispositivos: cada máquina é um registro separado, e a tela diz isso em vez
 //    de fingir uma visão unificada;
 //  - GET /dashboard/summary?device_user_id=...: tempos e composição por
-//    classificação no período (presets de 7/14/30 dias).
+//    classificação no período, incluindo o balde seconds_unclassified (F6).
 //
-// REFORMA F6 (decisões 1, 2 e 4 do spec de 07/09/2026), acrescentada acima do
-// que já existia, sem remover nada:
+// REFORMA F6 (decisões 1, 2, 4 e 6 do spec de 07/09/2026), acrescentada acima
+// do que já existia, sem remover nada:
+//  - PERÍODO GLOBAL: o preset local de 7/14/30 dias desta tela deu lugar ao
+//    período global (lib/period.ts, PERIOD_CODEC na URL) - o mesmo Hoje/Esta
+//    semana/Este mês/Personalizado das outras telas de análise. O recorte
+//    continua alimentando a MESMA query GET /dashboard/summary de sempre;
 //  - KPIs da pessoa no período (ligada, ativa, índice, ociosidade, sem
-//    classificação). O ÍNDICE e a COBERTURA vêm do servidor, de
-//    GET /people (fonte única da fórmula) - o portal só formata, e `null`
-//    imprime "–", nunca 0%;
-//  - composição por DIA com os quatro baldes de classificação + ocioso, a
-//    partir do GET /dashboard/summary?device_user_id= que a página já consumia;
-//  - apelido e mesclagem por PATCH /people/{sid} (Admin+).
+//    classificação) em components/pessoa/PersonKpis.tsx. O ÍNDICE e a
+//    COBERTURA são CALCULADOS AQUI a partir dos baldes do summary - ver o
+//    comentário de personIndicators em components/pessoa/pessoaMetrics.ts:
+//    GET /dashboard/summary é anterior a esta fase e não devolve os
+//    indicadores prontos, ao contrário de GET /dashboard/overview e
+//    GET /people. `null` imprime "–", nunca 0%;
+//  - COMPOSIÇÃO POR DIA em components/pessoa/PersonDailyComposition.tsx:
+//    colunas empilhadas (ECharts) com os quatro baldes de classificação mais
+//    o Ocioso, linha tracejada da jornada declarada (business_hours do /me,
+//    fallback 8h) e toggle "Ver dados" com tabela equivalente;
+//  - BLOCO DE IDENTIDADE (Admin+) em components/pessoa/PersonIdentityCard.tsx:
+//    apelido e mesclagem por pessoa são feitos por PATCH /people/{sid}
+//    (decisão 6), mas dependem de um windows_sid que este registro NÃO tem -
+//    ver o comentário daquele arquivo. Por ora o bloco só explica a pendência.
 //
 // VOCABULÁRIO: a classificação passa a usar Produtivo / Neutro / Improdutivo /
 // Sem classificação (decisão 1), sempre com o enquadramento "classificação
-// definida pela sua empresa". Os ESTADOS DE MÁQUINA seguem neutros (Ativo,
-// Ocioso, Bloqueado) e ocioso NUNCA é somado como improdutivo. O módulo
+// definida pela sua empresa" (CLASSIFICATION_FRAMING, mostrado uma vez pelo
+// PersonKpis). Os ESTADOS DE MÁQUINA seguem neutros (Ativo, Ocioso,
+// Bloqueado) e ocioso NUNCA é somado como improdutivo. O módulo
 // lib/classification.ts ainda carrega o conjunto neutro anterior (opção da
 // organização) e é migrado na fase de Classificação 2.0.
 //
-// COSTURA (temporária): GET /device-users/{id} não devolve o windows_sid, e é o
-// SID que identifica a pessoa em /people. Ele é resolvido por
-// GET /people?q={nome exibido}; sem correspondência os KPIs e o bloco de
-// identidade explicam a ausência em vez de mostrar número errado. A unificação
-// das duas identidades (registro por dispositivo e pessoa) entra na fase
-// seguinte.
+// SEM SID: GET /device-users/{id} não devolve windows_sid - conferido no
+// contrato (backend/.../DeviceUserContracts.cs: DeviceUserResponse só tem
+// Id/DeviceId/DeviceName/WindowsUsername/DisplayName/FirstSeenAt/LastSeenAt) -
+// e é o SID que identifica a pessoa em /people. Por isso o bloco de
+// identidade fica bloqueado (ver componente) e esta tela NÃO tenta descobrir
+// o SID por outro caminho (ex.: cruzar por nome, como a tela de
+// Colaboradores faz na direção contrária, pessoa -> registro): seria uma
+// mesclagem/renomeação arriscada demais para adivinhar. A unificação das duas
+// identidades (registro por dispositivo e pessoa) entra na fase seguinte.
 //
 // USO POR APLICATIVO NÃO ENTRA nesta versão: o GET /reports/usage só aceita
 // filtro por device_ids (parâmetro real do ReportsController) - não há filtro por
@@ -41,8 +57,7 @@
 // dispositivo compartilhado. Enquanto o endpoint não aceitar um recorte por
 // titular, a página mostra só o resumo e explica a ausência.
 //
-// Primeira versão TABULAR de propósito (sem canvas). Vocabulário NEUTRO: nada de
-// produtivo/improdutivo, nada de ranking de pessoas, "Primeiro/Último evento" -
+// Vocabulário NEUTRO: nada de ranking de pessoas, "Primeiro/Último evento" -
 // jamais "Entrada/Saída".
 // =============================================================================
 
@@ -52,8 +67,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, MonitorSmartphone, Pencil, Scale, UserRound, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { classificationColor, classificationLabel } from "@/lib/classification";
-import { addDays, ddmm, formatDateTime, formatDuration, localDateOf } from "@/lib/format";
+import { formatDateTime, formatDuration } from "@/lib/format";
 import { genericErrorMessage, JORNADA_DISCLAIMER } from "@/lib/messages";
+import { PERIOD_CODEC, PERIOD_LABELS, resolvePeriod, type PeriodPreset } from "@/lib/period";
 import { isAdmin } from "@/lib/roles";
 import { deviceUserLabel } from "@/lib/types";
 import type {
@@ -63,20 +79,25 @@ import type {
   MeResponse,
   PagedResponse,
 } from "@/lib/types";
+import { useUrlState } from "@/lib/useUrlState";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-
-/** Presets do período desta tela (a régua de 92 dias dos relatórios não é necessária aqui). */
-const PERIOD_PRESETS = [7, 14, 30] as const;
+import { journeyHoursOf } from "@/components/pessoa/pessoaMetrics";
+import { PersonDailyComposition } from "@/components/pessoa/PersonDailyComposition";
+import { PersonIdentityCard } from "@/components/pessoa/PersonIdentityCard";
+import { PersonKpis } from "@/components/pessoa/PersonKpis";
 
 const MAX_DISPLAY_NAME = 200;
 
 export function PessoaPage() {
   const { id = "" } = useParams<{ id: string }>();
-  const [periodDays, setPeriodDays] = useState<number>(7);
+  // Período GLOBAL (F6): troca o preset local de 7/14/30 dias pelo mesmo
+  // Hoje/Esta semana/Este mês/Personalizado das outras telas de análise,
+  // vivendo na URL (?periodo=&de=&ate=).
+  const [period, setPeriod] = useUrlState(PERIOD_CODEC);
 
   const meQuery = useQuery({
     queryKey: ["me"],
@@ -85,6 +106,9 @@ export function PessoaPage() {
   });
   const timezone = meQuery.data?.organization.timezone ?? null;
   const canEdit = isAdmin(meQuery.data);
+  // Jornada declarada da organização - referência da composição por dia;
+  // sem configuração, cai no fallback de 8h do spec.
+  const journeyHours = journeyHoursOf(meQuery.data?.organization.business_hours ?? null);
 
   const personQuery = useQuery({
     queryKey: ["device-users", id],
@@ -93,21 +117,26 @@ export function PessoaPage() {
   });
   const person = personQuery.data;
 
-  // Período no fuso do TENANT (mesma âncora dos relatórios).
-  const range = useMemo(() => {
-    if (timezone === null) return null;
-    const today = localDateOf(new Date(), timezone);
-    return { from: addDays(today, -(periodDays - 1)), to: today };
-  }, [timezone, periodDays]);
+  // Período no fuso do TENANT (mesma âncora dos relatórios e da Visão Geral).
+  const resolved = useMemo(() => resolvePeriod(period, timezone), [period, timezone]);
 
   const summaryQuery = useQuery({
-    queryKey: ["dashboard", "summary", { device_user_id: id, from: range?.from, to: range?.to }],
+    queryKey: ["dashboard", "summary", { device_user_id: id, from: resolved?.from, to: resolved?.to }],
     queryFn: () =>
       api<DashboardSummaryResponse>(
-        `/dashboard/summary?from=${range?.from ?? ""}&to=${range?.to ?? ""}&device_user_id=${encodeURIComponent(id)}`,
+        `/dashboard/summary?from=${resolved?.from ?? ""}&to=${resolved?.to ?? ""}&device_user_id=${encodeURIComponent(id)}`,
       ),
-    enabled: id.length > 0 && range !== null && person !== undefined,
+    enabled: id.length > 0 && resolved !== null && person !== undefined,
   });
+
+  function setPreset(preset: PeriodPreset): void {
+    if (preset === "custom" && resolved !== null) {
+      // "Personalizado" começa do intervalo que está na tela.
+      setPeriod({ preset, from: resolved.from, to: resolved.to });
+      return;
+    }
+    setPeriod({ preset, from: null, to: null });
+  }
 
   // Outros registros do MESMO usuário do Windows (outras máquinas). Busca exata
   // pelo windows_username; o próprio registro sai da lista.
@@ -165,6 +194,85 @@ export function PessoaPage() {
     <div className="space-y-6">
       <PersonHeader person={person} canEdit={canEdit} />
 
+      {/* Período GLOBAL da tela (F6): controla os KPIs, o resumo e a
+          composição por dia logo abaixo - uma única fonte de recorte. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {resolved !== null ? `Período: ${resolved.label}.` : "Carregando o período…"}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <div
+            role="group"
+            aria-label="Período"
+            className="inline-flex h-9 items-stretch rounded-md border border-input bg-card p-0.5"
+          >
+            {(["dia", "semana", "mes", "custom"] as const).map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                aria-pressed={period.preset === preset}
+                disabled={timezone === null}
+                onClick={() => setPreset(preset)}
+                className={cn(
+                  "rounded-[5px] px-3 text-xs font-medium transition-colors disabled:opacity-40",
+                  period.preset === preset
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                )}
+              >
+                {PERIOD_LABELS[preset]}
+              </button>
+            ))}
+          </div>
+          {period.preset === "custom" && resolved !== null && (
+            <span className="inline-flex items-center gap-1.5">
+              <Input
+                type="date"
+                aria-label="De"
+                value={resolved.from}
+                max={resolved.to}
+                onChange={(e) => setPeriod({ preset: "custom", from: e.target.value, to: resolved.to })}
+                className="h-9 w-[9.5rem]"
+              />
+              <span className="text-xs text-muted-foreground">a</span>
+              <Input
+                type="date"
+                aria-label="Até"
+                value={resolved.to}
+                min={resolved.from}
+                onChange={(e) => setPeriod({ preset: "custom", from: resolved.from, to: e.target.value })}
+                className="h-9 w-[9.5rem]"
+              />
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* KPIs da pessoa no período (F6, decisão 4): ligada, ativa, índice,
+          ociosidade e sem classificação - mesma query do resumo abaixo. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Indicadores do período</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {summaryQuery.isError ? (
+            <SummaryQueryError error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} />
+          ) : summaryQuery.data === undefined ? (
+            <div className="space-y-3">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-20 w-full" />
+                ))}
+              </div>
+              <Skeleton className="h-3 w-2/3" />
+              <Skeleton className="h-3 w-1/2" />
+            </div>
+          ) : (
+            <PersonKpis totals={summaryQuery.data.totals} />
+          )}
+        </CardContent>
+      </Card>
+
       {/* Dispositivo do registro + os outros registros da mesma conta do Windows. */}
       <Card>
         <CardHeader>
@@ -200,38 +308,18 @@ export function PessoaPage() {
         </CardContent>
       </Card>
 
+      {/* Bloco de identidade (Admin+, F6) - ver comentário do componente
+          sobre a pendência do SID. */}
+      {canEdit && <PersonIdentityCard />}
+
       {/* Resumo do período por classificação. */}
       <Card>
-        <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1.5">
-            <CardTitle className="text-base">Resumo do período</CardTitle>
-            <CardDescription>
-              Tempos deste registro (esta conta do Windows neste dispositivo)
-              {range !== null ? ` de ${ddmm(range.from)} a ${ddmm(range.to)}` : ""}.
-            </CardDescription>
-          </div>
-          <div
-            role="group"
-            aria-label="Período"
-            className="inline-flex h-9 shrink-0 items-stretch rounded-md border border-input bg-card p-0.5"
-          >
-            {PERIOD_PRESETS.map((days) => (
-              <button
-                key={days}
-                type="button"
-                aria-pressed={periodDays === days}
-                onClick={() => setPeriodDays(days)}
-                className={cn(
-                  "rounded-[5px] px-3 text-xs font-medium transition-colors",
-                  periodDays === days
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                )}
-              >
-                {days} dias
-              </button>
-            ))}
-          </div>
+        <CardHeader>
+          <CardTitle className="text-base">Resumo do período</CardTitle>
+          <CardDescription>
+            Tempos deste registro (esta conta do Windows neste dispositivo)
+            {resolved !== null ? ` na ${resolved.label}` : ""}.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {summaryQuery.isError ? (
@@ -246,6 +334,26 @@ export function PessoaPage() {
             <Skeleton className="h-40 w-full" />
           ) : (
             <SummaryTables data={summaryQuery.data} />
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Composição por dia (F6): os quatro baldes de classificação mais o
+          Ocioso, com a jornada declarada como referência. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Composição por dia</CardTitle>
+          <CardDescription>
+            Horas por dia neste registro, com a jornada declarada da organização como referência.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {summaryQuery.isError ? (
+            <SummaryQueryError error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} />
+          ) : summaryQuery.data === undefined ? (
+            <Skeleton className="h-[260px] w-full" />
+          ) : (
+            <PersonDailyComposition days={summaryQuery.data.days} journeyHours={journeyHours} />
           )}
         </CardContent>
       </Card>
@@ -278,6 +386,25 @@ export function PessoaPage() {
         <Scale className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
         <span>{JORNADA_DISCLAIMER}</span>
       </div>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Erro com retry compartilhado pelos KPIs e pela composição por dia (F6) -
+// os dois cartões novos consomem a MESMA summaryQuery. O card "Resumo do
+// período" mantém o bloco inline de antes (não mexido, ver comentário do
+// topo sobre preservar comportamento).
+// -----------------------------------------------------------------------------
+
+function SummaryQueryError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-8 text-center">
+      <AlertTriangle className="h-6 w-6 text-destructive" aria-hidden />
+      <p className="text-sm text-muted-foreground">{genericErrorMessage(error)}</p>
+      <Button variant="outline" size="sm" onClick={onRetry}>
+        Tentar novamente
+      </Button>
     </div>
   );
 }
