@@ -42,7 +42,8 @@ public sealed record UsageByDeviceItemResponse(
     long SecondsOn,
     long SecondsWorkRelated,
     long SecondsNeutral,
-    long SecondsNotWorkRelated);
+    long SecondsNotWorkRelated,
+    long SecondsUnclassified);
 
 /// <summary>
 /// group_by=device_user: UUID zero é a lane-máquina ("Máquina (sem usuário)");
@@ -60,7 +61,8 @@ public sealed record UsageByDeviceUserItemResponse(
     long SecondsOn,
     long SecondsWorkRelated,
     long SecondsNeutral,
-    long SecondsNotWorkRelated);
+    long SecondsNotWorkRelated,
+    long SecondsUnclassified);
 
 // ----- GET /api/v1/reports/jornada (F3.5, Seções 7.4/8.6) -----
 

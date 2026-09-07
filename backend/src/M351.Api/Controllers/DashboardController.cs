@@ -136,6 +136,7 @@ public class DashboardController(
                    COALESCE(sum(s.seconds_work_related), 0)::bigint AS seconds_work_related,
                    COALESCE(sum(s.seconds_neutral), 0)::bigint AS seconds_neutral,
                    COALESCE(sum(s.seconds_not_work_related), 0)::bigint AS seconds_not_work_related,
+                   COALESCE(sum(s.seconds_unclassified), 0)::bigint AS seconds_unclassified,
                    COALESCE(bool_or(s.data_incomplete), false) AS data_incomplete,
                    count(DISTINCT s.device_id)::int AS device_count
             FROM daily_device_summaries s
@@ -161,13 +162,13 @@ public class DashboardController(
         var days = rows.Where(r => r.Date is not null)
             .Select(r => new DashboardSummaryDayResponse(
                 r.Date!, r.SecondsActive, r.SecondsIdle, r.SecondsLocked, r.SecondsOn,
-                r.SecondsWorkRelated, r.SecondsNeutral, r.SecondsNotWorkRelated,
+                r.SecondsWorkRelated, r.SecondsNeutral, r.SecondsNotWorkRelated, r.SecondsUnclassified,
                 r.DataIncomplete, r.DeviceCount))
             .ToList();
         var totals = new DashboardSummaryTotalsResponse(
             totalsRow.SecondsActive, totalsRow.SecondsIdle, totalsRow.SecondsLocked, totalsRow.SecondsOn,
             totalsRow.SecondsWorkRelated, totalsRow.SecondsNeutral, totalsRow.SecondsNotWorkRelated,
-            totalsRow.DataIncomplete, totalsRow.DeviceCount);
+            totalsRow.SecondsUnclassified, totalsRow.DataIncomplete, totalsRow.DeviceCount);
 
         // DoD 11.3: COM filtro individual é visualização de dado PESSOAL → audit view_report
         // (padrão do view_timeline). SEM filtro é agregado de equipe — decisão documentada:
@@ -284,6 +285,7 @@ public class DashboardController(
         long SecondsWorkRelated,
         long SecondsNeutral,
         long SecondsNotWorkRelated,
+        long SecondsUnclassified,
         bool DataIncomplete,
         int DeviceCount);
 

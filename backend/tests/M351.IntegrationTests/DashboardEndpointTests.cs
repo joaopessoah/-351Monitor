@@ -120,7 +120,9 @@ public class DashboardEndpointTests(ApiTestFixture fixture)
         Assert.Equal(360, dia1.GetProperty("seconds_idle").GetInt64());
         Assert.Equal(0, dia1.GetProperty("seconds_locked").GetInt64());
         Assert.Equal(540, dia1.GetProperty("seconds_on").GetInt64());
-        Assert.Equal(180, dia1.GetProperty("seconds_neutral").GetInt64()); // sem categorias: tudo neutro
+        // F6: sem categoria mapeada o tempo é "sem classificação", não neutro
+        Assert.Equal(0, dia1.GetProperty("seconds_neutral").GetInt64());
+        Assert.Equal(180, dia1.GetProperty("seconds_unclassified").GetInt64());
         Assert.Equal(1, dia1.GetProperty("device_count").GetInt32());
         Assert.False(dia1.GetProperty("data_incomplete").GetBoolean());
 
@@ -135,8 +137,9 @@ public class DashboardEndpointTests(ApiTestFixture fixture)
         Assert.Equal(360, totals.GetProperty("seconds_idle").GetInt64());
         Assert.Equal(1380, totals.GetProperty("seconds_on").GetInt64());
         Assert.Equal(0, totals.GetProperty("seconds_work_related").GetInt64());
-        Assert.Equal(1020, totals.GetProperty("seconds_neutral").GetInt64());
+        Assert.Equal(0, totals.GetProperty("seconds_neutral").GetInt64());
         Assert.Equal(0, totals.GetProperty("seconds_not_work_related").GetInt64());
+        Assert.Equal(1020, totals.GetProperty("seconds_unclassified").GetInt64());
         Assert.False(totals.GetProperty("data_incomplete").GetBoolean());
         Assert.Equal(2, totals.GetProperty("device_count").GetInt32()); // DISTINCT do período, não soma dos dias
     }

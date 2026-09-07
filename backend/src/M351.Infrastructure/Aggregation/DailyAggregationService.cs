@@ -54,10 +54,16 @@ namespace M351.Infrastructure.Aggregation;
 ///    canônica de arredondamento do gate 11.3, espelhada bit a bit pelo rodapé da timeline
 ///    (soma de ticks por lane com floor por lane; ver TimelineController.SecondsIn);
 ///  - classificação: SÓ intervalos active contam; app_id → tenant_app_categories →
-///    categories.classification (+1/0/−1). App sem mapeamento no tenant (ou active com
-///    app_id NULL) cai em seconds_neutral — equivale a "Não categorizado" (classification 0);
-///  - seconds_neutral = seconds_active − work − not_work (resto): garante o invariante
-///    work + neutral + not_work == seconds_active mesmo com truncamento por balde;
+///    categories.classification (+1/0/−1). App SEM mapeamento no tenant (ou active com
+///    app_id NULL) cai em seconds_unclassified — é "sem classificação", NÃO neutro (F6: o
+///    índice de produtividade e a cobertura da classificação dependem dessa separação, e
+///    "neutro" passa a significar só o que o cliente classificou como neutro de propósito);
+///  - seconds_neutral = seconds_active − work − not_work − unclassified (resto): garante o
+///    invariante work + neutral + not_work + unclassified == seconds_active mesmo com
+///    truncamento por balde;
+///  - hourly_activity (F6): mesmo snapshot, recorte de cada intervalo active/idle nas
+///    fronteiras de hora LOCAL do tenant (organizations.timezone) — fonte do gráfico
+///    "Atividade ao longo do dia";
 ///  - data_incomplete = bool_or(data_incomplete) dos intervalos do dia daquela lane;
 ///  - computed_at = now();
 ///  - daily_app_usage: por (lane, app_id) dos intervalos active com app_id; seconds_active =
@@ -166,14 +172,15 @@ public sealed class DailyAggregationService(NpgsqlDataSource dataSource, ILogger
             INSERT INTO daily_device_summaries (
                 tenant_id, summary_date, device_id, device_user_id,
                 seconds_active, seconds_idle, seconds_locked, seconds_on,
-                seconds_work_related, seconds_neutral, seconds_not_work_related,
+                seconds_work_related, seconds_neutral, seconds_not_work_related, seconds_unclassified,
                 first_event_at, last_event_at, data_incomplete, computed_at)
             SELECT @t, @day, @d, lane,
                    s_active, s_idle, s_locked,
                    s_active + s_idle + s_locked,
                    s_work,
-                   s_active - s_work - s_not_work,
+                   s_active - s_work - s_not_work - s_unclass,
                    s_not_work,
+                   s_unclass,
                    first_event_at, last_event_at, incomplete, now()
             FROM (
                 SELECT COALESCE(i.device_user_id, '00000000-0000-0000-0000-000000000000'::uuid) AS lane,
@@ -187,6 +194,8 @@ public sealed class DailyAggregationService(NpgsqlDataSource dataSource, ILogger
                            FILTER (WHERE i.state = 'active' AND c.classification = 1), 0))::int AS s_work,
                        floor(COALESCE(sum(extract(epoch FROM i.ended_at - i.started_at))
                            FILTER (WHERE i.state = 'active' AND c.classification = -1), 0))::int AS s_not_work,
+                       floor(COALESCE(sum(extract(epoch FROM i.ended_at - i.started_at))
+                           FILTER (WHERE i.state = 'active' AND c.id IS NULL), 0))::int AS s_unclass,
                        min(i.started_at) FILTER (WHERE i.state IN ('active','idle','locked')) AS first_event_at,
                        max(i.ended_at) FILTER (WHERE i.state IN ('active','idle','locked')) AS last_event_at,
                        bool_or(i.data_incomplete) AS incomplete

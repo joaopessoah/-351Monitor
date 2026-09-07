@@ -19,6 +19,7 @@ public sealed record DashboardSummaryDayResponse(
     long SecondsWorkRelated,
     long SecondsNeutral,
     long SecondsNotWorkRelated,
+    long SecondsUnclassified,
     bool DataIncomplete,
     int DeviceCount);
 
@@ -31,6 +32,7 @@ public sealed record DashboardSummaryTotalsResponse(
     long SecondsWorkRelated,
     long SecondsNeutral,
     long SecondsNotWorkRelated,
+    long SecondsUnclassified,
     bool DataIncomplete,
     int DeviceCount);
 
