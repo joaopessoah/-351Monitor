@@ -43,7 +43,24 @@ seletor de período personalizado, mapa do mês por DIA (com `GET /people/daily`
 global com Ctrl+K. 449 testes verdes, bundle `index-BMaidHx2.js` no ar. Os dois botões do
 cabeçalho (Resumo em PDF e Enviar por e-mail) ficaram DESABILITADOS com o motivo no title.
 
-### Em voo depois disso (QUATRO agentes, fases F5 a F8)
+### Atualização final de 07/09 — TODAS AS FASES F0 A F8 ENTREGUES E IMPLANTADAS
+Nada ficou em voo. Árvore limpa, `main` sincronizado, 479+ testes verdes, bundle
+`index-CjfLFSQx.js` no ar. Entraram nesta última rodada:
+- anotação de período e contestação de classificação com revisão do gestor (decisão 6);
+- digest duplo (gestor agregado sem ranking + pessoal do colaborador) e resumo em PDF;
+- equipes ligadas a pessoa, feriados nacionais fora do denominador da capacidade e
+  classificação por equipe (equipe vence organização, ausência é herança);
+- prints reais do painel no site, no lugar dos mockups em CSS;
+- correção do gráfico por hora: o wrapper do ECharts registrava só barra e pizza, e o
+  cartão de linha era descartado em silêncio. Ficou um guard que compara séries pedidas
+  com desenhadas e avisa nomeando o import que falta.
+
+**O que sobrou, tudo fora do código de produto:** revisão jurídica da Bruna sobre a
+redação do vocabulário; CI sem acesso SSH ao servidor (bloqueio antiforça-bruta ao
+runner); GHCR respondendo unauthorized, o que deixa o rollback por tag inoperante; e
+`Demo__Slug` não configurado no staging, o que congela os dados da demo em 04/09.
+
+### Histórico: em voo na rodada anterior (tudo commitado)
 Se os arquivos abaixo estiverem modificados e não commitados, o trabalho chegou pela metade.
 
 | Agente | Entrega | Arquivos que possui |
