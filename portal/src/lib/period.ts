@@ -52,7 +52,20 @@ export const PERIOD_CODEC: UrlStateCodec<PeriodState> = {
       raw === "dia" || raw === "semana" || raw === "mes" || raw === "custom" ? raw : "semana";
     const from = params.get("de");
     const to = params.get("ate");
-    if (preset === "custom" && from !== null && to !== null && isIsoDate(from) && isIsoDate(to)) {
+    // O custom só sobrevive à URL se for um intervalo QUE A API ACEITA: datas
+    // válidas, em ordem e dentro do teto de janela. Um link colado com 200 dias
+    // viraria 400 no servidor, e um estado que só existe para falhar é pior do
+    // que voltar ao default - a mesma escolha que este parser já faz com data
+    // inválida.
+    if (
+      preset === "custom" &&
+      from !== null &&
+      to !== null &&
+      isIsoDate(from) &&
+      isIsoDate(to) &&
+      from <= to &&
+      daysBetweenInclusive(from, to) <= MAX_PERIOD_DAYS
+    ) {
       return { preset, from, to };
     }
     return { preset: preset === "custom" ? "semana" : preset, from: null, to: null };
@@ -74,6 +87,44 @@ function dayLabel(dateStr: string): string {
 function ddmmLabel(dateStr: string): string {
   const [, m, d] = dateStr.split("-");
   return `${d}/${m}`;
+}
+
+/**
+ * Dias INCLUSIVOS do intervalo: de 14/09 a 14/09 são 1 dia, não 0. É a régua do
+ * MAX_PERIOD_DAYS, então tem de contar igual ao backend (que valida o mesmo
+ * teto sobre o intervalo fechado).
+ */
+export function daysBetweenInclusive(from: string, to: string): number {
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ty, tm, td] = to.split("-").map(Number);
+  // Aritmética em UTC: imune ao horário de verão do fuso do navegador.
+  const diff = Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd);
+  return Math.floor(diff / 86_400_000) + 1;
+}
+
+/** "14/09 - 18/09" (ou só "14/09" num único dia): rótulo curto de botão. */
+export function shortRangeLabel(from: string, to: string): string {
+  return from === to ? ddmmLabel(from) : `${ddmmLabel(from)} – ${ddmmLabel(to)}`;
+}
+
+/**
+ * Todas as datas do intervalo, INCLUSIVE as sem dado. Os endpoints agregados
+ * agrupam por dia e só devolvem os dias que têm linha, então o calendário do
+ * gráfico por dia tem de ser construído aqui: sem isso, um dia de máquina
+ * desligada desapareceria do eixo em vez de aparecer como lacuna - e "não
+ * apareceu" leria como "não existiu".
+ *
+ * O laço para no teto de janela: nenhum recorte legítimo passa dele, e um `to`
+ * corrompido não vira laço infinito.
+ */
+export function eachDayInclusive(from: string, to: string): string[] {
+  const out: string[] = [];
+  let cursor = from;
+  for (let i = 0; cursor <= to && i < MAX_PERIOD_DAYS; i += 1) {
+    out.push(cursor);
+    cursor = addDays(cursor, 1);
+  }
+  return out;
 }
 
 /**

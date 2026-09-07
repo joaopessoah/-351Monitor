@@ -19,9 +19,16 @@
 // Nada foi apagado do produto: o que saiu tem dono em outra tela.
 //
 // PERÍODO E EQUIPE são globais e vivem na URL (?periodo=&de=&ate=&tag=), então o
-// link reproduz exatamente o recorte visível. O ÍNDICE e a COBERTURA vêm
-// calculados do servidor (decisão 4 do spec) e esta tela apenas formata: fórmula
-// única, sem chance de a tela e o relatório divergirem.
+// link reproduz exatamente o recorte visível. Os três presets ganharam o quarto
+// botão do mockup - intervalo livre de até MAX_PERIOD_DAYS dias, validado no
+// cliente para o gestor não descobrir o teto por um 400 -, e TODO bloco desta
+// tela lê o mesmo período: nenhum card tem janela própria. O ÍNDICE e a
+// COBERTURA vêm calculados do servidor (decisão 4 do spec) e esta tela apenas
+// formata: fórmula única, sem chance de a tela e o relatório divergirem.
+//
+// "Resumo em PDF" e "Enviar por e-mail" aparecem DESABILITADOS: o mockup os
+// promete, mas o PDF no servidor e o digest por e-mail são a fase seguinte, e
+// um botão que responde 404 custa mais confiança do que um botão que avisa.
 // =============================================================================
 
 import { useMemo, useState } from "react";
@@ -34,21 +41,22 @@ import { api } from "@/lib/api";
 import { formatDuration } from "@/lib/format";
 import type { MeResponse, OverviewResponse } from "@/lib/types";
 import {
-  DEFAULT_PERIOD,
   PERIOD_CODEC,
-  PERIOD_LABELS,
   comparisonLabel,
   formatPct,
   resolvePeriod,
-  type PeriodPreset,
   type ResolvedPeriod,
 } from "@/lib/period";
+import { localDateOf } from "@/lib/format";
 import { useUrlState } from "@/lib/useUrlState";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { EChart } from "@/components/charts/EChart";
 import { TAG_CODEC, TeamTagSelect, useTeamTags } from "@/components/filters/TeamTagSelect";
-import { WeeklyChartsRow } from "@/components/dashboard/WeeklyChartsRow";
+import { AcoesDoCabecalho } from "@/components/dashboard/AcoesDoCabecalho";
+import { AplicativosDoPeriodoCard } from "@/components/dashboard/AplicativosDoPeriodoCard";
+import { ComposicaoPorDiaCard } from "@/components/dashboard/ComposicaoPorDiaCard";
+import { PeriodoSelector } from "@/components/dashboard/PeriodoSelector";
 import { AgoraFaixa } from "@/components/dashboard/AgoraFaixa";
 import { KpisRow } from "@/components/dashboard/KpisRow";
 import { AlertasCard } from "@/components/dashboard/AlertasCard";
@@ -94,6 +102,13 @@ export function VisaoGeralPage() {
   // navegador vazaria para o recorte de quem viaja ou opera em outro fuso.
   const resolved = useMemo(() => resolvePeriod(period, timezone), [period, timezone]);
 
+  // O "hoje" da ORGANIZAÇÃO é o teto dos campos de data do seletor: um gestor
+  // em outro fuso não deve poder pedir um dia que a operação ainda não viveu.
+  const hoje = useMemo(
+    () => (timezone !== null ? localDateOf(new Date(), timezone) : null),
+    [timezone],
+  );
+
   const overview = useOverviewQuery(resolved, tag, true);
   const totals = overview.data?.totals;
   const previous = overview.data?.previous ?? null;
@@ -131,30 +146,18 @@ export function VisaoGeralPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Presets do período: um grupo segmentado, estado na URL. */}
-          <div
-            role="group"
-            aria-label="Período"
-            className="inline-flex h-9 items-stretch rounded-md border border-input bg-card p-0.5"
-          >
-            {(["dia", "semana", "mes"] as PeriodPreset[]).map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                aria-pressed={period.preset === preset}
-                onClick={() => setPeriod({ ...DEFAULT_PERIOD, preset })}
-                className={cn(
-                  "rounded-[5px] px-3 text-xs font-medium transition-colors",
-                  period.preset === preset
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                )}
-              >
-                {PERIOD_LABELS[preset]}
-              </button>
-            ))}
-          </div>
+          {/* Presets + intervalo livre: um grupo segmentado só, estado na URL. */}
+          <PeriodoSelector
+            period={period}
+            onChange={setPeriod}
+            today={hoje}
+            resolvedFrom={resolved?.from}
+            resolvedTo={resolved?.to}
+          />
           <TeamTagSelect tags={tags} value={tag} onChange={setTag} />
+          {/* Exportações do mockup, desabilitadas com o motivo no title: PDF no
+              servidor e digest por e-mail são a fase seguinte. */}
+          <AcoesDoCabecalho />
         </div>
       </div>
     </div>
@@ -196,18 +199,38 @@ export function VisaoGeralPage() {
         />
       </div>
 
-      {/* Linha 3 — a composição por dia e o top de aplicativos continuam vindo
-          do WeeklyChartsRow, que já resolve os dois com tabela acessível e
-          comparação de semana. O recorte de equipe desce por prop. */}
-      <WeeklyChartsRow tag={tag} />
+      {/* Linha 3 — composição por dia · aplicativos · resumo, na proporção do
+          mockup aprovado (5/4/3).
 
-      {/* Linha 4 — o RESUMO do período em três frases, geradas dos agregados que
-          os blocos acima já carregaram. Zero requisição nova: consome o mesmo
-          cache do overview e da comparação de equipes. O cartão desaparece
-          inteiro se nenhuma frase tiver número real para dizer. */}
-      <ResumoDoPeriodo data={overview.data} equipes={equipes.data ?? []} />
+          O que saiu daqui: o WeeklyChartsRow, que resolvia os dois primeiros
+          com janela PRÓPRIA (semana atual / semana anterior, com seletor só
+          dele). Numa tela cujo período é global e vive na URL, um bloco com
+          recorte particular é uma mentira de leitura — o gestor escolhia "Este
+          mês" no cabeçalho e os gráficos continuavam respondendo pela semana. O
+          arquivo continua no repositório porque a comparação semana-a-semana
+          que ele faz ainda serve a outra tela; aqui ele não é mais usado.
 
-      {/* Linha 5 — ALERTAS de gestão (motor de regras no worker, GET /alerts)
+          A composição por dia NÃO abre consulta: recebe o mesmo UseQueryResult
+          do overview (o array `days` já vem lá dentro), dois observadores do
+          mesmo cache. O RESUMO também não: sai dos agregados que o overview e a
+          comparação de equipes já trouxeram, e o cartão desaparece inteiro se
+          nenhuma frase tiver número real para dizer. */}
+      <div className="grid gap-4 lg:grid-cols-12">
+        <ComposicaoPorDiaCard
+          className="lg:col-span-5"
+          query={overview}
+          businessHours={organization?.business_hours}
+          timezone={timezone}
+        />
+        <AplicativosDoPeriodoCard className="lg:col-span-4" period={resolved} tag={tag} />
+        <ResumoDoPeriodo
+          className="lg:col-span-3"
+          data={overview.data}
+          equipes={equipes.data ?? []}
+        />
+      </div>
+
+      {/* Linha 4 — ALERTAS de gestão (motor de regras no worker, GET /alerts)
           somados às pendências de administração que hoje só existem no sino, e
           o comparativo de EQUIPES lado a lado com o mínimo de grupo da
           decisão 3. Os dois lado a lado porque respondem à mesma pergunta em
