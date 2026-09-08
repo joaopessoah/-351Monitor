@@ -371,7 +371,7 @@ page_header('Configurações', 'settings.php', $user);
   <?php else: ?>
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>Caixa</th><th>SMTP</th><th>IMAP</th><th>Último UID lido</th><th></th></tr></thead>
+        <thead><tr><th>Caixa</th><th>SMTP</th><th>IMAP</th><th>Último UID lido</th><th>Teste avulso</th></tr></thead>
         <tbody>
           <?php foreach ($contas as $endereco => $c): ?>
             <tr>
@@ -387,10 +387,21 @@ page_header('Configurações', 'settings.php', $user);
                   <?= csrf_field() ?>
                   <input type="hidden" name="action" value="email_teste">
                   <input type="hidden" name="caixa" value="<?= esc($endereco) ?>">
+                  <?php
+                    // Segue o e-mail do sandbox quando ele existe: sao dois
+                    // campos parecidos na mesma tela, e a pessoa espera que o
+                    // teste va para o mesmo lugar que o ensaio.
+                    $destinoTeste = norm_email(setting_str('auto_sandbox_para'));
+                    $destinoTeste = is_string($destinoTeste) && $destinoTeste !== '' ? $destinoTeste : $endereco;
+                  ?>
                   <input name="teste_para" type="email" maxlength="190" style="min-width: 200px"
-                         value="<?= esc($endereco) ?>" aria-label="Enviar o teste para qual endereço">
+                         value="<?= esc($destinoTeste) ?>" aria-label="Enviar o teste para qual endereço">
                   <button class="btn btn-ghost btn-sm" type="submit">Enviar teste</button>
                 </form>
+                <p class="muted small" style="margin: 4px 0 0">
+                  Campo avulso: manda um e-mail agora e <strong>não fica salvo</strong>.
+                  Para mudar o destino do sandbox, use "E-mail do sandbox" logo abaixo.
+                </p>
               </td>
             </tr>
           <?php endforeach; ?>
@@ -413,9 +424,22 @@ page_header('Configurações', 'settings.php', $user);
         <label for="auto_sandbox"><strong>Sandbox</strong> — todo e-mail vai para o endereço abaixo, nunca para o lead</label>
       </div>
       <div class="field">
-        <label for="auto_sandbox_para">E-mail do sandbox <span class="muted">(vazio = a própria caixa remetente)</span></label>
+        <label for="auto_sandbox_para">E-mail do sandbox
+          <span class="muted">— enquanto o ensaio estiver ligado, <strong>todo</strong> e-mail da cadência vai para cá</span></label>
         <input id="auto_sandbox_para" name="auto_sandbox_para" type="email" maxlength="190"
+               placeholder="vazio = vai para a própria caixa remetente"
                value="<?= esc(setting_str('auto_sandbox_para')) ?>">
+        <?php
+          $alvoSandbox = norm_email(setting_str('auto_sandbox_para'));
+          $contasSandbox = mail_contas();
+          $alvoSandbox = is_string($alvoSandbox) && $alvoSandbox !== ''
+              ? $alvoSandbox
+              : (string) (($contasSandbox ? reset($contasSandbox)['email'] : '—'));
+        ?>
+        <p class="muted small" style="margin: 4px 0 0">
+          Hoje o ensaio entrega em: <strong><?= esc($alvoSandbox) ?></strong>.
+          Este campo <strong>fica salvo</strong> ao clicar em "Salvar cadência automática".
+        </p>
       </div>
       <div class="field">
         <label for="auto_modo">Modo</label>
