@@ -23,7 +23,20 @@ public sealed record DashboardSummaryDayResponse(
     bool DataIncomplete,
     int DeviceCount);
 
-/// <summary>Mesmos campos dos dias somados (data_incomplete = OR); device_count é o DISTINCT do período inteiro.</summary>
+/// <summary>
+/// Mesmos campos dos dias somados (data_incomplete = OR); device_count é o DISTINCT do período
+/// inteiro.
+///
+/// productivity_index e classification_coverage (F9) vêm CALCULADOS AQUI, pela fórmula única da
+/// decisão 4 e sobre EXATAMENTE estes baldes. Antes disso a página da pessoa refazia a conta no
+/// cliente — o comentário de `personIndicators()` pedia a remoção "quando o summary devolver os
+/// indicadores prontos", e é este o momento. Calcular sobre os baldes desta mesma resposta é o
+/// que garante que o índice e a composição exibidos lado a lado falem do MESMO recorte: este
+/// endpoint aceita filtro por dispositivo e por lane, e um indicador de outro escopo ao lado de
+/// uma composição filtrada se contradiria na tela.
+///
+/// Ambos null sem denominador — nunca zero.
+/// </summary>
 public sealed record DashboardSummaryTotalsResponse(
     long SecondsActive,
     long SecondsIdle,
@@ -34,7 +47,9 @@ public sealed record DashboardSummaryTotalsResponse(
     long SecondsNotWorkRelated,
     long SecondsUnclassified,
     bool DataIncomplete,
-    int DeviceCount);
+    int DeviceCount,
+    double? ProductivityIndex = null,
+    double? ClassificationCoverage = null);
 
 // ----- GET /api/v1/dashboard/top-apps (Seção 7.4 — de daily_app_usage) -----
 
@@ -87,7 +102,14 @@ public sealed record OverviewResponse(
     OverviewTotalsResponse Totals,
     OverviewTotalsResponse? Previous,
     IReadOnlyList<DashboardSummaryDayResponse> Days,
-    OverviewGoalsResponse Goals);
+    OverviewGoalsResponse Goals,
+    /// <summary>
+    /// A janela contra a qual `previous` foi apurado (null sem compare=true). Existe para a
+    /// comparação ser CONFERÍVEL: sem ela, o cliente vê "−24%" sem poder saber contra o quê, e
+    /// um erro de régua na janela anterior — como o que a decompunha em dias no grão mensal —
+    /// passa despercebido.
+    /// </summary>
+    OverviewPeriodResponse? PreviousPeriod = null);
 
 /// <summary>Período INCLUSIVO no fuso do tenant; days é a contagem de dias do intervalo.</summary>
 public sealed record OverviewPeriodResponse(string From, string To, int Days);

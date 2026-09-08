@@ -28,12 +28,19 @@ namespace M351.Api.Controllers;
 /// agregação, e a lane-máquina (UUID zero) cai em "Sem equipe": não é pessoa (decisão 8), mas os
 /// segundos dela contam nos totais e precisam aparecer para a soma fechar.
 ///
-/// PRECISÃO: as dimensões por equipe e por dia particionam exatamente daily_device_summaries,
-/// então a soma das parcelas é o delta ao último bit. A dimensão por aplicativo lê
-/// daily_app_usage, cujo floor() é aplicado por (lane, app) em vez de por lane — a diferença é de
-/// alguns segundos numa frota inteira, o que move a parcela na quinta casa decimal. Nada que a
-/// tela, que mostra uma casa, consiga exibir; e a alternativa (uma fatia "Outros" de 0,00001
-/// ponto) seria pior de ler do que o erro que corrige.
+/// PRECISÃO. Cada dimensão devolve o DELTA QUE ELA EXPLICA, e as parcelas dela fecham esse delta
+/// exatamente — a promessa do painel é sempre verdadeira, nunca aproximada. Por equipe e por dia
+/// esse delta é o do cabeçalho, porque as duas particionam daily_device_summaries. Por aplicativo
+/// ele pode diferir, por duas razões de peso muito diferente:
+///
+///  1. o floor() de daily_app_usage é por (lane, app) e não por lane — alguns segundos numa frota
+///     inteira, invisíveis na casa decimal que a tela mostra;
+///  2. A QUE IMPORTA: os baldes agregados guardam a classificação CONGELADA no dia da agregação,
+///     enquanto esta leitura reaplica a classificação VIGENTE. Mudar uma regra sem recalcular o
+///     histórico (a reagregação automática cobre só 30 dias) deixa os dois lados com denominadores
+///     diferentes, e a diferença pode ser de horas. Nesse caso a dimensão declara o desvio em
+///     `divergence`, nomeando a causa e o caminho — em vez de a tela atribuir a sobra ao
+///     truncamento da lista, que seria uma explicação errada para um problema real.
 /// </summary>
 [Route("api/v1/dashboard")]
 [Authorize] // Viewer+, como o restante do dashboard
@@ -44,6 +51,25 @@ public class IndexExplainedController(NpgsqlDataSource dataSource) : ApiControll
 
     /// <summary>Teto do limit: acima disso a lista deixa de ser "onde a variação está" e vira dump.</summary>
     public const int MaxLimit = 25;
+
+    /// <summary>
+    /// Acima de quantos pontos a divergência entre o delta de uma dimensão e o do cabeçalho é
+    /// DECLARADA. Meio décimo: a tela mostra uma casa decimal, então abaixo disso os dois números
+    /// aparecem iguais e um aviso seria ruído sobre uma diferença invisível.
+    /// </summary>
+    public const double DivergenceTolerancePoints = 0.05;
+
+    /// <summary>
+    /// A frase da divergência. Ela nomeia a causa REAL (classificação mudada sem recálculo) e o
+    /// caminho para resolver, porque "os números não batem" sem explicação corrói a confiança no
+    /// painel inteiro.
+    /// </summary>
+    public const string DivergenciaPorClassificacao =
+        "A decomposição por aplicativo usa a classificação vigente HOJE, enquanto os totais do " +
+        "período foram somados com a classificação que valia quando o dia foi agregado. Alguma " +
+        "regra mudou desde então e o histórico não foi recalculado, por isso os dois lados não " +
+        "fecham. Para alinhá-los, use Configurações › Classificação › Recalcular histórico na " +
+        "janela deste período.";
 
     /// <summary>Motivo em pt-BR quando não há variação a explicar — a tela mostra esta frase.</summary>
     public const string SemDenominador =
@@ -103,12 +129,34 @@ public class IndexExplainedController(NpgsqlDataSource dataSource) : ApiControll
             previousIndex,
             delta,
             delta is null ? SemDenominador : null,
-            Top(byApp, take),
-            Top(byTeam, take),
-            Top(byDay, take)));
+            Dimension(byApp, take, delta, DivergenciaPorClassificacao),
+            Dimension(byTeam, take, delta, divergenceReason: null),
+            Dimension(byDay, take, delta, divergenceReason: null)));
     }
 
     // ------------------------------------------------------------------------------- montagem
+
+    /// <summary>
+    /// Monta uma dimensão: o delta que ELA explica, as maiores parcelas e, quando o delta dela
+    /// difere do cabeçalho além da tolerância, o motivo.
+    ///
+    /// O delta da dimensão sai dos totais dos PRÓPRIOS membros dela, então a soma das parcelas
+    /// fecha sempre — inclusive quando a fonte diverge dos baldes agregados. É isso que mantém a
+    /// promessa do painel verdadeira em vez de aproximadamente verdadeira.
+    /// </summary>
+    private static IndexDimensionResponse Dimension(
+        IReadOnlyList<MemberSeconds> members, int take, double? headlineDelta, string? divergenceReason)
+    {
+        var delta = IndexDecomposition.DeltaPoints(members);
+        var divergent = delta is not null
+                        && headlineDelta is not null
+                        && Math.Abs(delta.Value - headlineDelta.Value) > DivergenceTolerancePoints;
+
+        return new IndexDimensionResponse(
+            delta is null ? null : Math.Round(delta.Value, 4),
+            divergent ? divergenceReason : null,
+            Top(members, take));
+    }
 
     /// <summary>Índice de um dos dois lados, pela fórmula única (decisão 4). null sem denominador.</summary>
     private static double? IndexOf(IReadOnlyList<MemberSeconds> members, bool current)

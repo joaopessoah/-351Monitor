@@ -23,7 +23,7 @@
 // =============================================================================
 
 import { useMemo, useState } from "react";
-import { TrendingDown, TrendingUp } from "lucide-react";
+import { AlertTriangle, TrendingDown, TrendingUp } from "lucide-react";
 
 import { formatDuration } from "@/lib/format";
 import { formatPct } from "@/lib/period";
@@ -52,7 +52,8 @@ export function PorQueOIndiceMudou({
 }) {
   const [dimensao, setDimensao] = useState<DimensaoId>("by_app");
 
-  const linhas = data?.[dimensao] ?? [];
+  const bloco = data?.[dimensao];
+  const linhas = bloco?.items ?? [];
 
   // escala das barras: a maior contribuição EM MÓDULO ocupa a metade inteira do
   // trilho. Sem isso, um período de variação pequena desenharia barras
@@ -63,6 +64,12 @@ export function PorQueOIndiceMudou({
   );
 
   const soma = useMemo(() => linhas.reduce((total, l) => total + l.points, 0), [linhas]);
+
+  // O DELTA DESTA DIMENSÃO, não o do cabeçalho. As parcelas fecham ESTE, sempre — e quando
+  // ele diverge do cabeçalho o servidor manda o motivo em `divergence`, que a tela repete
+  // em vez de atribuir a sobra ao truncamento da lista (que seria explicação errada para
+  // um problema real: classificação mudada sem recálculo do histórico).
+  const deltaDaDimensao = bloco?.delta_points ?? null;
 
   if (isPending && data === undefined) {
     return (
@@ -155,18 +162,31 @@ export function PorQueOIndiceMudou({
           <p className="mt-3 border-t pt-2 text-[11px] leading-relaxed text-muted-foreground">
             As parcelas listadas somam{" "}
             <strong className="font-semibold text-foreground tabular-nums">{formatPontos(soma)}</strong>
-            {delta !== null && Math.abs(soma - delta) >= 0.05 && (
+            {deltaDaDimensao !== null && Math.abs(soma - deltaDaDimensao) >= 0.05 && (
               <>
                 {" "}
-                de uma variação total de{" "}
+                de{" "}
                 <strong className="font-semibold text-foreground tabular-nums">
-                  {formatPontos(delta)}
+                  {formatPontos(deltaDaDimensao)}
                 </strong>{" "}
                 — o restante está fora das {linhas.length} maiores contribuições
               </>
             )}
             . Tempo sem classificação não entra: ele está fora da fórmula do índice.
           </p>
+
+          {bloco?.divergence !== null && bloco?.divergence !== undefined && (
+            /* A DIVERGÊNCIA É DITA, com a causa e o caminho. Silenciar aqui seria deixar
+               o gestor ver dois números que não fecham e concluir sozinho que o painel
+               erra — quando o que houve foi uma regra mudada sem recalcular o histórico. */
+            <p
+              role="note"
+              className="mt-2 flex items-start gap-2 rounded-md border border-dashed px-2.5 py-2 text-[11px] leading-relaxed text-muted-foreground"
+            >
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span>{bloco.divergence}</span>
+            </p>
+          )}
         </>
       )}
     </Card>

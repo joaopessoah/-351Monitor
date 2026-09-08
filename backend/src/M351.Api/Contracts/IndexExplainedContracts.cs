@@ -19,9 +19,28 @@ public sealed record IndexExplainedResponse(
     double? PreviousIndex,
     double? DeltaPoints,
     string? Unavailable,
-    IReadOnlyList<IndexContributionResponse> ByApp,
-    IReadOnlyList<IndexContributionResponse> ByTeam,
-    IReadOnlyList<IndexContributionResponse> ByDay);
+    IndexDimensionResponse ByApp,
+    IndexDimensionResponse ByTeam,
+    IndexDimensionResponse ByDay);
+
+/// <summary>
+/// Uma dimensão da decomposição, com o delta que ELA explica.
+///
+/// POR QUE CADA DIMENSÃO CARREGA O PRÓPRIO DELTA: <c>ByTeam</c> e <c>ByDay</c> particionam
+/// exatamente <c>daily_device_summaries</c>, então o delta delas é o do cabeçalho. <c>ByApp</c>
+/// lê <c>daily_app_usage</c> e reaplica a classificação NA LEITURA — se alguém mudou a
+/// classificação e não recalculou o histórico, os baldes agregados guardam a regra ANTIGA e a
+/// leitura usa a NOVA, e os dois lados passam a ter denominadores diferentes. Nesse caso o
+/// delta da dimensão difere do cabeçalho, e é ele que as parcelas fecham.
+///
+/// A promessa "as parcelas somam" continua verdadeira SEMPRE — só passa a ser sobre o delta da
+/// própria dimensão. Quando ele diverge do cabeçalho, <paramref name="Divergence"/> diz o motivo
+/// e o caminho para resolver, em vez de a tela inventar uma explicação.
+/// </summary>
+public sealed record IndexDimensionResponse(
+    double? DeltaPoints,
+    string? Divergence,
+    IReadOnlyList<IndexContributionResponse> Items);
 
 /// <summary>
 /// A contribuição de UM membro (aplicativo, equipe ou dia) para a variação do índice.

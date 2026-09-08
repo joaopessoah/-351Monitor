@@ -22,13 +22,14 @@ namespace M351.Infrastructure.Privacy;
 ///     - windows_username -> marcador neutro (a coluna é NOT NULL, não pode virar NULL);
 ///     - windows_sid     -> marcador neutro (some o vínculo com a conta Windows real);
 ///     - display_name    -> "Usuário removido (DSR)".
-///     Assim os agregados de equipe JÁ COMPUTADOS (daily_device_summaries / daily_app_usage,
-///     chaveados por device_user_id) continuam somando SEM identificar a pessoa — cumpre a
+///     Assim os agregados de equipe JÁ COMPUTADOS (daily_device_summaries / daily_app_usage /
+///     monthly_summaries, chaveados por device_user_id) continuam somando SEM identificar a pessoa — cumpre a
 ///     regra crítica da Seção 9.3 linha 995 ("a exclusão de titular NÃO apaga agregados de
 ///     equipe já computados", documentado no DPA).
 ///
-///  3. MANTER os agregados diários (daily_*): não têm PII direto (o nome vinha de
-///     device_users, agora anonimizado). O recibo conta quantas linhas foram preservadas.
+///  3. MANTER os agregados diários e mensais (daily_*, monthly_summaries): não têm PII direto
+///     (o nome vinha de device_users, agora anonimizado). O recibo conta quantas linhas das TRÊS
+///     tabelas foram preservadas.
 ///
 /// Tudo numa ÚNICA transação: ou o titular some por inteiro (com o device_user anonimizado e
 /// a trilha gravada), ou nada muda. A trilha dsr_delete NÃO é apagada — é a evidência da
@@ -151,6 +152,13 @@ public sealed class DsrService
                 tenantId, deviceUserIds, ct, scalar: true)
             + await ExecCountAsync(connection, tx,
                 "SELECT count(*)::int FROM daily_app_usage WHERE tenant_id = @t AND device_user_id = ANY(@ids)",
+                tenantId, deviceUserIds, ct, scalar: true)
+            // F9: monthly_summaries é chaveada por device_user_id como as duas acima e sobrevive
+            // à exclusão pela MESMA regra da Seção 9.3. Ficar fora da conta faria o recibo
+            // subestimar o que foi preservado — e um recibo que subconta o que ficou é pior que
+            // recibo nenhum, porque parece exato.
+            + await ExecCountAsync(connection, tx,
+                "SELECT count(*)::int FROM monthly_summaries WHERE tenant_id = @t AND device_user_id = ANY(@ids)",
                 tenantId, deviceUserIds, ct, scalar: true);
 
         // 2. anonimiza a IDENTIDADE preservando o device_user_id (chave dos agregados de equipe).

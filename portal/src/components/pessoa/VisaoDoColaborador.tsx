@@ -71,13 +71,21 @@ export function VisaoDoColaborador({
           O que mostramos a esta pessoa
         </CardTitle>
         <CardDescription>
-          Os mesmos números que ela vê sobre si. É o material da conversa de 1:1 — e o que a
-          transparência exige que ela possa conferir.
+          Os mesmos números que ela vê sobre si, somando TODOS os dispositivos dela — por isso
+          podem diferir dos indicadores acima, que são do registro aberto nesta página. É o
+          material da conversa de 1:1, e o que a transparência exige que ela possa conferir.
         </CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {data === undefined ? (
+        {query.isError ? (
+          /* ERRO ANTES DO ESQUELETO: num 404 (lane-máquina, SID de outro tenant)
+             `data` nunca fica definido, e o esqueleto ficaria animando para
+             sempre — o "Carregando…" que nunca termina. */
+          <p role="alert" className="text-xs leading-relaxed text-destructive">
+            {genericErrorMessage(query.error)}
+          </p>
+        ) : data === undefined ? (
           <div className="space-y-2">
             <Skeleton className="h-16 w-full" />
             <Skeleton className="h-24 w-full" />
@@ -135,9 +143,15 @@ export function VisaoDoColaborador({
                   Aplicativos do período
                 </h3>
                 <ul className="m-0 list-none space-y-1 p-0">
+                  {/* A chave inclui a CLASSIFICAÇÃO: o mesmo aplicativo pode
+                      aparecer duas vezes quando as lanes da pessoa caem em
+                      equipes diferentes pela etiqueta legada do dispositivo, e
+                      cada equipe classifica de um jeito. As duas linhas são a
+                      verdade (os segundos foram somados assim), mas com a chave
+                      só no process_name o React veria duplicata. */}
                   {data.top_apps.map((app) => (
                     <li
-                      key={app.process_name}
+                      key={`${app.process_name}|${app.classification ?? "sem"}`}
                       className="flex items-center justify-between gap-3 border-b py-1 text-xs last:border-b-0"
                     >
                       <span className="flex min-w-0 items-center gap-2">
@@ -210,12 +224,6 @@ export function VisaoDoColaborador({
 
             <ExportCsvBanner mutation={pdf} />
           </>
-        )}
-
-        {query.isError && (
-          <p role="alert" className="text-xs text-destructive">
-            {genericErrorMessage(query.error)}
-          </p>
         )}
       </CardContent>
     </Card>

@@ -180,6 +180,12 @@ public static class WeeklySummary
                    sum(dau.seconds_active)::bigint AS seconds_active
             FROM daily_app_usage dau
             JOIN lane l ON l.device_user_id = dau.device_user_id
+            -- dispositivo ARQUIVADO fica fora, como em TotalsAsync e PeopleTotalsAsync: sem
+            -- este filtro a lista de apps do PDF pode somar mais segundos que as "Suas horas
+            -- ativas" impressas três parágrafos acima, e a mesma pessoa teria uma lista na tela
+            -- e outra no papel
+            JOIN devices d ON d.id = dau.device_id AND d.tenant_id = dau.tenant_id
+                          AND d.status <> 'archived'
             JOIN app_catalog ac ON ac.id = dau.app_id
             LEFT JOIN tenant_app_team_categories tatc
                    ON tatc.tenant_id = dau.tenant_id AND tatc.app_id = dau.app_id

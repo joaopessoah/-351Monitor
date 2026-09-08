@@ -18,9 +18,12 @@
 //    continua alimentando a MESMA query GET /dashboard/summary de sempre;
 //  - KPIs da pessoa no período (ligada, ativa, índice, ociosidade, sem
 //    classificação) em components/pessoa/PersonKpis.tsx. O ÍNDICE e a
-//    COBERTURA vêm PRONTOS de GET /people/{sid}/self-view (F9), pela fórmula
-//    única da decisão 4 - a conta que esta tela refazia no cliente foi apagada.
-//    `null` imprime "–", nunca 0%;
+//    COBERTURA vêm PRONTOS no `totals` de GET /dashboard/summary (F9), pela
+//    fórmula única da decisão 4 - a conta que esta tela refazia no cliente foi
+//    apagada. Vêm do SUMMARY e não do self-view de propósito: os ladrilhos são
+//    de UMA lane (a rota navega por device_user_id) e o self-view agrega a
+//    pessoa inteira; um escopo por linha, senão "Sem classificação 95%" apareceria
+//    ao lado de "Cobertura 76%". `null` imprime "–", nunca 0%;
 //  - VISÃO DO COLABORADOR em components/pessoa/VisaoDoColaborador.tsx: o que
 //    mostramos à própria pessoa, e o botão do resumo pessoal em PDF. O
 //    colaborador NÃO tem acesso ao painel (decisão 10): os canais dele são o
@@ -134,9 +137,9 @@ export function PessoaPage() {
     enabled: id.length > 0 && resolved !== null && person !== undefined,
   });
 
-  // Visão do colaborador (F9): os mesmos números que a pessoa vê sobre si, com
-  // índice e cobertura CALCULADOS NO SERVIDOR. Alimenta também os KPIs acima,
-  // que por isso não refazem mais a fórmula.
+  // Visão do colaborador (F9): os mesmos números que a pessoa vê sobre si. Escopo
+  // da PESSOA (todas as lanes, todos os dispositivos), diferente dos ladrilhos
+  // acima, que são da lane desta rota — o cartão diz isso na própria descrição.
   const selfView = usePersonSelfView(id, resolved);
 
   function setPreset(preset: PeriodPreset): void {
@@ -278,11 +281,7 @@ export function PessoaPage() {
               <Skeleton className="h-3 w-1/2" />
             </div>
           ) : (
-            <PersonKpis
-              totals={summaryQuery.data.totals}
-              productivityIndex={selfView.data?.productivity_index}
-              classificationCoverage={selfView.data?.classification_coverage}
-            />
+            <PersonKpis totals={summaryQuery.data.totals} />
           )}
         </CardContent>
       </Card>

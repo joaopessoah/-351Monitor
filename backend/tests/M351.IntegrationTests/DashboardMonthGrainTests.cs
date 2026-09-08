@@ -206,6 +206,38 @@ public class DashboardMonthGrainTests(ApiTestFixture fixture)
     }
 
     [Fact]
+    public async Task Grain_Month_Compara_Com_A_MESMA_Quantidade_De_Meses()
+    {
+        var (client, token, _) = await SeedAsync("MgrJan");
+
+        // O período anterior no grão mensal tem de ser a MESMA janela deslocada N meses para
+        // trás, não "a mesma quantidade de dias". Calculado em dias, o anterior cairia no meio
+        // de um mês, o SQL expandiria para o mês inteiro e a comparação passaria a ser de
+        // 3 meses cheios contra 2 meses cheios + 1 parcial — variação inventada pela régua.
+        using var doc = await GetJsonAsync(client, token,
+            "/api/v1/dashboard/overview?from=2026-07-01&to=2026-09-07&grain=month&compare=true");
+
+        var anterior = doc.RootElement.GetProperty("previous_period");
+        Assert.Equal("2026-04-01", anterior.GetProperty("from").GetString());
+        Assert.Equal("2026-06-07", anterior.GetProperty("to").GetString());
+    }
+
+    [Fact]
+    public async Task Grain_Month_Compara_Mes_Cheio_Com_O_Mes_Cheio_Anterior()
+    {
+        var (client, token, _) = await SeedAsync("MgrMes");
+
+        // março tem 31 dias e fevereiro 28: deslocar por MÊS acerta as duas pontas, enquanto
+        // deslocar por dias jogaria o início em 29/01 e traria janeiro inteiro junto
+        using var doc = await GetJsonAsync(client, token,
+            "/api/v1/dashboard/overview?from=2026-03-01&to=2026-03-31&grain=month&compare=true");
+
+        var anterior = doc.RootElement.GetProperty("previous_period");
+        Assert.Equal("2026-02-01", anterior.GetProperty("from").GetString());
+        Assert.Equal("2026-02-28", anterior.GetProperty("to").GetString());
+    }
+
+    [Fact]
     public async Task Grain_Month_Compara_Com_O_Periodo_Anterior_De_Mesma_Duracao()
     {
         var (client, token, day) = await SeedAsync("MgrCmp");

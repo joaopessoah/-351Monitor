@@ -85,8 +85,22 @@ public class PersonSelfViewController(NpgsqlDataSource dataSource) : ApiControll
             new CommandDefinition(IdentitySql, args, cancellationToken: ct));
         var apps = (await connection.QueryAsync<AppRow>(
             new CommandDefinition(TopAppsSql, args, cancellationToken: ct))).ToList();
-        var notes = await connection.QuerySingleAsync<NotesRow>(
-            new CommandDefinition(OpenNotesSql, args, cancellationToken: ct));
+        // A JANELA DAS ANOTAÇÕES VAI EM UTC EXPLÍCITO, resolvida no fuso do TENANT — igual ao
+        // PersonNotesController. Deixar `@To::date::timestamptz` resolver sozinho usaria o fuso
+        // da SESSÃO (UTC), e num tenant em America/Sao_Paulo a janela sairia 3 h deslocada: uma
+        // contestação das 21h do dia 07 (00h UTC do dia 08) não contaria aqui e apareceria na
+        // lista logo abaixo, na mesma página.
+        var tz = await TenantTimeZoneAsync(connection, tenantId, ct);
+        var notes = await connection.QuerySingleAsync<NotesRow>(new CommandDefinition(
+            OpenNotesSql,
+            new
+            {
+                TenantId = tenantId,
+                Sid = resolved,
+                WindowStart = LocalMidnightUtc(fromDay, tz),
+                WindowEnd = LocalMidnightUtc(toDay.AddDays(1), tz),
+            },
+            cancellationToken: ct));
 
         // FÓRMULA ÚNICA (decisão 4), a mesma do /dashboard/overview e do /people: índice é
         // produtivo ÷ classificado, cobertura é (ativo − sem classificação) ÷ ativo. Sem
@@ -282,9 +296,31 @@ public class PersonSelfViewController(NpgsqlDataSource dataSource) : ApiControll
         WHERE n.tenant_id = @TenantId
           AND n.windows_sid = @Sid
           AND n.status = 'aberta'
-          AND n.started_at < ((@To::date + 1)::timestamptz)
-          AND n.ended_at >= (@From::date::timestamptz)
+          AND n.started_at < @WindowEnd
+          AND n.ended_at >= @WindowStart
         """;
+
+    /// <summary>Fuso do tenant; UTC quando o id do fuso não é reconhecido pela máquina.</summary>
+    private static async Task<TimeZoneInfo> TenantTimeZoneAsync(
+        NpgsqlConnection connection, Guid tenantId, CancellationToken ct)
+    {
+        var id = await connection.ExecuteScalarAsync<string?>(new CommandDefinition(
+            "SELECT timezone FROM organizations WHERE id = @TenantId",
+            new { TenantId = tenantId }, cancellationToken: ct));
+
+        try
+        {
+            return id is null ? TimeZoneInfo.Utc : TimeZoneInfo.FindSystemTimeZoneById(id);
+        }
+        catch (Exception e) when (e is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            return TimeZoneInfo.Utc;
+        }
+    }
+
+    /// <summary>Meia-noite local do dia, em UTC — a borda real da janela de um relatório.</summary>
+    private static DateTimeOffset LocalMidnightUtc(DateOnly day, TimeZoneInfo tz) =>
+        new(TimeZoneInfo.ConvertTimeToUtc(day.ToDateTime(TimeOnly.MinValue), tz), TimeSpan.Zero);
 
     private sealed record TotalsRow(
         long SecondsOn,

@@ -125,7 +125,7 @@ public class IndexExplainedTests(ApiTestFixture fixture)
         var root = doc.RootElement;
 
         var total = root.GetProperty("delta_points").GetDouble();
-        var soma = root.GetProperty("by_app").EnumerateArray().Sum(e => e.GetProperty("points").GetDouble());
+        var soma = root.GetProperty("by_app").GetProperty("items").EnumerateArray().Sum(e => e.GetProperty("points").GetDouble());
 
         Assert.Equal(-50d, total, precision: 6);
         Assert.Equal(total, soma, precision: 6);
@@ -139,7 +139,7 @@ public class IndexExplainedTests(ApiTestFixture fixture)
         using var doc = await GetJsonAsync(client, token,
             $"/api/v1/dashboard/index-explained?from={day}&to={day}");
 
-        var apps = doc.RootElement.GetProperty("by_app").EnumerateArray().ToList();
+        var apps = doc.RootElement.GetProperty("by_app").GetProperty("items").EnumerateArray().ToList();
         var zap = apps.Single(e => e.GetProperty("key").GetString() == "ixp-zap.exe");
         var erp = apps.Single(e => e.GetProperty("key").GetString() == "ixp-erp.exe");
 
@@ -161,10 +161,71 @@ public class IndexExplainedTests(ApiTestFixture fixture)
         var root = doc.RootElement;
         var total = root.GetProperty("delta_points").GetDouble();
 
-        Assert.Equal(total, root.GetProperty("by_team").EnumerateArray()
+        Assert.Equal(total, root.GetProperty("by_team").GetProperty("items").EnumerateArray()
             .Sum(e => e.GetProperty("points").GetDouble()), precision: 6);
-        Assert.Equal(total, root.GetProperty("by_day").EnumerateArray()
+        Assert.Equal(total, root.GetProperty("by_day").GetProperty("items").EnumerateArray()
             .Sum(e => e.GetProperty("points").GetDouble()), precision: 6);
+    }
+
+    [Fact]
+    public async Task Classificacao_Mudada_Sem_Recalcular_Historico_E_DECLARADA_Na_Dimensao_De_App()
+    {
+        var (tenantId, client, token, day) = await SeedQuedaDeIndiceAsync("IxpDiv");
+
+        // O CONTRATO EM RISCO: delta_points sai dos baldes JÁ AGREGADOS (classificação
+        // congelada no momento da agregação), enquanto a decomposição por APLICATIVO re-deriva
+        // a classificação NA LEITURA. Mexer na classificação sem recalcular o histórico deixa
+        // os dois com denominadores diferentes — e aí a soma das parcelas por app não fecha o
+        // delta do cabeçalho. Isso não pode acontecer em silêncio: a promessa do painel é
+        // justamente que as parcelas fecham.
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            """
+            DELETE FROM tenant_app_categories
+            WHERE tenant_id = @t
+              AND app_id IN (SELECT id FROM app_catalog WHERE process_name = 'ixp-zap.exe')
+            """,
+            ("t", tenantId));
+
+        using var doc = await GetJsonAsync(client, token,
+            $"/api/v1/dashboard/index-explained?from={day}&to={day}");
+        var root = doc.RootElement;
+        var porApp = root.GetProperty("by_app");
+
+        // o cabeçalho continua vindo dos agregados: −50 pontos
+        Assert.Equal(-50d, root.GetProperty("delta_points").GetDouble(), precision: 6);
+
+        // a dimensão de app declara o delta que ELA explica, e as parcelas dela fecham ESSE
+        Assert.Equal(
+            porApp.GetProperty("delta_points").GetDouble(),
+            porApp.GetProperty("items").EnumerateArray().Sum(e => e.GetProperty("points").GetDouble()),
+            precision: 6);
+
+        // e a divergência é DITA, com o caminho para resolver
+        var divergencia = porApp.GetProperty("divergence").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(divergencia), "a divergência tinha de ser declarada");
+        Assert.Contains("hist", divergencia!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Sem_Divergencia_As_Tres_Dimensoes_Declaram_O_Mesmo_Delta()
+    {
+        var (_, client, token, day) = await SeedQuedaDeIndiceAsync("IxpConv");
+
+        using var doc = await GetJsonAsync(client, token,
+            $"/api/v1/dashboard/index-explained?from={day}&to={day}");
+        var root = doc.RootElement;
+        var cabecalho = root.GetProperty("delta_points").GetDouble();
+
+        foreach (var dimensao in new[] { "by_app", "by_team", "by_day" })
+        {
+            var bloco = root.GetProperty(dimensao);
+            Assert.Equal(cabecalho, bloco.GetProperty("delta_points").GetDouble(), precision: 4);
+            Assert.Equal(JsonValueKind.Null, bloco.GetProperty("divergence").ValueKind);
+            Assert.Equal(
+                bloco.GetProperty("delta_points").GetDouble(),
+                bloco.GetProperty("items").EnumerateArray().Sum(e => e.GetProperty("points").GetDouble()),
+                precision: 6);
+        }
     }
 
     // ------------------------------------------------------------------ precedência da F5
@@ -202,7 +263,7 @@ public class IndexExplainedTests(ApiTestFixture fixture)
 
         // com o zap produtivo para a equipe, o índice fica em 100% nos dois dias: nada mudou
         Assert.Equal(0d, doc.RootElement.GetProperty("delta_points").GetDouble(), precision: 6);
-        Assert.Equal(0d, doc.RootElement.GetProperty("by_app").EnumerateArray()
+        Assert.Equal(0d, doc.RootElement.GetProperty("by_app").GetProperty("items").EnumerateArray()
             .Single(e => e.GetProperty("key").GetString() == "ixp-zap.exe")
             .GetProperty("points").GetDouble(), precision: 6);
     }
@@ -223,7 +284,7 @@ public class IndexExplainedTests(ApiTestFixture fixture)
         using var doc = await GetJsonAsync(client, token,
             $"/api/v1/dashboard/index-explained?from={day}&to={day}");
 
-        Assert.Contains(doc.RootElement.GetProperty("by_team").EnumerateArray(),
+        Assert.Contains(doc.RootElement.GetProperty("by_team").GetProperty("items").EnumerateArray(),
             e => e.GetProperty("label").GetString() == "Comercial");
     }
 
@@ -244,9 +305,9 @@ public class IndexExplainedTests(ApiTestFixture fixture)
 
         Assert.Equal(JsonValueKind.Null, root.GetProperty("delta_points").ValueKind);
         Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("unavailable").GetString()));
-        Assert.Empty(root.GetProperty("by_app").EnumerateArray());
-        Assert.Empty(root.GetProperty("by_team").EnumerateArray());
-        Assert.Empty(root.GetProperty("by_day").EnumerateArray());
+        Assert.Empty(root.GetProperty("by_app").GetProperty("items").EnumerateArray());
+        Assert.Empty(root.GetProperty("by_team").GetProperty("items").EnumerateArray());
+        Assert.Empty(root.GetProperty("by_day").GetProperty("items").EnumerateArray());
     }
 
     [Fact]
@@ -294,7 +355,7 @@ public class IndexExplainedTests(ApiTestFixture fixture)
         using var doc = await GetJsonAsync(client, token,
             $"/api/v1/dashboard/index-explained?from={day}&to={day}&limit=1");
 
-        var apps = doc.RootElement.GetProperty("by_app").EnumerateArray().ToList();
+        var apps = doc.RootElement.GetProperty("by_app").GetProperty("items").EnumerateArray().ToList();
         Assert.Single(apps);
         // a maior contribuição em módulo é a do zap, negativa
         Assert.Equal("ixp-zap.exe", apps[0].GetProperty("key").GetString());

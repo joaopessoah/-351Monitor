@@ -16,21 +16,22 @@ interface Tile {
 }
 
 /**
- * Índice e cobertura chegam PRONTOS do servidor (GET /people/{sid}/self-view,
- * fórmula única da decisão 4). Antes desta fase a conta era refeita aqui, o que
- * eram duas fórmulas para manter em sincronia — a duplicação que o self-view
- * encerrou. `undefined` enquanto a consulta não respondeu: imprime "–", como
- * qualquer ausência, nunca 0%.
+ * Índice e cobertura chegam PRONTOS do servidor, dentro do MESMO `totals` — são
+ * `GET /dashboard/summary`, calculados sobre exatamente estes baldes.
+ *
+ * POR QUE DO SUMMARY E NÃO DO SELF-VIEW: esta página navega por device_user_id e
+ * os ladrilhos ao lado ("Horas ativas", "Sem classificação") são de UMA lane. O
+ * self-view agrega a PESSOA inteira, todos os dispositivos. Misturar os dois
+ * colocaria "Sem classificação 95%" ao lado de "Cobertura 76%" — a mesma
+ * grandeza invertida — se contradizendo na mesma linha. Um escopo por linha.
+ *
+ * A conta que esta tela refazia no cliente foi apagada: uma fórmula só, no
+ * servidor. `null` imprime "–", nunca 0%.
  */
-export function PersonKpis({
-  totals,
-  productivityIndex,
-  classificationCoverage,
-}: {
-  totals: DashboardSummaryTotals;
-  productivityIndex: number | null | undefined;
-  classificationCoverage: number | null | undefined;
-}) {
+export function PersonKpis({ totals }: { totals: DashboardSummaryTotals }) {
+  const productivityIndex = totals.productivity_index;
+  const classificationCoverage = totals.classification_coverage;
+
   // Ociosidade e "sem classificação" são proporções simples (sem fórmula do
   // servidor para duplicar) - mesma regra do null: sem base, imprime "–".
   const idlePct = totals.seconds_on > 0 ? totals.seconds_idle / totals.seconds_on : null;

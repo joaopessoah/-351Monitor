@@ -206,6 +206,45 @@ public class PersonSelfViewTests(ApiTestFixture fixture)
         Assert.Equal(1, zap.GetProperty("classification").GetInt32());
     }
 
+    [Fact]
+    public async Task Summary_Da_Lane_Traz_Indice_E_Cobertura_Do_MESMO_Recorte()
+    {
+        var (_, client, token, day, deviceUserId) = await SeedPessoaAsync("SvLane");
+
+        // A REGRESSÃO QUE ISTO IMPEDE: a página da pessoa navega por device_user_id e mostra as
+        // horas de UMA lane; se o índice ao lado viesse do self-view (a pessoa inteira, todos os
+        // dispositivos), "Sem classificação 95%" e "Cobertura 76%" — a mesma grandeza invertida —
+        // apareceriam se contradizendo na mesma linha. O summary calcula sobre os baldes DELE.
+        using var doc = await GetJsonAsync(client, token,
+            $"/api/v1/dashboard/summary?from={day}&to={day}&device_user_id={deviceUserId}");
+        var totals = doc.RootElement.GetProperty("totals");
+
+        var ativo = totals.GetProperty("seconds_active").GetInt64();
+        var semClassificacao = totals.GetProperty("seconds_unclassified").GetInt64();
+        var produtivo = totals.GetProperty("seconds_work_related").GetInt64();
+        var classificado = produtivo + totals.GetProperty("seconds_neutral").GetInt64()
+                           + totals.GetProperty("seconds_not_work_related").GetInt64();
+
+        Assert.Equal((double)produtivo / classificado,
+            totals.GetProperty("productivity_index").GetDouble(), 4);
+        Assert.Equal((double)(ativo - semClassificacao) / ativo,
+            totals.GetProperty("classification_coverage").GetDouble(), 4);
+    }
+
+    [Fact]
+    public async Task Summary_Sem_Dado_Devolve_Indicadores_Null_E_Nunca_Zero()
+    {
+        var (_, client, token, _, deviceUserId) = await SeedPessoaAsync("SvLaneV");
+
+        var vazio = DateOnly.ParseExact(LocalDate(T(12, 0)), "yyyy-MM-dd").AddDays(-40).ToString("yyyy-MM-dd");
+        using var doc = await GetJsonAsync(client, token,
+            $"/api/v1/dashboard/summary?from={vazio}&to={vazio}&device_user_id={deviceUserId}");
+        var totals = doc.RootElement.GetProperty("totals");
+
+        Assert.Equal(JsonValueKind.Null, totals.GetProperty("productivity_index").ValueKind);
+        Assert.Equal(JsonValueKind.Null, totals.GetProperty("classification_coverage").ValueKind);
+    }
+
     // ------------------------------------------------------------------ ausências
 
     [Fact]

@@ -430,6 +430,14 @@ export interface DashboardSummaryTotals {
   seconds_unclassified: number;
   data_incomplete: boolean;
   device_count: number;
+  /**
+   * F9 - do SERVIDOR, pela fórmula única (decisão 4) e sobre EXATAMENTE estes baldes.
+   * Calculados no mesmo recorte da resposta, inclusive quando ela é de uma lane só: é
+   * isso que impede o índice e a composição exibidos lado a lado de falarem de escopos
+   * diferentes. `null` sem denominador, nunca 0.
+   */
+  productivity_index: number | null;
+  classification_coverage: number | null;
 }
 
 export interface DashboardSummaryResponse {
@@ -1387,6 +1395,12 @@ export interface OverviewResponse {
   previous: OverviewTotals | null;
   days: DashboardSummaryDay[];
   goals: OverviewGoals;
+  /**
+   * A janela contra a qual `previous` foi apurado (null sem compare). Existe para a
+   * comparação ser conferível - no grão mensal ela é a MESMA janela deslocada N meses,
+   * não "a mesma quantidade de dias".
+   */
+  previous_period: OverviewPeriod | null;
 }
 
 /**
@@ -1458,6 +1472,19 @@ export interface IndexContributionRow {
  * `unavailable` preenchido significa que não há variação a explicar (falta
  * denominador num dos períodos): indicadores em null e as três listas vazias.
  */
+export interface IndexExplainedDimension {
+  /**
+   * A variação que ESTA dimensão explica - é ela que as parcelas somam, sempre.
+   * Por equipe e por dia é a mesma do cabeçalho; por aplicativo pode diferir,
+   * porque a leitura reaplica a classificação vigente enquanto os baldes
+   * agregados guardam a que valia no dia.
+   */
+  delta_points: number | null;
+  /** Motivo, quando o delta desta dimensão diverge do cabeçalho. null = convergem. */
+  divergence: string | null;
+  items: IndexContributionRow[];
+}
+
 export interface IndexExplainedResponse {
   period: OverviewPeriod;
   previous_period: OverviewPeriod;
@@ -1465,9 +1492,9 @@ export interface IndexExplainedResponse {
   previous_index: number | null;
   delta_points: number | null;
   unavailable: string | null;
-  by_app: IndexContributionRow[];
-  by_team: IndexContributionRow[];
-  by_day: IndexContributionRow[];
+  by_app: IndexExplainedDimension;
+  by_team: IndexExplainedDimension;
+  by_day: IndexExplainedDimension;
 }
 
 /**

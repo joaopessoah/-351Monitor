@@ -61,7 +61,7 @@ public sealed class MonthlyRollupService(NpgsqlDataSource dataSource, ILogger<Mo
         await using var connection = await dataSource.OpenConnectionAsync(ct);
 
         var tenants = new List<Guid>();
-        await using (var command = new NpgsqlCommand("SELECT id FROM organizations", connection))
+        await using (var command = new NpgsqlCommand("SELECT id FROM organizations ORDER BY id", connection))
         await using (var reader = await command.ExecuteReaderAsync(ct))
         {
             while (await reader.ReadAsync(ct))
@@ -73,7 +73,23 @@ public sealed class MonthlyRollupService(NpgsqlDataSource dataSource, ILogger<Mo
         var processed = 0;
         foreach (var tenantId in tenants)
         {
-            processed += await RollUpTenantAsync(connection, tenantId, ct);
+            // ISOLAMENTO POR TENANT, como no DailyAggregationService: um tenant com problema não
+            // pode parar a varredura dos demais. Sem isto, um statement timeout ao recompor um
+            // mês grande derrubaria o ciclo inteiro, e como a ordem dos tenants é estável a mesma
+            // falha se repetiria de hora em hora — os agregados mensais de todos os tenants
+            // depois dele congelariam indefinidamente, sem nada apontando para eles.
+            try
+            {
+                processed += await RollUpTenantAsync(connection, tenantId, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw; // shutdown do host: pare de verdade
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Rollup mensal falhou no tenant {TenantId}; os demais seguem.", tenantId);
+            }
         }
 
         if (processed > 0)

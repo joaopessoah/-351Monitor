@@ -177,10 +177,21 @@ public class DashboardController(
                 r.SecondsWorkRelated, r.SecondsNeutral, r.SecondsNotWorkRelated, r.SecondsUnclassified,
                 r.DataIncomplete, r.DeviceCount))
             .ToList();
+        // FÓRMULA ÚNICA (decisão 4) sobre os baldes DESTE recorte — inclusive quando o recorte é
+        // uma lane só. É o que faz o índice e a composição exibidos lado a lado falarem do mesmo
+        // escopo, e o que tirou a conta duplicada de dentro do portal.
+        var summaryClassified = totalsRow.SecondsWorkRelated + totalsRow.SecondsNeutral
+                                + totalsRow.SecondsNotWorkRelated;
         var totals = new DashboardSummaryTotalsResponse(
             totalsRow.SecondsActive, totalsRow.SecondsIdle, totalsRow.SecondsLocked, totalsRow.SecondsOn,
             totalsRow.SecondsWorkRelated, totalsRow.SecondsNeutral, totalsRow.SecondsNotWorkRelated,
-            totalsRow.SecondsUnclassified, totalsRow.DataIncomplete, totalsRow.DeviceCount);
+            totalsRow.SecondsUnclassified, totalsRow.DataIncomplete, totalsRow.DeviceCount,
+            summaryClassified > 0
+                ? Math.Round((double)totalsRow.SecondsWorkRelated / summaryClassified, 4)
+                : null,
+            totalsRow.SecondsActive > 0
+                ? Math.Round((double)(totalsRow.SecondsActive - totalsRow.SecondsUnclassified) / totalsRow.SecondsActive, 4)
+                : null);
 
         // DoD 11.3: COM filtro individual é visualização de dado PESSOAL → audit view_report
         // (padrão do view_timeline). SEM filtro é agregado de equipe — decisão documentada:
@@ -369,13 +380,14 @@ public class DashboardController(
         var totals = await OverviewTotalsAsync(connection, tenantId, fromDay, toDay, normalizedTag, monthly, ct);
 
         OverviewTotalsResponse? previous = null;
+        OverviewPeriodResponse? previousPeriod = null;
         if (compare)
         {
-            // período imediatamente anterior, de mesma duração (semana vs semana, mês vs mês)
-            var length = toDay.DayNumber - fromDay.DayNumber + 1;
-            var prevTo = fromDay.AddDays(-1);
-            var prevFrom = prevTo.AddDays(-(length - 1));
+            var (prevFrom, prevTo) = PreviousWindow(fromDay, toDay, monthly);
             previous = await OverviewTotalsAsync(connection, tenantId, prevFrom, prevTo, normalizedTag, monthly, ct);
+            previousPeriod = new OverviewPeriodResponse(
+                prevFrom.ToString("yyyy-MM-dd"), prevTo.ToString("yyyy-MM-dd"),
+                prevTo.DayNumber - prevFrom.DayNumber + 1);
         }
 
         var goals = await connection.QuerySingleAsync<GoalsRow>(new CommandDefinition(
@@ -390,7 +402,35 @@ public class DashboardController(
                 fromDay.ToString("yyyy-MM-dd"), toDay.ToString("yyyy-MM-dd"),
                 toDay.DayNumber - fromDay.DayNumber + 1),
             totals, previous, days,
-            new OverviewGoalsResponse(goals.Weekly, goals.Pct)));
+            new OverviewGoalsResponse(goals.Weekly, goals.Pct),
+            previousPeriod));
+    }
+
+    /// <summary>
+    /// A janela ANTERIOR contra a qual o período é comparado.
+    ///
+    /// GRÃO DIÁRIO: mesma duração em dias, encostada no início do período — a régua de sempre.
+    ///
+    /// GRÃO MENSAL: a MESMA janela deslocada N meses para trás, e não "a mesma quantidade de
+    /// dias". Deslocar por dias erra feio aqui: o SQL mensal expande o recorte para o MÊS
+    /// TOCADO, então um `prevFrom` que cai no dia 23 traz o mês inteiro junto. Com "3 meses" em
+    /// 07/09, o atual teria 69 dias de dado (jul + ago + set parcial) contra 91 do anterior
+    /// (abr + mai + jun inteiros) — uma queda de 24% inventada pela régua, com a operação
+    /// inalterada. Deslocando por mês, o mês parcial da ponta é parcial dos DOIS lados.
+    ///
+    /// AddMonths cuida do fim de mês curto sozinho: 31/03 − 1 mês = 28/02, que é o dia certo.
+    /// </summary>
+    private static (DateOnly From, DateOnly To) PreviousWindow(DateOnly from, DateOnly to, bool monthly)
+    {
+        if (monthly)
+        {
+            var months = ((to.Year - from.Year) * 12) + to.Month - from.Month + 1;
+            return (from.AddMonths(-months), to.AddMonths(-months));
+        }
+
+        var length = to.DayNumber - from.DayNumber + 1;
+        var prevTo = from.AddDays(-1);
+        return (prevTo.AddDays(-(length - 1)), prevTo);
     }
 
     /// <summary>
