@@ -84,6 +84,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $cc[] = $n;
                 }
             }
+            $rodapeOptout = trim(preg_replace('/\r\n|\r/', "\n", (string) ($_POST['auto_optout_texto'] ?? '')));
+            if ($rodapeOptout !== '') {
+                if (!str_contains($rodapeOptout, '{link}')) {
+                    throw new InvalidArgumentException(
+                        'O rodapé de descadastro precisa conter {link}, senão a pessoa não tem como sair. '
+                        . 'Para tirar o rodapé do corpo, deixe o campo inteiro vazio.');
+                }
+                if (str_contains(str_replace('{link}', '', $rodapeOptout), '{')) {
+                    throw new InvalidArgumentException('O rodapé só aceita a chave {link}. Remova as outras.');
+                }
+            }
             $etapas = [];
             foreach (explode(',', (string) ($_POST['auto_etapas'] ?? '')) as $p) {
                 $n = (int) trim($p);
@@ -128,6 +139,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'auto_cc_avisos'         => implode(',', $cc),
                 'auto_etapas'            => implode(',', $etapas),
                 'auto_inicio'            => $inicio,
+                'auto_optout_texto'      => $rodapeOptout,
             ]);
             // A mensagem diz o que FOI GRAVADO, não só que gravou. Se o valor
             // na tela divergir daqui, o problema é de leitura, não de escrita —
@@ -520,6 +532,22 @@ page_header('Configurações', 'settings.php', $user);
       <div class="field">
         <label for="cadencia_linkedin_dias">LinkedIn: dias úteis após o 1º e-mail</label>
         <input id="cadencia_linkedin_dias" name="cadencia_linkedin_dias" type="number" min="1" max="30" required value="<?= setting_int('cadencia_linkedin_dias') ?>">
+      </div>
+    </div>
+
+    <h3 class="list-title">Rodapé de descadastro</h3>
+    <div class="form-grid">
+      <div class="field field-span">
+        <label for="auto_optout_texto">Texto colado no fim de todo e-mail da cadência
+          <span class="muted">— <code>{link}</code> vira o endereço de cancelamento daquele contato</span></label>
+        <textarea id="auto_optout_texto" name="auto_optout_texto" rows="3"><?= esc(setting_str('auto_optout_texto')) ?></textarea>
+        <p class="muted small" style="margin: 4px 0 0">
+          O e-mail é texto puro, então não existe palavra com hiperlink: o endereço aparece inteiro.
+          Em compensação, todo e-mail leva o cabeçalho <code>List-Unsubscribe</code>, e é ele que faz o
+          Gmail e o Outlook mostrarem o botão "cancelar inscrição" ao lado do remetente.
+          Deixando este campo <strong>vazio</strong>, o corpo fica sem link nenhum e sobra só esse botão —
+          nesse caso mantenha um "responda SAIR" dentro do próprio modelo.
+        </p>
       </div>
     </div>
 

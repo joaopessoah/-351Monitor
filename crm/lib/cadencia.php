@@ -142,9 +142,15 @@ function optout_segredo(): string
     return $s !== '' ? $s : hash('sha256', (string) cfg('migrate_key') . '|optout');
 }
 
+/**
+ * 16 hex = 64 bits de HMAC truncado. Adivinhar exige 2^64 tentativas contra um
+ * endpoint limitado a 20 por hora e por IP; o que se ganha em troca e um link
+ * visivelmente mais curto no corpo do e-mail, que e texto puro e nao esconde
+ * URL atras de palavra nenhuma.
+ */
 function optout_token(int $leadId, ?int $contactId): string
 {
-    return substr(hash_hmac('sha256', $leadId . ':' . (int) $contactId, optout_segredo()), 0, 32);
+    return substr(hash_hmac('sha256', $leadId . ':' . (int) $contactId, optout_segredo()), 0, 16);
 }
 
 function optout_confere(int $leadId, ?int $contactId, string $token): bool
@@ -411,7 +417,10 @@ function cadencia_ultimo_enviado(int $leadId): ?array
 function cadencia_auto_render(int $seq, array $lead, ?array $contato, ?string $meuNome, ?string $linhaPessoal, string $optoutUrl): array
 {
     $m = cadencia_email_modelo($seq, $lead, $contato, $meuNome, $linhaPessoal);
-    $m['corpo'] = rtrim($m['corpo']) . "\n\n" . str_replace('{link}', $optoutUrl, CADENCIA_OPTOUT_RODAPE);
+    $rodape = trim(setting_str('auto_optout_texto'));
+    if ($rodape !== '') {
+        $m['corpo'] = rtrim($m['corpo']) . "\n\n" . str_replace('{link}', $optoutUrl, $rodape);
+    }
     return $m;
 }
 

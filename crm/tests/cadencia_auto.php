@@ -158,10 +158,17 @@ check(str_contains($render['corpo'], 'https://ex.com/optout?t=1'), 'o link de de
 check(str_contains($render['corpo'], 'SAIR'), 'o rodape de opt-out por resposta continua');
 check(!str_contains($render['corpo'], '{link}'), 'a chave {link} foi substituida');
 check(!str_contains($render['assunto'] . $render['corpo'], '{'), 'nada de chave sobrando no render');
+// O rodape default tem que caber em duas linhas: e o que o destinatario ve
+// depois da assinatura, e um paragrafo ali parece formulario, nao e-mail.
+check(substr_count(setting_str('auto_optout_texto'), "\n") <= 1,
+    'o rodape default passou de duas linhas');
+check(str_contains(setting_str('auto_optout_texto'), '{link}'),
+    'o rodape default precisa ter {link}');
 
 echo "== token de descadastro ==\n";
 $t = optout_token(42, 7);
-check(strlen($t) === 32, 'token com 32 chars, veio ' . strlen($t));
+check(strlen($t) === 16, 'token com 16 chars (link curto no corpo), veio ' . strlen($t));
+check(ctype_xdigit($t), 'token so com hexadecimal');
 check(optout_confere(42, 7, $t), 'o token confere para o par certo');
 check(!optout_confere(42, 8, $t), 'token de outro contato nao confere');
 check(!optout_confere(43, 7, $t), 'token de outro lead nao confere');

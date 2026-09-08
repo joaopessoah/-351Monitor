@@ -61,6 +61,11 @@ const SETTING_STR_DEFAULTS = [
     'auto_etapas'       => '1,2,3,4,5',
     'auto_inicio'       => '',
     'auto_cc_avisos'    => '',
+    // Rodape de descadastro, colado no fim de todo e-mail da cadencia.
+    // {link} e a unica chave. Vazio = nenhum rodape no corpo (o cabecalho
+    // List-Unsubscribe continua indo, e o Gmail/Outlook mostram o botao
+    // proprio deles) — mas ai o "responda SAIR" tem que estar no modelo.
+    'auto_optout_texto' => "Não quer mais receber? Responda SAIR, ou cancele em um clique:\n{link}",
 ];
 
 /** Quantos e-mails a cadência acompanha (1º ao 5º). */
