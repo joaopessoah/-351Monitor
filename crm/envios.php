@@ -103,6 +103,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash_set($st->rowCount() === 1 ? 'ok' : 'erro', $st->rowCount() === 1
                 ? 'Devolvido para a fila — vai sair na proxima batida do cron.'
                 : 'Este envio nao esta travado.');
+        } elseif ($acao === 'regerar') {
+            // O texto do outbox e congelado no momento em que o e-mail entra
+            // na fila. Depois de mexer em modelo, assinatura ou rodape, o que
+            // esta agendado continua com o texto velho — este botao refaz.
+            $out = row('SELECT lead_id FROM email_outbox WHERE id = ?', [$id]);
+            if ($out === null) {
+                throw new InvalidArgumentException('Envio nao encontrado.');
+            }
+            $novo = cadencia_auto_planejar((int) $out['lead_id']);
+            flash_set($novo !== null ? 'ok' : 'erro', $novo !== null
+                ? 'Texto refeito com os modelos e a assinatura de agora, para ' . fmt_dt($novo['scheduled_for']) . '.'
+                : 'Nao deu para refazer: confira se a cadencia do lead ainda esta ativa.');
         } elseif ($acao === 'tratar') {
             inbound_tratar($id, $userId);
             flash_set('ok', 'Retorno marcado como tratado.');
@@ -202,6 +214,13 @@ function linha_outbox(array $o, bool $editando): void
             </form>
           <?php endif; ?>
           <a class="btn btn-ghost btn-sm" href="envios.php?editar=<?= (int) $o['id'] ?>#e<?= (int) $o['id'] ?>">Ver texto</a>
+          <form method="post" class="inline-form"
+                data-confirm="Refazer o texto com os modelos e a assinatura de agora? O texto atual e substituido.">
+            <?= csrf_field() ?>
+            <input type="hidden" name="acao" value="regerar">
+            <input type="hidden" name="id" value="<?= (int) $o['id'] ?>">
+            <button class="btn btn-ghost btn-sm" type="submit">Refazer texto</button>
+          </form>
           <form method="post" class="inline-form" data-confirm="Enviar este e-mail agora, sem esperar o horario?">
             <?= csrf_field() ?>
             <input type="hidden" name="acao" value="enviar_agora">

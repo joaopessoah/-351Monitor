@@ -419,7 +419,19 @@ function cadencia_auto_render(int $seq, array $lead, ?array $contato, ?string $m
     $m = cadencia_email_modelo($seq, $lead, $contato, $meuNome, $linhaPessoal);
     $assinatura = trim(setting_str('auto_assinatura'));
     if ($assinatura !== '') {
-        $m['corpo'] = rtrim($m['corpo']) . "\n\n" . $assinatura;
+        // O modelo pode AINDA trazer a assinatura padrao antiga colada no fim
+        // (era assim que ela vivia antes de virar configuracao). Sem tirar,
+        // o e-mail sai com duas assinaturas e dois "responda SAIR" — e nao da
+        // para depender de alguem lembrar de limpar os cinco modelos na mao.
+        // So sai texto conhecido palavra por palavra, ja com o {meu_nome}
+        // substituido, que e como ele aparece no corpo renderizado.
+        $padrao = str_replace('{meu_nome}', (string) $meuNome, CADENCIA_EMAIL_ASSINATURA);
+        $corpo = str_replace($padrao, '', $m['corpo']);
+        $corpo = (string) preg_replace(
+            '/^\s*Se n[ãa]o quiser receber meus e-mails, responda SAIR que removo seu contato\.\s*$/miu',
+            '', $corpo);
+        $corpo = rtrim((string) preg_replace("/\n{3,}/", "\n\n", $corpo));
+        $m['corpo'] = $corpo . "\n\n" . $assinatura;
     }
     $rodape = trim(setting_str('auto_optout_texto'));
     if ($rodape !== '') {

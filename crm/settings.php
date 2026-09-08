@@ -169,6 +169,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             error_log('limpar modelos: ' . $e->getMessage());
             $error = 'Não deu para limpar os modelos.';
         }
+    } elseif ($action === 'assinatura_padrao') {
+        // Salvar o campo vazio NAO restaura o padrao: vazio e um valor gravado
+        // como qualquer outro. Este botao escreve o padrao do codigo de volta.
+        try {
+            q('DELETE FROM app_settings WHERE k = ?', ['auto_assinatura_html']);
+            settings_all(true);
+            flash_set('ok', 'Assinatura visual restaurada para a versão atual, com o logo hospedado.');
+            redirect('settings.php#cadencia-auto');
+        } catch (Throwable $e) {
+            error_log('assinatura padrao: ' . $e->getMessage());
+            $error = 'Não deu para restaurar a assinatura visual.';
+        }
     } elseif ($action === 'assinatura_preset') {
         // Preenche de uma vez os dois campos que a pessoa precisa preencher
         // para ver a versão visual, em vez de pedir para digitar de novo.
@@ -489,6 +501,28 @@ page_header('Configurações', 'settings.php', $user);
       <?= csrf_field() ?>
       <input type="hidden" name="action" value="limpar_modelos">
       <button class="btn btn-primary btn-sm" type="submit">Tirar a assinatura de dentro dos modelos</button>
+    </form>
+  <?php endif; ?>
+
+  <?php
+    // A assinatura visual gravada ficou para tras do padrao do codigo? Isso
+    // acontece porque salvar o formulario persiste o que estava na tela, e a
+    // partir dai o padrao novo nunca mais aparece sozinho.
+    $htmlGravado = trim(setting_str('auto_assinatura_html'));
+    $htmlPadrao  = trim(SETTING_STR_DEFAULTS['auto_assinatura_html']);
+  ?>
+  <?php if ($htmlGravado !== '' && $htmlGravado !== $htmlPadrao): ?>
+    <div class="flash flash-aviso">
+      <strong>A assinatura visual gravada é diferente da atual.</strong>
+      Se o logo estiver aparecendo como texto em vez da imagem, é isto: a versão
+      antiga ficou salva quando você salvou o formulário. Salvar o campo vazio não
+      resolve, porque vazio também é um valor gravado.
+    </div>
+    <form method="post" class="inline-form" style="margin-bottom: 14px"
+          data-confirm="Restaurar a assinatura visual padrão? O conteúdo atual do campo será perdido.">
+      <?= csrf_field() ?>
+      <input type="hidden" name="action" value="assinatura_padrao">
+      <button class="btn btn-primary btn-sm" type="submit">Restaurar a assinatura visual com o logo</button>
     </form>
   <?php endif; ?>
 

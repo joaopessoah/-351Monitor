@@ -152,6 +152,22 @@ check(!str_contains($semLinha['corpo'], "\n\n\n"), 'sem linha pessoal nao pode s
 check(str_contains($semLinha['corpo'], 'Oi, Maria,'), 'a saudacao continua inteira: '
     . mb_substr($semLinha['corpo'], 0, 24));
 
+echo "== render nao pode deixar duas assinaturas ==\n";
+// O modelo padrao traz a assinatura antiga colada no fim. Com auto_assinatura
+// configurada, o e-mail sairia com duas assinaturas e dois "responda SAIR".
+$corpoPadrao = setting_str('cadencia_email_corpo_1');
+check(str_contains($corpoPadrao, 'responda SAIR'),
+    'pre-condicao: o modelo padrao ainda tem o bloco antigo');
+$padraoSubstituido = str_replace('{meu_nome}', 'Bruna', CADENCIA_EMAIL_ASSINATURA);
+$corpoRenderizado = cadencia_email_modelo(1, $leadFull, $contato, 'Bruna', null)['corpo'];
+check(str_contains($corpoRenderizado, $padraoSubstituido),
+    'pre-condicao: o corpo renderizado carrega a assinatura padrao');
+$semDupla = str_replace($padraoSubstituido, '', $corpoRenderizado);
+check(!str_contains($semDupla, 'responda SAIR'),
+    'tirar o bloco conhecido resolve o SAIR duplicado');
+check(str_contains($semDupla, 'demonstração de 10 minutos'),
+    'e o texto do modelo continua inteiro depois de tirar o bloco');
+
 echo "== render com rodape de descadastro ==\n";
 $render = cadencia_auto_render(1, $leadFull, $contato, 'Bruna', null, 'https://ex.com/optout?t=1');
 check(str_contains($render['corpo'], 'https://ex.com/optout?t=1'), 'o link de descadastro entrou');
