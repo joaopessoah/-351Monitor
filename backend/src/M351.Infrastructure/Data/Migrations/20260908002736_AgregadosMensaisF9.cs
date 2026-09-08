@@ -53,7 +53,16 @@ namespace M351.Infrastructure.Data.Migrations
                 );
 
                 -- o rollup pergunta "que meses mudaram desde a marca?" por (tenant, computed_at);
-                -- sem este índice a pergunta é uma varredura sequencial da diária inteira
+                -- sem este índice a pergunta é uma varredura sequencial da diária inteira.
+                --
+                -- CRIADO SOBRE TABELA POPULADA, e não CONCURRENTLY: o EF roda a migration
+                -- dentro de uma transação, e CREATE INDEX CONCURRENTLY não pode viver numa.
+                -- O custo é um lock de escrita na daily durante a construção — segundos, na
+                -- ordem de grandeza real desta tabela (devices × lanes × dias: ~1,8 M de
+                -- linhas para 2.500 devices em 24 meses). A janela de deploy já para os
+                -- containers, então nenhuma agregação está escrevendo nesse instante. Se um
+                -- dia a frota crescer a ponto de isso doer, o caminho é uma migration vazia
+                -- com o CREATE INDEX CONCURRENTLY fora de transação, aplicado à mão.
                 CREATE INDEX ix_dds_tenant_computed
                   ON daily_device_summaries (tenant_id, computed_at);
                 """);
