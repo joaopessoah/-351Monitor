@@ -120,7 +120,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 $envio = cadencia_auto_tick();
                 $caixa = inbound_processar();
-                state_set('cron_ultimo', date('Y-m-d H:i:s'));
+                // Chave PROPRIA, separada da do cron. Se o clique manual
+                // gravasse 'cron_ultimo', o painel diria que o cron acabou de
+                // rodar mesmo sem cron nenhum configurado — e esse campo existe
+                // exatamente para avisar quando o cron morre.
+                state_set('tick_manual', date('Y-m-d H:i:s'));
             } finally {
                 scalar("SELECT RELEASE_LOCK('m351_cadencia_tick')");
             }
@@ -303,8 +307,15 @@ page_header('Envios', 'envios.php', $user);
     <?php endif; ?>
     · ultima execucao do cron:
     <strong><?= $painel['ultimo_tick'] !== '' ? esc(fmt_dt($painel['ultimo_tick'])) : 'nunca' ?></strong>
-    <?php if ($painel['ultimo_tick'] !== '' && strtotime($painel['ultimo_tick']) < time() - 3600): ?>
+    <?php if ($painel['ultimo_tick'] === ''): ?>
+      <span class="badge badge-demo_agendada" title="Sem cron, o motor so anda quando alguem clica em Rodar agora">
+        o cron ainda nao foi configurado
+      </span>
+    <?php elseif (strtotime($painel['ultimo_tick']) < time() - 3600): ?>
       <span class="badge badge-dup">o cron parou de rodar</span>
+    <?php endif; ?>
+    <?php if ($painel['ultimo_manual'] !== ''): ?>
+      · ultimo "Rodar agora": <?= esc(fmt_dt($painel['ultimo_manual'])) ?>
     <?php endif; ?>
     · <a href="settings.php#cadencia-auto">configurar</a>
   </p>

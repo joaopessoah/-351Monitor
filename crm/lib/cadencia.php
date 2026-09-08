@@ -984,8 +984,8 @@ function cadencias_dos_leads(array $leadIds): array
 function cadencia_painel(): array
 {
     $p = ['aguardando' => 0, 'hoje' => 0, 'enviados_hoje' => 0, 'falhas' => 0,
-        'retornos' => 0, 'teto' => 0, 'ultimo_tick' => '', 'ligada' => false,
-        'modo' => 'aprovacao', 'por_caixa' => []];
+        'retornos' => 0, 'teto' => 0, 'ultimo_tick' => '', 'ultimo_manual' => '',
+        'ligada' => false, 'modo' => 'aprovacao', 'por_caixa' => []];
     try {
         $p['aguardando']    = (int) scalar("SELECT COUNT(*) FROM email_outbox WHERE status = 'aguardando'");
         $p['hoje']          = (int) scalar("SELECT COUNT(*) FROM email_outbox WHERE status = 'agendado' AND DATE(scheduled_for) = CURDATE()");
@@ -1002,6 +1002,7 @@ function cadencia_painel(): array
         $p['ligada']        = setting_bool('auto_ligada');
         $p['modo']          = setting_str('auto_modo');
         $p['ultimo_tick']   = state_get('cron_ultimo');
+        $p['ultimo_manual'] = state_get('tick_manual');
     } catch (Throwable $e) {
         // migration 012 ainda nao aplicada
     }

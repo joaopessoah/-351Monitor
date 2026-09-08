@@ -102,7 +102,10 @@ page_header('Dashboard', 'index.php', $user);
     <?php if ($cadPainel['ultimo_tick'] !== '' && strtotime($cadPainel['ultimo_tick']) < time() - 3600): ?>
       <span class="badge badge-dup">parou de rodar — confira o cron no hPanel</span>
     <?php elseif ($cadPainel['ultimo_tick'] === ''): ?>
-      <span class="badge badge-demo_agendada">o cron ainda não rodou nenhuma vez</span>
+      <span class="badge badge-demo_agendada">o cron ainda não foi configurado no hPanel</span>
+    <?php endif; ?>
+    <?php if ($cadPainel['ultimo_manual'] !== ''): ?>
+      <span class="muted">· último “Rodar agora”: <?= esc(fmt_dt($cadPainel['ultimo_manual'])) ?></span>
     <?php endif; ?>
   </p>
 </div>
