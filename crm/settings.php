@@ -65,9 +65,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 return $n;
             };
-            $sandboxPara = norm_email($_POST['auto_sandbox_para'] ?? '');
+            // Colar de outra tela costuma trazer espaco fino, quebra de linha ou
+            // caractere invisivel junto. Nada disso e culpa de quem digitou.
+            $sandboxBruto = preg_replace('/[\s\x{200B}-\x{200D}\x{FEFF}]+/u', '',
+                (string) ($_POST['auto_sandbox_para'] ?? ''));
+            $sandboxPara = norm_email($sandboxBruto);
             if ($sandboxPara === false) {
-                throw new InvalidArgumentException('E-mail do sandbox inválido.');
+                throw new InvalidArgumentException(
+                    'E-mail do sandbox inválido: "' . mb_substr($sandboxBruto, 0, 60) . '".');
             }
             $cc = [];
             foreach (explode(',', (string) ($_POST['auto_cc_avisos'] ?? '')) as $e) {
@@ -426,7 +431,13 @@ page_header('Configurações', 'settings.php', $user);
       <div class="field">
         <label for="auto_sandbox_para">E-mail do sandbox
           <span class="muted">— enquanto o ensaio estiver ligado, <strong>todo</strong> e-mail da cadência vai para cá</span></label>
-        <input id="auto_sandbox_para" name="auto_sandbox_para" type="email" maxlength="190"
+        <!-- type="text", nao "email", de proposito: com type="email" o navegador
+             recusa o envio do formulario inteiro por conta propria, com um balao
+             que pode passar despercebido num formulario longo, e o usuario ve
+             "nao salvou" sem nenhuma explicacao. A validacao do servidor logo
+             abaixo diz exatamente o que esta errado, em vermelho, no topo. -->
+        <input id="auto_sandbox_para" name="auto_sandbox_para" type="text" inputmode="email"
+               maxlength="190" autocomplete="off" spellcheck="false"
                placeholder="vazio = vai para a própria caixa remetente"
                value="<?= esc(setting_str('auto_sandbox_para')) ?>">
         <?php
