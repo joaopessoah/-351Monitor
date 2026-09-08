@@ -50,6 +50,9 @@ builder.Services.AddSingleton<IntervalizationService>(sp => new IntervalizationS
 builder.Services.AddSingleton<DailyAggregationService>(sp => new DailyAggregationService(
     sp.GetRequiredService<NpgsqlDataSource>(),
     sp.GetRequiredService<ILogger<DailyAggregationService>>()));
+builder.Services.AddSingleton<MonthlyRollupService>(sp => new MonthlyRollupService(
+    sp.GetRequiredService<NpgsqlDataSource>(),
+    sp.GetRequiredService<ILogger<MonthlyRollupService>>()));
 
 // Licença do QuestPDF (F6, kind resumo_pdf): Community, gratuita para faturamento anual
 // abaixo de US$ 1 M. Precisa ser declarada em CÓDIGO antes de qualquer render; fica aqui,
@@ -155,6 +158,17 @@ builder.Services.AddQuartz(quartz =>
         .WithIdentity("daily-aggregation-15min")
         .StartNow()
         .WithSimpleSchedule(schedule => schedule.WithIntervalInMinutes(15).RepeatForever()));
+
+    // F9: rollup mensal de hora em hora. Cadência folgada de propósito — o mensal não alimenta
+    // tela de tempo real, ele existe para trimestre e ano, e a marca-d'água faz o ciclo sem
+    // novidade custar duas consultas.
+    var monthlyRollupKey = new JobKey("monthly-rollup");
+    quartz.AddJob<MonthlyRollupJob>(options => options.WithIdentity(monthlyRollupKey));
+    quartz.AddTrigger(trigger => trigger
+        .ForJob(monthlyRollupKey)
+        .WithIdentity("monthly-rollup-hourly")
+        .StartNow()
+        .WithSimpleSchedule(schedule => schedule.WithIntervalInHours(1).RepeatForever()));
 
     var exportKey = new JobKey("export");
     quartz.AddJob<ExportJob>(options => options.WithIdentity(exportKey));

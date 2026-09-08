@@ -65,6 +65,11 @@ public sealed class RetentionPurgeService(NpgsqlDataSource dataSource, ILogger<R
             var appUsageDeleted = await DeleteAsync(conn, tx, "daily_app_usage", cutoff, ct);
             // F6: hourly_activity e um agregado diario como os outros dois (mesma retencao N12)
             var hourlyDeleted = await DeleteAsync(conn, tx, "hourly_activity", cutoff, ct);
+            // F9: o agregado MENSAL segue a MESMA retencao dos diarios, e nao uma mais longa. A
+            // pagina publica de transparencia promete "Agregados: 24 meses" (RetencoesPublic);
+            // um mensal sobrevivente ao corte transformaria a promessa em mentira. A coluna de
+            // data e month_start, dai o parametro.
+            var monthlyDeleted = await DeleteAsync(conn, tx, "monthly_summaries", cutoff, ct, "month_start");
             // F6: alerta de gestao JA RESOLVIDO e historico, e segue a mesma retencao. O alerta
             // VIVO (resolved_at NULL) nunca e purgado, por mais antigo que seja o first_seen_at:
             // enquanto a condicao persiste, a linha e estado corrente, nao historico.
@@ -72,6 +77,7 @@ public sealed class RetentionPurgeService(NpgsqlDataSource dataSource, ILogger<R
             detail["daily_device_summaries_deleted"] = summariesDeleted;
             detail["daily_app_usage_deleted"] = appUsageDeleted;
             detail["hourly_activity_deleted"] = hourlyDeleted;
+            detail["monthly_summaries_deleted"] = monthlyDeleted;
             detail["management_alerts_deleted"] = alertsDeleted;
             detail["cutoff"] = cutoff.ToString("yyyy-MM-dd");
 
@@ -100,11 +106,17 @@ public sealed class RetentionPurgeService(NpgsqlDataSource dataSource, ILogger<R
         }
     }
 
+    /// <summary>
+    /// DELETE por data alem do corte. dateColumn e sempre um literal do proprio codigo (nunca
+    /// entrada de usuario), entao a interpolacao no SQL nao abre injecao: o mensal so difere dos
+    /// diarios por chamar a coluna de month_start em vez de summary_date.
+    /// </summary>
     private static async Task<int> DeleteAsync(
-        NpgsqlConnection conn, NpgsqlTransaction tx, string table, DateOnly cutoff, CancellationToken ct)
+        NpgsqlConnection conn, NpgsqlTransaction tx, string table, DateOnly cutoff, CancellationToken ct,
+        string dateColumn = "summary_date")
     {
         await using var command = new NpgsqlCommand(
-            $"DELETE FROM {table} WHERE summary_date < @cutoff", conn, tx);
+            $"DELETE FROM {table} WHERE {dateColumn} < @cutoff", conn, tx);
         command.Parameters.AddWithValue("cutoff", cutoff);
         return await command.ExecuteNonQueryAsync(ct);
     }
