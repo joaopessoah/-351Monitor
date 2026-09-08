@@ -817,9 +817,20 @@ function cadencia_enviar_linha(array $out): array
     }
 
     // Sucesso: registra a interacao pela mesma porta que a tela usa.
+    //
+    // Em sandbox a timeline PRECISA dizer isso. Escrever "enviado para
+    // maria@alfa.com.br" quando o e-mail foi para a nossa propria caixa deixa
+    // no historico do lead uma mentira que ninguem descobre depois: daqui a um
+    // mes, quem abrir a ficha vai achar que a pessoa foi abordada e nao foi.
     $seq = (int) $out['seq'];
-    $resumo = (CADENCIA_EMAIL_LABELS[$seq] ?? ('E-mail ' . $seq))
-        . ' enviado automaticamente para ' . $paraReal . '. Assunto: ' . $out['subject'];
+    $emSandbox = $para !== $paraReal;
+    $resumo = ($emSandbox ? '[SANDBOX] ' : '')
+        . (CADENCIA_EMAIL_LABELS[$seq] ?? ('E-mail ' . $seq))
+        . ' enviado automaticamente para '
+        . ($emSandbox
+            ? $para . ' — o lead NAO recebeu nada (destino real seria ' . $paraReal . ')'
+            : $paraReal)
+        . '. Assunto: ' . $out['subject'];
     $interactionId = null;
     try {
         $interactionId = interaction_add($leadId, 'email', $resumo, date('Y-m-d H:i:s'),
