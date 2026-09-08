@@ -173,23 +173,74 @@ levar horas numa frota grande.
 
 ---
 
-## COMECE POR AQUI numa sessão nova (07/09/2026, fim do dia)
+## Estado em 08/09/2026 — os três itens do estudo estão FEITOS
 
-As oito fases estão entregues e implantadas. Faltam **três itens do estudo**, confirmados
-por leitura de código, em ordem de valor:
+Os três itens que a sessão anterior deixou na fila foram implementados, testados e commitados
+em `main`. **524 testes de integração verdes**; portal com typecheck e build limpos.
 
-1. **Índice explicável** — era o diferencial nº 1 do estudo e nenhum dos 26 concorrentes tem.
-   Falta a decomposição do "por que o índice mudou" por aplicativo, equipe e dia, do tipo
-   "menos 4 pontos: mais 6 h em WhatsApp na equipe Comercial na terça". O que existe é o
-   cartão "Resumo do período" com três frases, uma versão reduzida. Precisa de endpoint que
-   compare dois períodos por app e por equipe e devolva as maiores contribuições, com sinal.
-2. **Transparência como produto, metade que falta** — a anotação e a contestação existem
-   (`person_notes`), mas `portal/src/pages/TransparenciaPage.tsx` **não mostra ao colaborador
-   os próprios números** (zero métrica no arquivo hoje): só a política de coleta. O digest
-   pessoal por e-mail cobre em parte. Falta a visão dele, no produto, pelo link tokenizado
-   `/t/{token}` que já existe.
-3. **Agregados mensais** — não existem (`grep` por `monthly_summar`/`rollup` volta vazio). O
-   teto de 92 dias continua valendo, então trimestre e ano são impossíveis. O estudo lista
-   isso como pré-requisito para prometer essas janelas.
+| Item do estudo | O que entrou |
+|---|---|
+| **1. Índice explicável** | `GET /dashboard/index-explained` decompõe a variação do índice por aplicativo, equipe e dia com uma identidade **aditiva exata** — as parcelas somam a variação total, sem fatia "outros". Painel "Por que o índice mudou" na Visão Geral, com barras divergentes e a soma no rodapé. |
+| **2. Transparência (visão do colaborador)** | `GET /people/{sid}/self-view` e o bloco "O que mostramos a esta pessoa" na página da pessoa. `resumo_pdf` ganhou `params.windows_sid` e virou também a variante pessoal. **Nenhum acesso novo foi criado para o colaborador** (decisão 10, ver abaixo). |
+| **3. Agregados mensais** | Tabela `monthly_summaries` + marca-d'água em `monthly_rollup_state`, job de hora em hora no worker, purga junto com a diária aos 24 meses, `?grain=month` no `/dashboard/overview` com teto de 24 meses e os presets "3 meses" e "12 meses" na Visão Geral. |
 
-Nada disso precisa de decisão do dono: as nove decisões da seção 7 do spec já cobrem tudo.
+### DECISÃO 10 do dono (08/09/2026): o colaborador não é usuário do painel
+
+Perguntado como o colaborador veria os próprios números, o dono respondeu: **"eu quero o
+colaborador no painel! só não quero que crie nenhum acesso para colaborador"**. Ou seja, ele é
+ASSUNTO do painel, nunca usuário — sem login, token pessoal, magic link ou rota pública com dado
+dele. Está registrada na **seção 7.2 do spec** e emenda a decisão 6.
+
+Consequência prática, para quem retomar: **não proponha credencial nem rota pública de dado
+pessoal neste repo.** `PublicTransparencyController` e `/t/{token}` continuam **só com a política
+de coleta**, e o comentário do controller que exclui dado pessoal está certo — o `transparency_token`
+é do DISPOSITIVO, não da pessoa, e numa máquina com dois usuários do Windows não há resposta para
+"os números de quem?".
+
+### Pendências antigas que estes itens fecharam de passagem
+
+- a página da pessoa **não recalcula mais** índice e cobertura no cliente (`personIndicators()` foi
+  apagada — o `self-view` devolve os dois prontos);
+- o cartão que **explicava a ausência** do uso por aplicativo por pessoa virou o uso de verdade: o
+  impedimento era o `/reports/usage` só aceitar `device_ids`, e o `self-view` recorta por TITULAR;
+- a tela de Exportações não tinha rótulo para `resumo_pdf` e o nome de fallback dele saía `.csv`.
+
+---
+
+## COMECE POR AQUI numa sessão nova (08/09/2026)
+
+Nada do produto está em voo. O que resta, em ordem de valor:
+
+1. **Recorte por equipe para líder** — hoje qualquer Viewer enxerga a organização inteira, e o
+   dono citou cinco níveis de acesso (TI, admin, gerente, diretor, líder) onde o sistema tem três
+   papéis (`UserRole`: Owner/Admin/Viewer). "Líder que vê só a própria equipe" não é exprimível.
+   O `DashboardController` já registra isso como "papel Manager-por-equipe adiado para a v1.1".
+   **Precisa de decisão do dono** sobre os níveis e o que cada um enxerga.
+2. **Feriados na capacidade utilizada das equipes** (fase F7): semana com feriado ainda aparece
+   com capacidade subestimada.
+3. **`management_alerts` no dossiê de Conformidade** — a lista de jobs não menciona o motor de
+   alertas.
+4. **Blocos da Visão Geral no grão mensal**: atividade por hora, aplicativos do período e a
+   decomposição do índice somem em janela longa, porque só existem no grão diário. Se trimestre e
+   ano virarem uso frequente, vale dar a eles uma versão mensal em vez de escondê-los.
+
+## Fora do código (segue igual)
+
+- revisão jurídica da Bruna sobre a redação do vocabulário;
+- CI sem acesso SSH ao servidor (bloqueio antiforça-bruta ao runner do GitHub) — **o deploy é
+  manual**, procedimento na seção "Deploy" acima;
+- GHCR respondendo `unauthorized` a partir do servidor, o que deixa o rollback por tag inoperante;
+- `Demo__Slug` não configurado no staging, o que congela os dados da demo em 04/09.
+
+## Armadilhas novas (somam às da seção acima)
+
+- **Npgsql devolve `DateTime` para `timestamptz`**, não `DateTimeOffset`, quando se lê por
+  `ExecuteScalarAsync` cru (o Dapper converte; o comando cru não). E `'-infinity'` não tem
+  equivalente em `DateTime`: no `MonthlyRollupService` a marca-d'água entra por SUBCONSULTA, sem
+  ida e volta pelo .NET, justamente por isso.
+- **`dotnet ef migrations add` gera o arquivo VAZIO** neste repo (as tabelas de agregado não são
+  entidades do EF). O comando serve para produzir o par `.cs` + `.Designer.cs` com o atributo
+  `[Migration]`; o corpo é DDL cru escrito à mão DEPOIS.
+- **Teste que passa sem a implementação não testa nada.** O primeiro teste do PDF pessoal passou
+  antes de existir a variante, porque `windows_sid` era ignorado em silêncio — só ficou honesto
+  quando passou a exigir que o `row_count` contasse os apps DAQUELA pessoa.
