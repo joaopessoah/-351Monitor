@@ -62,8 +62,10 @@ import { KpisRow } from "@/components/dashboard/KpisRow";
 import { AlertasCard } from "@/components/dashboard/AlertasCard";
 import { EquipesLadoALado, useEquipesQuery } from "@/components/dashboard/EquipesLadoALado";
 import { ResumoDoPeriodo } from "@/components/dashboard/ResumoDoPeriodo";
+import { PorQueOIndiceMudou } from "@/components/dashboard/PorQueOIndiceMudou";
 import {
   useActivityByHourQuery,
+  useIndexExplainedQuery,
   useOverviewQuery,
   previousPeriodOf,
 } from "@/components/dashboard/overviewData";
@@ -112,6 +114,10 @@ export function VisaoGeralPage() {
   const overview = useOverviewQuery(resolved, tag, true);
   const totals = overview.data?.totals;
   const previous = overview.data?.previous ?? null;
+
+  // Decomposição do índice: consulta própria, porque varre daily_app_usage nos
+  // DOIS períodos e o overview não. Mesmo recorte global, então invalida junto.
+  const indiceExplicado = useIndexExplainedQuery(resolved, tag);
 
   // A comparação de equipes é UMA consulta (Promise.all por etiqueta dentro de
   // um useQuery só). Declarada aqui além de dentro do EquipesLadoALado porque o
@@ -229,6 +235,15 @@ export function VisaoGeralPage() {
           equipes={equipes.data ?? []}
         />
       </div>
+
+      {/* Linha 3.5 — POR QUE O ÍNDICE MUDOU. Vem logo depois do Resumo do
+          Período de propósito: o Resumo diz em UMA frase que o índice mudou e
+          qual equipe puxou; este painel abre a mesma afirmação em números que
+          somam. Um responde "o quê", o outro responde "de onde", e ler os dois
+          na ordem é a diferença entre desconfiar do número e conseguir agir
+          sobre ele. Largura cheia porque as barras divergentes precisam de
+          trilho: espremido em terço de grade, a metade negativa some. */}
+      <PorQueOIndiceMudou data={indiceExplicado.data} isPending={indiceExplicado.isPending} />
 
       {/* Linha 4 — ALERTAS de gestão (motor de regras no worker, GET /alerts)
           somados às pendências de administração que hoje só existem no sino, e

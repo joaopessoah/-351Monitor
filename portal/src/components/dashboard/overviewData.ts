@@ -20,6 +20,7 @@ import type { ResolvedPeriod } from "@/lib/period";
 import type {
   ActivityByHourResponse,
   ForaDoHorarioResponse,
+  IndexExplainedResponse,
   OverviewResponse,
 } from "@/lib/types";
 import { foraDoHorarioKey, foraDoHorarioUrl } from "@/components/reports/ForaDoHorario";
@@ -74,6 +75,27 @@ export function useOverviewQuery(
       api<OverviewResponse>(`/dashboard/overview?${rangeQuery(period, tag, compare)}`),
     enabled: period !== null,
     // Troca de período/equipe mantém o desenho anterior no lugar do skeleton.
+    placeholderData: (prev) => prev,
+  });
+}
+
+/**
+ * `GET /dashboard/index-explained` - a decomposição de "por que o índice mudou".
+ *
+ * Consulta PRÓPRIA, e não um pedaço do overview, porque o custo é diferente: o
+ * overview alimenta a tela inteira e sai sempre; esta varre daily_app_usage nos
+ * dois períodos e só interessa a quem abre o painel. Mesmo recorte global de
+ * período e equipe, então o cache invalida junto com o resto da tela.
+ */
+export function useIndexExplainedQuery(
+  period: ResolvedPeriod | null,
+  tag: string | null,
+): UseQueryResult<IndexExplainedResponse> {
+  return useQuery({
+    queryKey: ["dashboard", "index-explained", period?.from, period?.to, tag],
+    queryFn: () =>
+      api<IndexExplainedResponse>(`/dashboard/index-explained?${rangeQuery(period, tag)}`),
+    enabled: period !== null,
     placeholderData: (prev) => prev,
   });
 }

@@ -1382,6 +1382,43 @@ export interface OverviewResponse {
 }
 
 /**
+ * Uma linha de "por que o índice mudou": a contribuição de UM membro (aplicativo,
+ * equipe ou dia) para a variação, em pontos e com sinal.
+ *
+ * `points` NÃO é o índice do membro. Um aplicativo improdutivo que cresceu derruba
+ * o índice sem ter um único segundo produtivo, porque engorda o denominador - e é
+ * exatamente esse caso que a tela precisa saber nomear.
+ */
+export interface IndexContributionRow {
+  key: string;
+  label: string;
+  points: number;
+  seconds_work_related: number;
+  seconds_work_related_previous: number;
+  seconds_classified: number;
+  seconds_classified_previous: number;
+}
+
+/**
+ * Resposta de `GET /dashboard/index-explained`. As parcelas das três listas somam
+ * `delta_points` - é a promessa do painel, e o rodapé dele exibe a soma.
+ *
+ * `unavailable` preenchido significa que não há variação a explicar (falta
+ * denominador num dos períodos): indicadores em null e as três listas vazias.
+ */
+export interface IndexExplainedResponse {
+  period: OverviewPeriod;
+  previous_period: OverviewPeriod;
+  index: number | null;
+  previous_index: number | null;
+  delta_points: number | null;
+  unavailable: string | null;
+  by_app: IndexContributionRow[];
+  by_team: IndexContributionRow[];
+  by_day: IndexContributionRow[];
+}
+
+/**
  * Uma hora local do tenant. As 24 vêm SEMPRE, inclusive vazias (o gráfico
  * desenha o dia inteiro). avg_people_active é a média de pessoas ativas
  * simultâneas naquela hora no período; null quando não há dia com dado.
