@@ -41,7 +41,10 @@ import { api } from "@/lib/api";
 import { formatDuration } from "@/lib/format";
 import type { ActivityByHourItem, MeResponse, OverviewResponse } from "@/lib/types";
 import {
-  PERIOD_CODEC,
+  MAX_PERIOD_DAYS,
+  PERIOD_CODEC_LONG,
+  LONG_PRESETS,
+  SHORT_PRESETS,
   comparisonLabel,
   formatPct,
   resolvePeriod,
@@ -88,7 +91,7 @@ import {
 } from "@/components/dashboard/overviewKit";
 
 export function VisaoGeralPage() {
-  const [period, setPeriod] = useUrlState(PERIOD_CODEC);
+  const [period, setPeriod] = useUrlState(PERIOD_CODEC_LONG);
   const [tag, setTag] = useUrlState(TAG_CODEC);
   const { tags } = useTeamTags();
 
@@ -103,6 +106,13 @@ export function VisaoGeralPage() {
   // O período SÓ resolve com o fuso da organização em mãos: sem isso o dia do
   // navegador vazaria para o recorte de quem viaja ou opera em outro fuso.
   const resolved = useMemo(() => resolvePeriod(period, timezone), [period, timezone]);
+
+  // GRÃO MENSAL (F9): trimestre e ano leem de monthly_summaries e respondem
+  // "como foi o período". Os blocos abaixo que dependem de hora ou de
+  // aplicativo só existem no grão diário — a tela os ESCONDE em vez de pedir
+  // ao servidor uma janela que ele vai recusar, e explica isso UMA vez no
+  // topo em lugar de repetir cinco avisos pela página.
+  const mensal = resolved?.grain === "month";
 
   // O "hoje" da ORGANIZAÇÃO é o teto dos campos de data do seletor: um gestor
   // em outro fuso não deve poder pedir um dia que a operação ainda não viveu.
@@ -154,6 +164,7 @@ export function VisaoGeralPage() {
         <div className="flex flex-wrap items-center gap-3">
           {/* Presets + intervalo livre: um grupo segmentado só, estado na URL. */}
           <PeriodoSelector
+            presets={[...SHORT_PRESETS, ...LONG_PRESETS]}
             period={period}
             onChange={setPeriod}
             today={hoje}
@@ -185,19 +196,33 @@ export function VisaoGeralPage() {
     <div className="space-y-5">
       {header}
 
+      {/* UMA explicação para o grão mensal, no lugar de cinco avisos espalhados
+          pelos blocos que sumiram. O gestor que pediu "12 meses" precisa saber
+          o que ganhou (a evolução) e o que ficou de fora (o que é por hora e
+          por aplicativo), sem caçar a resposta card a card. */}
+      {mensal && (
+        <p className="rounded-md border border-dashed px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+          Janela longa, no grão <strong className="font-semibold text-foreground">mensal</strong>: cada
+          ponto dos gráficos é um mês e o mês corrente entra parcial. Atividade por hora,
+          aplicativos do período e a decomposição do índice ficam de fora daqui — são leituras de
+          dia, e o histórico as guarda em janelas de até {MAX_PERIOD_DAYS} dias. Escolha Hoje,
+          Esta semana ou Este mês para vê-las.
+        </p>
+      )}
+
       {/* Linha 1 — os seis KPIs com minigráfico de 12 dias. */}
       <KpisRow period={resolved} tag={tag} />
 
       {/* Linha 2 — composição, atividade por hora, índice/meta/cobertura. */}
       <div className="grid gap-4 lg:grid-cols-12">
         <ComposicaoCard
-          className="lg:col-span-4"
+          className={mensal ? "lg:col-span-7" : "lg:col-span-4"}
           query={overview}
           personDays={totals?.person_days ?? 0}
         />
-        <AtividadePorHoraCard className="lg:col-span-5" period={resolved} tag={tag} />
+        {!mensal && <AtividadePorHoraCard className="lg:col-span-5" period={resolved} tag={tag} />}
         <IndiceMetaCard
-          className="lg:col-span-3"
+          className={mensal ? "lg:col-span-5" : "lg:col-span-3"}
           data={overview.data}
           isPending={overview.isPending}
           onRetry={() => void overview.refetch()}
@@ -223,14 +248,17 @@ export function VisaoGeralPage() {
           nenhuma frase tiver número real para dizer. */}
       <div className="grid gap-4 lg:grid-cols-12">
         <ComposicaoPorDiaCard
-          className="lg:col-span-5"
+          className={mensal ? "lg:col-span-8" : "lg:col-span-5"}
           query={overview}
           businessHours={organization?.business_hours}
           timezone={timezone}
+          grain={resolved?.grain ?? "day"}
         />
-        <AplicativosDoPeriodoCard className="lg:col-span-4" period={resolved} tag={tag} />
+        {!mensal && (
+          <AplicativosDoPeriodoCard className="lg:col-span-4" period={resolved} tag={tag} />
+        )}
         <ResumoDoPeriodo
-          className="lg:col-span-3"
+          className={mensal ? "lg:col-span-4" : "lg:col-span-3"}
           data={overview.data}
           equipes={equipes.data ?? []}
         />
@@ -243,7 +271,9 @@ export function VisaoGeralPage() {
           na ordem é a diferença entre desconfiar do número e conseguir agir
           sobre ele. Largura cheia porque as barras divergentes precisam de
           trilho: espremido em terço de grade, a metade negativa some. */}
-      <PorQueOIndiceMudou data={indiceExplicado.data} isPending={indiceExplicado.isPending} />
+      {!mensal && (
+        <PorQueOIndiceMudou data={indiceExplicado.data} isPending={indiceExplicado.isPending} />
+      )}
 
       {/* Linha 4 — ALERTAS de gestão (motor de regras no worker, GET /alerts)
           somados às pendências de administração que hoje só existem no sino, e

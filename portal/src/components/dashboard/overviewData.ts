@@ -37,7 +37,8 @@ export const MINI_SERIES_DAYS = 12;
 export function previousPeriodOf(period: ResolvedPeriod | null): ResolvedPeriod | null {
   if (period === null) return null;
   const prev = comparisonRangeOf({ from: period.from, to: period.to });
-  return { preset: period.preset, from: prev.from, to: prev.to, label: "período anterior" };
+  // grão preservado: o anterior de um recorte mensal também é mensal
+  return { preset: period.preset, from: prev.from, to: prev.to, label: "período anterior", grain: period.grain };
 }
 
 /**
@@ -51,6 +52,9 @@ export function miniSeriesPeriodOf(period: ResolvedPeriod | null): ResolvedPerio
     from: addDays(period.to, -(MINI_SERIES_DAYS - 1)),
     to: period.to,
     label: `últimos ${MINI_SERIES_DAYS} dias`,
+    // SEMPRE diário, mesmo quando o recorte da tela é mensal: o minigráfico é
+    // uma faísca de 12 DIAS, e no grão mensal ela viraria um ponto só.
+    grain: "day",
   };
 }
 
@@ -70,7 +74,7 @@ export function useOverviewQuery(
   compare: boolean,
 ): UseQueryResult<OverviewResponse> {
   return useQuery({
-    queryKey: ["dashboard", "overview", period?.from, period?.to, tag, compare],
+    queryKey: ["dashboard", "overview", period?.from, period?.to, tag, compare, period?.grain],
     queryFn: () =>
       api<OverviewResponse>(`/dashboard/overview?${rangeQuery(period, tag, compare)}`),
     enabled: period !== null,
@@ -92,10 +96,11 @@ export function useIndexExplainedQuery(
   tag: string | null,
 ): UseQueryResult<IndexExplainedResponse> {
   return useQuery({
-    queryKey: ["dashboard", "index-explained", period?.from, period?.to, tag],
+    queryKey: ["dashboard", "index-explained", period?.from, period?.to, tag, period?.grain],
     queryFn: () =>
       api<IndexExplainedResponse>(`/dashboard/index-explained?${rangeQuery(period, tag)}`),
-    enabled: period !== null,
+    // grao diario apenas: a decomposicao varre daily_app_usage e tem teto de 92 dias
+    enabled: period !== null && period.grain === "day",
     placeholderData: (prev) => prev,
   });
 }
@@ -109,7 +114,8 @@ export function useActivityByHourQuery(
     queryKey: ["dashboard", "activity-by-hour", period?.from, period?.to, tag],
     queryFn: () =>
       api<ActivityByHourResponse>(`/dashboard/activity-by-hour?${rangeQuery(period, tag)}`),
-    enabled: period !== null,
+    // grao diario apenas: "as 24 horas do dia" nao tem leitura num recorte de meses
+    enabled: period !== null && period.grain === "day",
     placeholderData: (prev) => prev,
   });
 }
@@ -135,7 +141,8 @@ export function useForaDoHorarioQuery(
   return useQuery({
     queryKey: foraDoHorarioKey(params),
     queryFn: () => api<ForaDoHorarioResponse>(foraDoHorarioUrl(params)),
-    enabled: period !== null,
+    // grao diario apenas: o relatorio de fora do horario tem o teto de 92 dias
+    enabled: period !== null && period.grain === "day",
     staleTime: 5 * 60 * 1000,
   });
 }

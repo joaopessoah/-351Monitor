@@ -281,11 +281,16 @@ export function KpisRow({ period, tag }: { period: ResolvedPeriod | null; tag: s
           ) : undefined
         }
         hint={
-          fora === undefined
-            ? "Carregando…"
-            : foraVazio !== null
-              ? foraVazio.titulo
-              : "Tempo ativo fora do horário de trabalho declarado."
+          /* No grão MENSAL a consulta nem sai (o relatório tem teto de 92 dias),
+             então dizer "Carregando…" seria uma espera que nunca termina. O
+             indicador se declara indisponível e diz o que fazer para tê-lo. */
+          period?.grain === "month"
+            ? "Disponível em janelas de até 92 dias: escolha Hoje, Esta semana ou Este mês."
+            : fora === undefined
+              ? "Carregando…"
+              : foraVazio !== null
+                ? foraVazio.titulo
+                : "Tempo ativo fora do horário de trabalho declarado."
         }
         /* Sem minigráfico: o endpoint de fora do horário não publica série por
            dia, e inventar uma seria mentir. O slot fica vazio para os seis

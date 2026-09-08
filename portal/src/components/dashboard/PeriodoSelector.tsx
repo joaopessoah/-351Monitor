@@ -32,6 +32,7 @@ import {
   DEFAULT_PERIOD,
   MAX_PERIOD_DAYS,
   PERIOD_LABELS,
+  SHORT_PRESETS,
   daysBetweenInclusive,
   shortRangeLabel,
   type PeriodPreset,
@@ -106,6 +107,12 @@ export function PeriodoSelector({
   /** Intervalo já resolvido (com o "até hoje" aplicado), para o rótulo do botão. */
   resolvedFrom,
   resolvedTo,
+  /**
+   * Quais presets este seletor oferece. Default: só os do grão DIÁRIO, porque é
+   * o que toda tela sabe atender. Quem passa os longos (F9) assume o contrato de
+   * lidar com o grão mensal — hoje, só a Visão Geral.
+   */
+  presets = SHORT_PRESETS,
   className,
 }: {
   period: PeriodState;
@@ -113,6 +120,7 @@ export function PeriodoSelector({
   today: string | null;
   resolvedFrom?: string;
   resolvedTo?: string;
+  presets?: PeriodPreset[];
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -195,7 +203,7 @@ export function PeriodoSelector({
         aria-label="Período"
         className="inline-flex h-9 items-stretch rounded-md border border-input bg-card p-0.5"
       >
-        {(["dia", "semana", "mes"] as PeriodPreset[]).map((preset) => (
+        {presets.map((preset) => (
           <button
             key={preset}
             type="button"

@@ -32,7 +32,8 @@ import { useMemo, useState } from "react";
 import type { EChartsOption } from "echarts";
 
 import { formatDuration, localDateOf, parseHmToMinutes } from "@/lib/format";
-import { eachDayInclusive } from "@/lib/period";
+import { eachDayInclusive, eachMonthInclusive, monthLabel } from "@/lib/period";
+import type { PeriodGrain } from "@/lib/period";
 import type { BusinessHours, DashboardSummaryDay } from "@/lib/types";
 import { EChart } from "@/components/charts/EChart";
 import {
@@ -103,12 +104,21 @@ export function ComposicaoPorDiaCard({
   query,
   businessHours,
   timezone,
+  /**
+   * Grão da série (F9). No mensal cada barra é um MÊS: o eixo passa a andar de
+   * mês em mês e a linha de referência some — jornada declarada × pessoas é uma
+   * régua de DIA, e esticá-la sobre a barra de um mês inteiro compararia coisas
+   * de escalas diferentes no mesmo gráfico.
+   */
+  grain = "day",
 }: {
   className?: string;
   query: ReturnType<typeof useOverviewQuery>;
   businessHours: BusinessHours | null | undefined;
   timezone: string | null;
+  grain?: PeriodGrain;
 }) {
+  const mensal = grain === "month";
   const [view, setView] = useState<"chart" | "table">("chart");
   const data = query.data;
 
@@ -121,10 +131,16 @@ export function ComposicaoPorDiaCard({
     // O intervalo é o RESOLVIDO PELO SERVIDOR (data.period), não o do cliente:
     // foi ele que gerou os números, e é dele que o eixo tem de falar.
     const porData = new Map<string, DashboardSummaryDay>(data.days.map((d) => [d.date, d]));
-    return eachDayInclusive(data.period.from, data.period.to).map((date) => {
+    const eixo = mensal
+      ? eachMonthInclusive(data.period.from, data.period.to)
+      : eachDayInclusive(data.period.from, data.period.to);
+    return eixo.map((date) => {
       const dia = porData.get(date);
       if (dia === undefined) {
-        const futuro = hoje !== null && date > hoje;
+        // no grão mensal "futuro" é o mês que ainda não começou: comparar a data
+        // inteira marcaria o mês CORRENTE como futuro já no dia 2
+        const futuro =
+          hoje !== null && (mensal ? date.slice(0, 7) > hoje.slice(0, 7) : date > hoje);
         return {
           date,
           futuro,
@@ -153,12 +169,12 @@ export function ComposicaoPorDiaCard({
         incompleto: dia.data_incomplete,
       };
     });
-  }, [data, hoje]);
+  }, [data, hoje, mensal]);
 
   const personCount = data?.totals.person_count ?? 0;
   // Referência = jornada declarada × pessoas do período. Com zero pessoa no
   // recorte a linha não significaria nada, então ela não é desenhada.
-  const referenciaSec = personCount > 0 ? jornadaSeconds(businessHours) * personCount : 0;
+  const referenciaSec = !mensal && personCount > 0 ? jornadaSeconds(businessHours) * personCount : 0;
 
   const diasSemDado = rows.filter((r) => r.semDado).length;
   const diasIncompletos = rows.filter((r) => r.incompleto).length;
@@ -193,8 +209,8 @@ export function ComposicaoPorDiaCard({
           const i = lista[0]?.dataIndex;
           const row = i !== undefined ? rows[i] : undefined;
           if (row === undefined) return "";
-          const titulo = `<strong>${diaLabel(row.date, false)}</strong>`;
-          if (row.futuro) return [titulo, "Dia futuro — ainda não há o que medir"].join("<br/>");
+          const titulo = `<strong>${mensal ? monthLabel(row.date) : diaLabel(row.date, false)}</strong>`;
+          if (row.futuro) return [titulo, mensal ? "Mês futuro — ainda não há o que medir" : "Dia futuro — ainda não há o que medir"].join("<br/>");
           if (row.semDado) {
             return [titulo, "Sem dado (máquina desligada, folga ou fim de semana)"].join("<br/>");
           }
@@ -213,7 +229,7 @@ export function ComposicaoPorDiaCard({
       },
       xAxis: {
         type: "category",
-        data: rows.map((r) => diaLabel(r.date, curto)),
+        data: rows.map((r) => (mensal ? monthLabel(r.date) : diaLabel(r.date, curto))),
         axisTick: { show: false },
         axisLine: { lineStyle: { color: VIZ.grid } },
         axisLabel: {
