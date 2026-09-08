@@ -417,11 +417,32 @@ function cadencia_ultimo_enviado(int $leadId): ?array
 function cadencia_auto_render(int $seq, array $lead, ?array $contato, ?string $meuNome, ?string $linhaPessoal, string $optoutUrl): array
 {
     $m = cadencia_email_modelo($seq, $lead, $contato, $meuNome, $linhaPessoal);
+    $assinatura = trim(setting_str('auto_assinatura'));
+    if ($assinatura !== '') {
+        $m['corpo'] = rtrim($m['corpo']) . "\n\n" . $assinatura;
+    }
     $rodape = trim(setting_str('auto_optout_texto'));
     if ($rodape !== '') {
         $m['corpo'] = rtrim($m['corpo']) . "\n\n" . str_replace('{link}', $optoutUrl, $rodape);
     }
     return $m;
+}
+
+/**
+ * Versao HTML do corpo que vai sair, ou null quando o modo visual esta
+ * desligado. Derivada do texto final (ja com sandbox, se for o caso), entao
+ * as duas versoes nunca divergem.
+ */
+function cadencia_corpo_html(string $corpoTexto): ?string
+{
+    if (!setting_bool('auto_html')) {
+        return null;
+    }
+    return mail_html_de_texto(
+        $corpoTexto,
+        trim(setting_str('auto_assinatura')),
+        trim(setting_str('auto_assinatura_html'))
+    );
 }
 
 /**
@@ -796,6 +817,7 @@ function cadencia_enviar_linha(array $out): array
         'para_email'      => $para,
         'assunto'         => $assunto,
         'corpo'           => $corpo,
+        'html'            => cadencia_corpo_html($corpo),
         'message_id'      => (string) $out['message_id'],
         'in_reply_to'     => $out['in_reply_to'],
         'references'      => $out['references_hdr'],

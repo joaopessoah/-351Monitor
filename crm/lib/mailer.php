@@ -172,19 +172,76 @@ function mail_fold(string $nome, string $valor): string
     return $out . rtrim($linha);
 }
 
+/** Escapa e converte texto puro em HTML, com as URLs virando link de verdade. */
+function mail_texto_para_html(string $texto): string
+{
+    $esc = htmlspecialchars($texto, ENT_QUOTES, 'UTF-8');
+    // O htmlspecialchars ja transformou & em &amp;, que e o certo dentro do
+    // href — o navegador desfaz na hora de navegar.
+    $esc = (string) preg_replace(
+        '~(https?://[^\s<]+[^\s<.,;:!?)\]])~',
+        '<a href="$1" style="color:#2f6fb5">$1</a>',
+        $esc
+    );
+    return nl2br($esc, false);
+}
+
+/**
+ * Versao HTML da MESMA mensagem de texto, para o multipart/alternative.
+ *
+ * A assinatura de texto e localizada e trocada pela versao visual; o que vier
+ * depois dela (o rodape de descadastro) vira uma linha pequena e discreta.
+ * Derivar do texto em vez de manter duas fontes e o que impede as duas versoes
+ * de divergirem depois de alguem editar o e-mail na tela de Envios.
+ */
+function mail_html_de_texto(string $texto, string $assinaturaTxt = '', string $assinaturaHtml = ''): string
+{
+    $blocos = [];
+    $assinaturaTxt = trim($assinaturaTxt);
+    $assinaturaHtml = trim($assinaturaHtml);
+    if ($assinaturaTxt !== '' && $assinaturaHtml !== '') {
+        $pos = mb_strpos($texto, $assinaturaTxt);
+        if ($pos !== false) {
+            $antes = rtrim(mb_substr($texto, 0, $pos));
+            if ($antes !== '') {
+                $blocos[] = mail_texto_para_html($antes);
+            }
+            $blocos[] = $assinaturaHtml;
+            $depois = trim(mb_substr($texto, $pos + mb_strlen($assinaturaTxt)));
+            if ($depois !== '') {
+                $blocos[] = '<div style="font-size:11px;line-height:1.5;color:#9a9a9a">'
+                    . mail_texto_para_html($depois) . '</div>';
+            }
+        }
+    }
+    if (!$blocos) {
+        $blocos[] = mail_texto_para_html($texto);
+    }
+    return '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
+        . '<meta name="viewport" content="width=device-width,initial-scale=1"></head>'
+        . '<body style="margin:0;padding:0;background:#ffffff">'
+        . '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;'
+        . 'color:#222222;max-width:620px">'
+        . implode('<div style="height:16px;line-height:16px">&nbsp;</div>', $blocos)
+        . '</div></body></html>';
+}
+
 /**
  * Monta a mensagem inteira (cabecalhos + corpo), pronta para o DATA.
  *
  * Corpo em quoted-printable: texto puro com acento passa legivel pelos
  * servidores antigos e nao vira o bloco base64 que filtro de spam estranha.
+ * Com 'html' preenchido sai multipart/alternative: o cliente escolhe, e quem
+ * bloqueia HTML continua lendo a mensagem inteira.
  *
  * @param array $m de_nome, de_email, para_nome, para_email, assunto, corpo,
- *                 message_id, reply_to, in_reply_to, references,
+ *                 html, message_id, reply_to, in_reply_to, references,
  *                 unsubscribe_url, auto (bool)
  */
 function mail_monta(array $m): string
 {
     $corpo = preg_replace('/\r\n|\r|\n/', "\r\n", rtrim((string) $m['corpo'])) . "\r\n";
+    $html = trim((string) ($m['html'] ?? ''));
     $h = [];
     $h[] = 'Date: ' . date('r');
     $h[] = 'From: ' . mail_endereco((string) ($m['de_nome'] ?? ''), (string) $m['de_email']);
@@ -214,10 +271,35 @@ function mail_monta(array $m): string
         $h[] = 'X-Auto-Response-Suppress: All';
     }
     $h[] = 'MIME-Version: 1.0';
-    $h[] = 'Content-Type: text/plain; charset=UTF-8';
-    $h[] = 'Content-Transfer-Encoding: quoted-printable';
 
-    return implode("\r\n", $h) . "\r\n\r\n" . quoted_printable_encode($corpo);
+    if ($html === '') {
+        $h[] = 'Content-Type: text/plain; charset=UTF-8';
+        $h[] = 'Content-Transfer-Encoding: quoted-printable';
+        return implode("\r\n", $h) . "\r\n\r\n" . quoted_printable_encode($corpo);
+    }
+
+    // Fronteira aleatoria: nao pode aparecer dentro de nenhuma das partes.
+    $b = '=_m351_' . bin2hex(random_bytes(12));
+    $htmlCrlf = preg_replace('/\r\n|\r|\n/', "\r\n", $html) . "\r\n";
+    $h[] = 'Content-Type: multipart/alternative; boundary="' . $b . '"';
+
+    // A parte de TEXTO vem primeiro de proposito: em multipart/alternative a
+    // ultima e a preferida, entao o HTML fica por ultimo, e quem nao renderiza
+    // HTML cai na primeira sem perder nada.
+    $partes = "--$b\r\n"
+        . "Content-Type: text/plain; charset=UTF-8\r\n"
+        . "Content-Transfer-Encoding: quoted-printable\r\n\r\n"
+        . quoted_printable_encode($corpo) . "\r\n"
+        . "--$b\r\n"
+        . "Content-Type: text/html; charset=UTF-8\r\n"
+        . "Content-Transfer-Encoding: quoted-printable\r\n\r\n"
+        . quoted_printable_encode($htmlCrlf) . "\r\n"
+        . "--$b--\r\n";
+
+    return implode("\r\n", $h) . "\r\n\r\n"
+        . "Esta mensagem tem duas versoes. Se voce esta lendo isto, seu programa\r\n"
+        . "de e-mail nao entende MIME.\r\n\r\n"
+        . $partes;
 }
 
 /**

@@ -150,6 +150,64 @@ $auto = mail_monta([
 ]);
 check(str_contains($auto, 'Auto-Submitted: auto-generated'), 'aviso interno leva Auto-Submitted');
 
+echo "== mail_texto_para_html ==\n";
+$h = mail_texto_para_html("Oi, Maria.\nTudo bem?");
+check(str_contains($h, '<br'), "quebra de linha vira <br>: $h");
+check(!str_contains(mail_texto_para_html('<script>alert(1)</script>'), '<script>'),
+    'HTML vindo do texto e escapado');
+$comLink = mail_texto_para_html('Cancele aqui: https://www.mais351monitor.com.br/crm/optout.php?l=1&c=2&t=abc');
+check(str_contains($comLink, '<a href="https://www.mais351monitor.com.br/crm/optout.php?l=1&amp;c=2&amp;t=abc"'),
+    "a URL virou link com o & escapado: $comLink");
+check(substr_count($comLink, '<a ') === 1, 'um link so');
+check(!str_contains(mail_texto_para_html('fim da frase. https://ex.com/a.'), 'a.</a>'),
+    'o ponto final da frase nao entra dentro do link');
+
+echo "== mail_html_de_texto: a assinatura de texto vira a visual ==\n";
+$assTxt = "Abraço,\n\nBruna Rondelli · COO\nmais351monitor.com.br";
+$assHtml = '<table><tr><td>Bruna Rondelli</td></tr></table>';
+$textoFinal = "Oi, Maria, tudo bem?\n\nVale uma conversa?\n\n" . $assTxt
+    . "\n\nNão quer mais receber? Responda SAIR:\nhttps://ex.com/sair?t=1";
+$htmlFinal = mail_html_de_texto($textoFinal, $assTxt, $assHtml);
+check(str_contains($htmlFinal, $assHtml), 'a assinatura visual entrou');
+check(!str_contains($htmlFinal, 'Bruna Rondelli · COO'), 'a assinatura de TEXTO nao aparece duplicada');
+check(str_contains($htmlFinal, 'Vale uma conversa?'), 'o corpo continua');
+check(str_contains($htmlFinal, 'font-size:11px'), 'o rodape de descadastro saiu pequeno e discreto');
+check(str_contains($htmlFinal, '<a href="https://ex.com/sair?t=1"'), 'o link de saida virou hiperlink de verdade');
+check(str_starts_with($htmlFinal, '<!doctype html>'), 'documento HTML completo');
+// Sem assinatura configurada, nada de substituicao: so o texto convertido.
+$semAss = mail_html_de_texto("Oi.\n\nAté logo.", '', '');
+check(str_contains($semAss, 'Até logo.'), 'sem assinatura o texto passa inteiro');
+check(!str_contains($semAss, '<table'), 'sem assinatura nao inventa bloco visual');
+// Assinatura configurada mas ausente do corpo: nao pode injetar do nada.
+$naoBate = mail_html_de_texto("Oi, so isso.", $assTxt, $assHtml);
+check(!str_contains($naoBate, $assHtml), 'assinatura que nao esta no texto nao e injetada no HTML');
+
+echo "== mail_monta: multipart/alternative ==\n";
+$msgMp = mail_monta([
+    'de_email' => 'bruna@x.com', 'para_email' => 'maria@alfa.com.br',
+    'assunto' => 'Produção', 'corpo' => "Oi, Maria.\nTudo bem?",
+    'html' => '<!doctype html><html><body><p>Oi, Maria.</p></body></html>',
+    'message_id' => '<m@x.com>',
+]);
+check(preg_match('/Content-Type: multipart\/alternative; boundary="(=_m351_[0-9a-f]{24})"/', $msgMp, $mb) === 1,
+    'cabecalho multipart com fronteira');
+$fronteira = $mb[1];
+check(substr_count($msgMp, '--' . $fronteira) === 3, 'duas partes e o fechamento');
+check(str_ends_with(rtrim($msgMp), '--' . $fronteira . '--'), 'termina com a fronteira de fechamento');
+$posTexto = strpos($msgMp, 'Content-Type: text/plain');
+$posHtml  = strpos($msgMp, 'Content-Type: text/html');
+check($posTexto !== false && $posHtml !== false && $posTexto < $posHtml,
+    'texto antes do HTML (em alternative, a ultima parte e a preferida)');
+check(!str_contains($msgMp, $fronteira . "\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n\r\n"),
+    'parte de texto nao esta vazia');
+check(str_contains(quoted_printable_decode($msgMp), 'Tudo bem?'), 'o texto sobreviveu ao quoted-printable');
+check(!preg_match('/(?<!\r)\n/', $msgMp), 'multipart tambem so usa CRLF');
+// Sem html, nada muda em relacao ao formato antigo.
+$msgTxt = mail_monta(['de_email' => 'a@b.com', 'para_email' => 'c@d.com', 'assunto' => 'x',
+    'corpo' => 'y', 'message_id' => '<m@b.com>']);
+check(str_contains($msgTxt, 'Content-Type: text/plain; charset=UTF-8'), 'sem html continua text/plain simples');
+check(!str_contains($msgTxt, 'multipart'), 'sem html nao vira multipart');
+
 echo "== smtp_dot_stuff ==\n";
 check(smtp_dot_stuff("linha\r\n.ponto\r\n") === "linha\r\n..ponto\r\n", 'ponto no inicio da linha e duplicado');
 check(smtp_dot_stuff(".comeco\r\nfim") === "..comeco\r\nfim", 'ponto na primeira linha tambem');

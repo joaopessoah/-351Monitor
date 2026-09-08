@@ -140,6 +140,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'auto_etapas'            => implode(',', $etapas),
                 'auto_inicio'            => $inicio,
                 'auto_optout_texto'      => $rodapeOptout,
+                'auto_html'              => !empty($_POST['auto_html']) ? 1 : 0,
+                'auto_assinatura'        => trim(preg_replace('/\r\n|\r/', "\n",
+                    (string) ($_POST['auto_assinatura'] ?? ''))),
+                'auto_assinatura_html'   => trim(preg_replace('/\r\n|\r/', "\n",
+                    (string) ($_POST['auto_assinatura_html'] ?? ''))),
             ]);
             // A mensagem diz o que FOI GRAVADO, não só que gravou. Se o valor
             // na tela divergir daqui, o problema é de leitura, não de escrita —
@@ -163,14 +168,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // existe — o e-mail do usuário logado nem sempre existe como caixa.
             $alvo = norm_email(setting_str('auto_sandbox_para'));
             $para = is_string($alvo) && $alvo !== '' ? $alvo : (string) $conta['email'];
+            // O teste leva a assinatura configurada e sai no mesmo formato da
+            // cadencia: assim este botao vira a previa real do que o prospect
+            // vai receber, em vez de um "oi" sem contexto.
+            $corpoTeste = "Se você está lendo isto, o SMTP da caixa " . $conta['email']
+                . " funciona a partir da hospedagem.\n\nEnviado em " . date('d/m/Y H:i')
+                . " por " . $user['name'] . ".";
+            $assinaturaTeste = trim(setting_str('auto_assinatura'));
+            if ($assinaturaTeste !== '') {
+                $corpoTeste .= "\n\n" . $assinaturaTeste;
+            }
             $r = mail_enviar($conta, [
                 'de_nome'    => (string) $conta['nome'],
                 'de_email'   => (string) $conta['email'],
                 'para_email' => $para,
                 'assunto'    => 'Teste de envio do +351 CRM',
-                'corpo'      => "Se você está lendo isto, o SMTP da caixa " . $conta['email']
-                    . " funciona a partir da hospedagem.\n\nEnviado em " . date('d/m/Y H:i')
-                    . " por " . $user['name'] . ".",
+                'corpo'      => $corpoTeste,
+                'html'       => cadencia_corpo_html($corpoTeste),
                 'message_id' => mail_message_id(mail_dominio((string) $conta['email'])),
                 'auto'       => true,
             ]);
@@ -532,6 +546,36 @@ page_header('Configurações', 'settings.php', $user);
       <div class="field">
         <label for="cadencia_linkedin_dias">LinkedIn: dias úteis após o 1º e-mail</label>
         <input id="cadencia_linkedin_dias" name="cadencia_linkedin_dias" type="number" min="1" max="30" required value="<?= setting_int('cadencia_linkedin_dias') ?>">
+      </div>
+    </div>
+
+    <h3 class="list-title">Assinatura</h3>
+    <div class="form-grid">
+      <div class="field field-span">
+        <label for="auto_assinatura">Assinatura em texto <span class="muted">— colada no fim de todo e-mail da cadência, num lugar só em vez de repetida nos cinco modelos</span></label>
+        <textarea id="auto_assinatura" name="auto_assinatura" rows="5"
+                  placeholder="Bruna Rondelli · COO&#10;+351 Monitor · produtividade em tempo real&#10;+55 11 99220-9235 · bruna@mais351monitor.com.br&#10;mais351monitor.com.br"><?= esc(setting_str('auto_assinatura')) ?></textarea>
+        <p class="muted small" style="margin: 4px 0 0">
+          Só o bloco de identificação. A despedida (“Abraço,”) fica no fim do <strong>modelo</strong>,
+          porque na versão visual este bloco inteiro é trocado pelo cartão — e a despedida sumiria junto.
+          Se você já tem a assinatura escrita dentro dos modelos, tire de lá antes de preencher aqui,
+          senão ela sai duas vezes.
+        </p>
+      </div>
+      <div class="field field-check field-span">
+        <input id="auto_html" name="auto_html" type="checkbox" value="1" <?= setting_bool('auto_html') ? 'checked' : '' ?>>
+        <label for="auto_html">Mandar também a <strong>versão visual</strong> (HTML) junto com a de texto</label>
+      </div>
+      <div class="field field-span">
+        <label for="auto_assinatura_html">Assinatura visual <span class="muted">— HTML, usada só quando a caixa acima está marcada <em>e</em> a assinatura em texto está preenchida</span></label>
+        <textarea id="auto_assinatura_html" name="auto_assinatura_html" rows="8"
+                  style="font-family: var(--font-mono, monospace); font-size: 0.8rem"><?= esc(setting_str('auto_assinatura_html')) ?></textarea>
+        <p class="muted small" style="margin: 4px 0 0">
+          O e-mail sai com as duas versões na mesma mensagem: quem tem cliente moderno vê esta, quem não tem
+          vê a de texto, e ninguém perde conteúdo. O logo aqui é <strong>tipografia, não imagem</strong>, de
+          propósito: imagem em e-mail frio costuma ser bloqueada pelo cliente e pesa contra a entrega.
+          Depois de salvar, use o botão <strong>“Enviar teste”</strong> lá em cima para ver o resultado real na sua caixa.
+        </p>
       </div>
     </div>
 

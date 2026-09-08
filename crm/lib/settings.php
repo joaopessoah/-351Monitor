@@ -38,6 +38,10 @@ const SETTING_INT_DEFAULTS = [
     'auto_dominio_dias'   => 7,
     'auto_avisa_email'    => 1,
     'auto_avisa_telegram' => 0,
+    // Manda tambem a versao HTML (multipart/alternative). Desligado por padrao:
+    // o playbook escolheu texto puro para a abordagem fria, e mudar isso e
+    // decisao comercial, nao default tecnico.
+    'auto_html'           => 0,
     'auto_resumo_hora'    => 17,
     'auto_resumo_minuto'  => 30,
     // Tarefas HUMANAS da cadencia (ficam visiveis no quadro, ao contrario das
@@ -66,6 +70,36 @@ const SETTING_STR_DEFAULTS = [
     // List-Unsubscribe continua indo, e o Gmail/Outlook mostram o botao
     // proprio deles) — mas ai o "responda SAIR" tem que estar no modelo.
     'auto_optout_texto' => "Não quer mais receber? Responda SAIR, ou cancele em um clique:\n{link}",
+
+    // Assinatura acrescentada ao fim de TODO e-mail da cadencia, num lugar so
+    // em vez de repetida nos cinco modelos. Vazia por padrao: quem ja tem a
+    // assinatura escrita dentro dos modelos nao ganha uma segunda.
+    'auto_assinatura'      => '',
+    // Versao visual da MESMA assinatura, usada quando auto_html esta ligado.
+    // Sem imagem de proposito: logo embutido em e-mail frio e bloqueado por
+    // boa parte dos clientes e pesa contra a entrega. O logo aqui e tipografia,
+    // entao nao pode ser bloqueado e nao carrega peso nenhum.
+    // Tabela e nao flex/grid porque cliente de e-mail ainda e HTML de 2005.
+    // So entra em uso quando auto_assinatura (texto) tambem estiver preenchida.
+    'auto_assinatura_html' => '<table cellpadding="0" cellspacing="0" border="0" role="presentation"'
+        . ' style="font-family:Arial,Helvetica,sans-serif;border-collapse:collapse">'
+        . '<tr>'
+        . '<td style="padding:0 20px 0 0;border-right:2px solid #e8e8e8;vertical-align:middle;white-space:nowrap">'
+        . '<span style="font-size:23px;font-weight:bold;color:#111111;letter-spacing:-0.5px">+351</span>'
+        . '<span style="font-size:23px;color:#8d8d8d;letter-spacing:-0.5px"> Monitor</span>'
+        . '</td>'
+        . '<td style="padding:0 0 0 20px;vertical-align:middle">'
+        . '<div style="font-size:17px;font-weight:bold;color:#111111;line-height:1.3">Bruna Rondelli</div>'
+        . '<div style="font-size:12px;font-weight:bold;color:#4CAF50;letter-spacing:0.6px">COO</div>'
+        . '<div style="height:1px;background:#e8e8e8;margin:9px 0"></div>'
+        . '<div style="font-size:12px;line-height:19px;color:#8d8d8d">'
+        . 'Telefone <a href="tel:+5511992209235" style="color:#2f6fb5">+55 11 99220-9235</a><br>'
+        . 'E-mail <a href="mailto:bruna@mais351monitor.com.br" style="color:#2f6fb5">bruna@mais351monitor.com.br</a><br>'
+        . 'Site <a href="https://www.mais351monitor.com.br" style="color:#2f6fb5">mais351monitor.com.br</a>'
+        . '</div>'
+        . '<div style="font-size:10px;color:#a5a5a5;letter-spacing:1.6px;margin-top:9px">PRODUTIVIDADE EM TEMPO REAL</div>'
+        . '</td>'
+        . '</tr></table>',
 ];
 
 /** Quantos e-mails a cadência acompanha (1º ao 5º). */
