@@ -76,28 +76,48 @@ const SETTING_STR_DEFAULTS = [
     // assinatura escrita dentro dos modelos nao ganha uma segunda.
     'auto_assinatura'      => '',
     // Versao visual da MESMA assinatura, usada quando auto_html esta ligado.
-    // Sem imagem de proposito: logo embutido em e-mail frio e bloqueado por
-    // boa parte dos clientes e pesa contra a entrega. O logo aqui e tipografia,
-    // entao nao pode ser bloqueado e nao carrega peso nenhum.
+    //
+    // E a assinatura que o time ja usa, com duas mudancas obrigatorias:
+    //
+    // 1. O logo era um data:image/png;base64 de 22 KB embutido. O Gmail REMOVE
+    //    imagem em data: URI das mensagens recebidas, entao no cliente mais
+    //    comum do Brasil o logo simplesmente nao apareceria — e os 22 KB iriam
+    //    em cada e-mail assim mesmo. Agora e um arquivo hospedado no proprio
+    //    site (site/assets/img/), que carrega, fica em cache e nao pesa.
+    // 2. Os tamanhos vieram de uma assinatura de tela (logo de 250px, nome de
+    //    31px). Em e-mail isso estoura a largura no celular; aqui esta na
+    //    escala que cabe em cliente de e-mail sem rolagem lateral.
+    //
     // Tabela e nao flex/grid porque cliente de e-mail ainda e HTML de 2005.
     // So entra em uso quando auto_assinatura (texto) tambem estiver preenchida.
-    'auto_assinatura_html' => '<table cellpadding="0" cellspacing="0" border="0" role="presentation"'
-        . ' style="font-family:Arial,Helvetica,sans-serif;border-collapse:collapse">'
+    'auto_assinatura_html' => '<table role="presentation" cellpadding="0" cellspacing="0" border="0"'
+        . ' style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif">'
         . '<tr>'
-        . '<td style="padding:0 20px 0 0;border-right:2px solid #e8e8e8;vertical-align:middle;white-space:nowrap">'
-        . '<span style="font-size:23px;font-weight:bold;color:#111111;letter-spacing:-0.5px">+351</span>'
-        . '<span style="font-size:23px;color:#8d8d8d;letter-spacing:-0.5px"> Monitor</span>'
+        . '<td valign="middle" style="padding:0 20px 0 0;border-right:1px solid #d8dde3">'
+        . '<a href="https://www.mais351monitor.com.br" target="_blank" style="text-decoration:none;border:0">'
+        . '<img src="https://www.mais351monitor.com.br/assets/img/assinatura-351monitor.png"'
+        . ' alt="+351 Monitor" width="128" height="104"'
+        . ' style="display:block;width:128px;height:104px;border:0;outline:none;text-decoration:none">'
+        . '</a>'
         . '</td>'
-        . '<td style="padding:0 0 0 20px;vertical-align:middle">'
-        . '<div style="font-size:17px;font-weight:bold;color:#111111;line-height:1.3">Bruna Rondelli</div>'
-        . '<div style="font-size:12px;font-weight:bold;color:#4CAF50;letter-spacing:0.6px">COO</div>'
-        . '<div style="height:1px;background:#e8e8e8;margin:9px 0"></div>'
-        . '<div style="font-size:12px;line-height:19px;color:#8d8d8d">'
-        . 'Telefone <a href="tel:+5511992209235" style="color:#2f6fb5">+55 11 99220-9235</a><br>'
-        . 'E-mail <a href="mailto:bruna@mais351monitor.com.br" style="color:#2f6fb5">bruna@mais351monitor.com.br</a><br>'
-        . 'Site <a href="https://www.mais351monitor.com.br" style="color:#2f6fb5">mais351monitor.com.br</a>'
-        . '</div>'
-        . '<div style="font-size:10px;color:#a5a5a5;letter-spacing:1.6px;margin-top:9px">PRODUTIVIDADE EM TEMPO REAL</div>'
+        . '<td valign="top" style="padding:2px 0 0 20px">'
+        . '<div style="font-size:20px;line-height:25px;font-weight:700;color:#111b2a;margin:0 0 3px">Bruna Rondelli</div>'
+        . '<div style="font-size:13px;line-height:17px;font-weight:700;color:#59bd2b;margin:0 0 13px">COO</div>'
+        . '<div style="width:48px;border-top:2px solid #172334;margin:0 0 13px"></div>'
+        . '<table role="presentation" cellpadding="0" cellspacing="0" border="0"'
+        . ' style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif">'
+        . '<tr><td style="padding:0 16px 5px 0;font-size:13px;line-height:18px;color:#a3adb8;white-space:nowrap">Telefone</td>'
+        . '<td style="padding:0 0 5px 0;font-size:13px;line-height:18px;white-space:nowrap">'
+        . '<a href="tel:+5511992209235" style="color:#183550;text-decoration:none">+55 11 99220-9235</a></td></tr>'
+        . '<tr><td style="padding:0 16px 5px 0;font-size:13px;line-height:18px;color:#a3adb8;white-space:nowrap">E-mail</td>'
+        . '<td style="padding:0 0 5px 0;font-size:13px;line-height:18px;white-space:nowrap">'
+        . '<a href="mailto:bruna@mais351monitor.com.br" style="color:#183550;text-decoration:none">bruna@mais351monitor.com.br</a></td></tr>'
+        . '<tr><td style="padding:0 16px 0 0;font-size:13px;line-height:18px;color:#a3adb8;white-space:nowrap">Site</td>'
+        . '<td style="padding:0;font-size:13px;line-height:18px;white-space:nowrap">'
+        . '<a href="https://www.mais351monitor.com.br" target="_blank" style="color:#183550;text-decoration:none">mais351monitor.com.br</a></td></tr>'
+        . '</table>'
+        . '<div style="margin-top:14px;font-size:10px;line-height:14px;font-weight:700;'
+        . 'letter-spacing:2.4px;color:#9ba6b2;white-space:nowrap">PRODUTIVIDADE EM TEMPO REAL</div>'
         . '</td>'
         . '</tr></table>',
 ];
