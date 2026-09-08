@@ -20,6 +20,12 @@ jobs:
       - name: Lint PHP
         run: find crm -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null && echo "PHP OK"
 
+      # O deploy é FTPS direto em produção, sem staging no meio: a suíte roda
+      # ANTES de qualquer arquivo subir. Ela não toca banco nem sobe servidor,
+      # então cabe no runner sem serviço nenhum. Se falhar, nada é publicado.
+      - name: Testes do CRM
+        run: php crm/tests/run.php
+
       # ATENÇÃO: o root deste usuário FTP é o PRÓPRIO docroot do site
       # (não a pasta que contém public_html) — por isso server-dir: crm/.
       # A action só apaga o que ela mesma subiu (state file próprio), então
