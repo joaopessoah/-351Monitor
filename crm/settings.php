@@ -158,6 +158,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             error_log('settings cadencia_auto: ' . $e->getMessage());
             $error = 'Não deu para salvar. A migration 007 já foi aplicada no migrate.php?';
         }
+    } elseif ($action === 'limpar_modelos') {
+        try {
+            $n = cadencia_limpar_modelos();
+            flash_set($n > 0 ? 'ok' : 'aviso', $n > 0
+                ? $n . ' modelo(s) limpo(s): a assinatura e o "responda SAIR" saíram de dentro do corpo.'
+                : 'Nenhum modelo precisava de limpeza.');
+            redirect('settings.php#cadencia-auto');
+        } catch (Throwable $e) {
+            error_log('limpar modelos: ' . $e->getMessage());
+            $error = 'Não deu para limpar os modelos.';
+        }
+    } elseif ($action === 'assinatura_preset') {
+        // Preenche de uma vez os dois campos que a pessoa precisa preencher
+        // para ver a versão visual, em vez de pedir para digitar de novo.
+        try {
+            settings_save([
+                'auto_assinatura' => "Bruna Rondelli · COO\n+351 Monitor · produtividade em tempo real\n"
+                    . "+55 11 99220-9235 · bruna@mais351monitor.com.br\nmais351monitor.com.br",
+                'auto_html'       => 1,
+            ]);
+            flash_set('ok', 'Assinatura preenchida e versão visual ligada. '
+                . 'Use "Enviar teste" para ver como fica.');
+            redirect('settings.php#cadencia-auto');
+        } catch (Throwable $e) {
+            error_log('assinatura preset: ' . $e->getMessage());
+            $error = 'Não deu para preencher a assinatura.';
+        }
     } elseif ($action === 'email_teste') {
         $conta = mail_conta((string) ($_POST['caixa'] ?? ''));
         if ($conta === null) {
@@ -441,6 +468,41 @@ page_header('Configurações', 'settings.php', $user);
         </tbody>
       </table>
     </div>
+  <?php endif; ?>
+
+  <?php
+    // Estes dois ficam FORA do formulário grande de propósito: form dentro de
+    // form não existe em HTML, e um botão que dependesse da validação de todos
+    // os campos obrigatórios lá de baixo falharia sem explicar por quê.
+    $sujos = cadencia_modelos_sujos();
+  ?>
+  <?php if ($sujos && trim(setting_str('auto_optout_texto')) !== ''): ?>
+    <div class="flash flash-aviso">
+      <strong>O “responda SAIR” está saindo duas vezes no mesmo e-mail.</strong>
+      Os modelos <?= esc(implode(', ', array_map(fn ($n) => $n . 'º', $sujos))) ?>
+      ainda têm a assinatura antiga colada dentro do corpo, e agora ela também entra
+      pelo rodapé configurável. O botão abaixo remove de dentro dos modelos apenas o
+      texto padrão que eu conheço palavra por palavra — nada que vocês escreveram é tocado.
+    </div>
+    <form method="post" class="inline-form" style="margin-bottom: 14px"
+          data-confirm="Tirar a assinatura padrão de dentro dos modelos? O texto que vocês escreveram não é alterado.">
+      <?= csrf_field() ?>
+      <input type="hidden" name="action" value="limpar_modelos">
+      <button class="btn btn-primary btn-sm" type="submit">Tirar a assinatura de dentro dos modelos</button>
+    </form>
+  <?php endif; ?>
+
+  <?php if (trim(setting_str('auto_assinatura')) === ''): ?>
+    <div class="flash flash-aviso">
+      <strong>Nenhuma assinatura configurada.</strong>
+      Os e-mails estão saindo sem identificar quem escreveu, que é o que mais faz
+      um e-mail frio parecer disparo automático.
+    </div>
+    <form method="post" class="inline-form" style="margin-bottom: 14px">
+      <?= csrf_field() ?>
+      <input type="hidden" name="action" value="assinatura_preset">
+      <button class="btn btn-primary btn-sm" type="submit">Usar a assinatura da Bruna e ligar a versão visual</button>
+    </form>
   <?php endif; ?>
 
   <form method="post" class="form-stack">

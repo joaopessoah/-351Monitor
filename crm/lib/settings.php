@@ -240,6 +240,58 @@ function setting_bool(string $key): bool
     return setting_int($key) === 1;
 }
 
+/**
+ * Modelos que ainda carregam a assinatura/despedida ANTIGA dentro do corpo.
+ *
+ * Antes a assinatura vivia colada no fim de cada um dos cinco modelos. Agora
+ * ela e o rodape de descadastro sao configuracoes proprias, entao o que sobrou
+ * dentro do modelo vira texto repetido — o "responda SAIR" chega duas vezes no
+ * mesmo e-mail, que e o tipo de detalhe que faz o leitor achar que e robo.
+ *
+ * @return int[] numeros das etapas que precisam de limpeza
+ */
+function cadencia_modelos_sujos(): array
+{
+    $sujos = [];
+    for ($n = 1; $n <= CADENCIA_EMAIL_PASSOS; $n++) {
+        $corpo = setting_str('cadencia_email_corpo_' . $n);
+        if (str_contains($corpo, CADENCIA_EMAIL_ASSINATURA)
+            || preg_match('/responda\s+SAIR/iu', $corpo) === 1) {
+            $sujos[] = $n;
+        }
+    }
+    return $sujos;
+}
+
+/**
+ * Tira do fim dos modelos exatamente os blocos que hoje moram em outro lugar.
+ * So remove texto conhecido, palavra por palavra — nada escrito pelo time some.
+ *
+ * @return int quantos modelos foram alterados
+ */
+function cadencia_limpar_modelos(): int
+{
+    $mexidos = 0;
+    $kv = [];
+    for ($n = 1; $n <= CADENCIA_EMAIL_PASSOS; $n++) {
+        $original = setting_str('cadencia_email_corpo_' . $n);
+        $corpo = str_replace(CADENCIA_EMAIL_ASSINATURA, '', $original);
+        // A linha solta do opt-out, com ou sem a assinatura em volta.
+        $corpo = (string) preg_replace(
+            '/^\s*Se n[ãa]o quiser receber meus e-mails, responda SAIR que removo seu contato\.\s*$/miu',
+            '', $corpo);
+        $corpo = rtrim((string) preg_replace("/\n{3,}/", "\n\n", $corpo));
+        if ($corpo !== rtrim($original)) {
+            $kv['cadencia_email_corpo_' . $n] = $corpo;
+            $mexidos++;
+        }
+    }
+    if ($kv) {
+        settings_save($kv);
+    }
+    return $mexidos;
+}
+
 /** Upsert das chaves informadas. Só aceita chaves conhecidas. */
 function settings_save(array $kv): void
 {
