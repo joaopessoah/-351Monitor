@@ -244,3 +244,17 @@ Nada do produto está em voo. O que resta, em ordem de valor:
 - **Teste que passa sem a implementação não testa nada.** O primeiro teste do PDF pessoal passou
   antes de existir a variante, porque `windows_sid` era ignorado em silêncio — só ficou honesto
   quando passou a exigir que o `row_count` contasse os apps DAQUELA pessoa.
+- **No grão mensal, aritmética de janela é em MESES, nunca em dias.** O SQL mensal expande o
+  recorte para o *mês tocado*, então um `from` que cai no dia 23 arrasta o mês inteiro. Calcular
+  o período anterior em dias fazia "3 meses" comparar 69 dias contra 91 — uma queda de 24%
+  inventada pela régua, com a operação inalterada. `PreviousWindow`, no `DashboardController`, é
+  o lugar certo dessa conta.
+- **Classificação CONGELADA vs VIGENTE é armadilha estrutural do repo.** `daily_*` guarda os
+  baldes com a regra que valia no dia da agregação; qualquer leitura que re-derive classificação
+  (um `JOIN categories` na consulta) usa a regra de HOJE. Como a reagregação automática cobre só
+  30 dias, os dois lados divergem em silêncio para períodos mais antigos. Consulta que
+  reclassifica na leitura ou declara a divergência — como
+  `IndexExplainedController.DivergenciaPorClassificacao` — ou mente.
+- **Revisão em subagente: passe o caminho absoluto do repositório.** O diretório de trabalho da
+  sessão é a pasta do usuário, que contém OUTROS repositórios; uma revisão saiu inteira sobre o
+  projeto errado antes de alguém notar.
