@@ -1074,21 +1074,46 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
     /// </summary>
     private async Task ResetTenantAsync(NpgsqlConnection conn, Guid tenantId, CancellationToken ct)
     {
+        // A ORDEM É A DAS CHAVES ESTRANGEIRAS: filho antes de pai, e `organizations` por último.
+        // Toda tabela com tenant_id PRECISA estar aqui — não estar tem duas consequências, e a
+        // segunda é a que morde:
+        //  - sem FK para organizations (hourly_activity, monthly_summaries): o DELETE da org
+        //    passa e as linhas ficam ÓRFÃS, invisíveis até a purga de 24 meses, porque o
+        //    re-seed cria um tenant com id novo;
+        //  - com FK sem cascade (teams, organization_holidays, tenant_app_team_categories): o
+        //    reset inteiro estoura 23503 e o reseed semanal do tenant demo simplesmente para de
+        //    funcionar num domingo qualquer, sem ninguém olhando.
+        // DemoSeederTests.Reset_Apaga_O_Tenant_Demo_Por_Inteiro_... trava as duas.
         string[] deletes =
         [
             "DELETE FROM dirty_days WHERE tenant_id = @t",
             "DELETE FROM ingest_cursors WHERE tenant_id = @t",
             "DELETE FROM daily_app_usage WHERE tenant_id = @t",
             "DELETE FROM daily_device_summaries WHERE tenant_id = @t",
+            // F6/F9: agregados sem FK para organizations — órfãos silenciosos se ficarem fora
+            "DELETE FROM hourly_activity WHERE tenant_id = @t",
+            "DELETE FROM monthly_summaries WHERE tenant_id = @t",
+            "DELETE FROM monthly_rollup_state WHERE tenant_id = @t",
             "DELETE FROM activity_intervals WHERE tenant_id = @t",
             "DELETE FROM raw_events WHERE tenant_id = @t",
             "DELETE FROM device_current_state WHERE tenant_id = @t",
             "DELETE FROM device_commands WHERE tenant_id = @t",
+            // F6: escritos SOBRE a pessoa; person_notes antes de people por leitura, não por FK
+            "DELETE FROM person_notes WHERE tenant_id = @t",
+            "DELETE FROM people WHERE tenant_id = @t",
+            "DELETE FROM management_alerts WHERE tenant_id = @t",
             "DELETE FROM device_users WHERE tenant_id = @t",
             "DELETE FROM devices WHERE tenant_id = @t",
             "DELETE FROM enrollment_keys WHERE tenant_id = @t",
+            // F5: referencia categories E teams — precisa cair antes das duas
+            "DELETE FROM tenant_app_team_categories WHERE tenant_id = @t",
             "DELETE FROM tenant_app_categories WHERE tenant_id = @t",
             "DELETE FROM categories WHERE tenant_id = @t",
+            // F7: team_members cascateia de teams, mas explícito é auditável; as duas e os
+            // feriados referenciam organizations sem cascade
+            "DELETE FROM team_members WHERE tenant_id = @t",
+            "DELETE FROM teams WHERE tenant_id = @t",
+            "DELETE FROM organization_holidays WHERE tenant_id = @t",
             "DELETE FROM tenant_agent_configs WHERE tenant_id = @t",
             "DELETE FROM export_jobs WHERE tenant_id = @t",
             "DELETE FROM refresh_tokens WHERE tenant_id = @t",

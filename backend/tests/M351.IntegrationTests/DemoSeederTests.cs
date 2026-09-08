@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using M351.Domain;
+using M351.Infrastructure.Aggregation;
 using M351.Infrastructure.DemoSeed;
 using M351.Infrastructure.Security;
 using M351.IntegrationTests.Support;
@@ -178,6 +179,100 @@ public class DemoSeederTests(ApiTestFixture fixture)
     }
 
     /// <summary>Contagens por tabela do tenant — comparadas antes/depois para provar isolamento.</summary>
+    /// <summary>
+    /// O --reset tem de apagar o tenant demo POR INTEIRO, inclusive as tabelas que chegaram
+    /// depois de a lista ter sido escrita (F5, F6, F7 e F9).
+    ///
+    /// DOIS PROBLEMAS DIFERENTES, e o segundo é pior que o primeiro:
+    ///  - ÓRFÃOS: hourly_activity e monthly_summaries não têm FK para organizations, então o
+    ///    DELETE da organização passa e as linhas ficam para trás. Como o re-seed cria um
+    ///    tenant com id NOVO, elas viram lixo invisível até a purga de 24 meses;
+    ///  - FALHA DURA: teams, organization_holidays e tenant_app_team_categories têm FK sem
+    ///    cascade para organizations/categories. Basta a demo ter UMA equipe para o reset
+    ///    inteiro estourar 23503 — e o reseed semanal do tenant demo para de funcionar num
+    ///    sábado qualquer, sem ninguém olhando.
+    /// </summary>
+    [Fact]
+    public async Task Reset_Apaga_O_Tenant_Demo_Por_Inteiro_Inclusive_As_Tabelas_Novas()
+    {
+        var slug = $"demo-reset-{Guid.NewGuid():N}"[..24];
+        var hasher = fixture.Services.GetRequiredService<IPasswordHasher>();
+        await using var dataSource = NpgsqlDataSource.Create(fixture.Database.ConnectionString);
+        var seeder = new DemoSeeder(dataSource, hasher);
+        var options = new DemoSeedOptions
+        {
+            DeviceCount = 4, // mínimo do seeder: quatro papéis especiais
+            Days = 5,        // mínimo do seeder
+            Slug = slug,
+            OrgName = "Demo Reset",
+        };
+
+        var first = await seeder.RunAsync(options);
+
+        // ----- tudo o que a demo pode ganhar depois de semeada -----
+        var teamId = Uuid7.NewUuid7();
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            "INSERT INTO teams (id, tenant_id, name, tag) VALUES (@id, @t, 'Comercial', 'comercial')",
+            ("id", teamId), ("t", first.TenantId));
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            """
+            INSERT INTO team_members (tenant_id, team_id, windows_sid)
+            SELECT @t, @id, du.windows_sid FROM device_users du
+            WHERE du.tenant_id = @t LIMIT 1
+            """,
+            ("t", first.TenantId), ("id", teamId));
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            """
+            INSERT INTO tenant_app_team_categories (tenant_id, team_id, app_id, category_id)
+            SELECT @t, @id, tac.app_id, tac.category_id
+            FROM tenant_app_categories tac WHERE tac.tenant_id = @t LIMIT 1
+            """,
+            ("t", first.TenantId), ("id", teamId));
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            "INSERT INTO organization_holidays (tenant_id, holiday_date, name) VALUES (@t, DATE '2026-09-07', 'Independência')",
+            ("t", first.TenantId));
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            """
+            INSERT INTO people (tenant_id, windows_sid, display_name)
+            SELECT @t, du.windows_sid, 'Pessoa Demo' FROM device_users du
+            WHERE du.tenant_id = @t LIMIT 1
+            ON CONFLICT DO NOTHING
+            """,
+            ("t", first.TenantId));
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            """
+            INSERT INTO person_notes (id, tenant_id, windows_sid, kind, started_at, ended_at, body, created_by_user_id)
+            SELECT @id, @t, du.windows_sid, 'anotacao', now() - INTERVAL '1 day', now(),
+                   'contexto', (SELECT id FROM users WHERE tenant_id = @t LIMIT 1)
+            FROM device_users du WHERE du.tenant_id = @t LIMIT 1
+            """,
+            ("id", Uuid7.NewUuid7()), ("t", first.TenantId));
+
+        await using (var ds = NpgsqlDataSource.Create(fixture.Database.ConnectionString))
+        {
+            await new MonthlyRollupService(ds).RunOnceAsync();
+        }
+
+        // as tabelas realmente têm linha antes do reset (senão o teste não prova nada)
+        Assert.True(await CountAsync("SELECT count(*) FROM hourly_activity WHERE tenant_id = @t", ("t", first.TenantId)) > 0);
+        Assert.True(await CountAsync("SELECT count(*) FROM monthly_summaries WHERE tenant_id = @t", ("t", first.TenantId)) > 0);
+
+        // ----- o reset não pode estourar FK e não pode deixar rastro -----
+        var second = await seeder.RunAsync(options with { Reset = true });
+        Assert.NotEqual(first.TenantId, second.TenantId);
+
+        foreach (var tabela in new[]
+        {
+            "hourly_activity", "monthly_summaries", "monthly_rollup_state", "people",
+            "person_notes", "teams", "team_members", "organization_holidays",
+            "tenant_app_team_categories", "management_alerts",
+        })
+        {
+            Assert.Equal(0, await CountAsync(
+                $"SELECT count(*) FROM {tabela} WHERE tenant_id = @t", ("t", first.TenantId)));
+        }
+    }
+
     private async Task<string> SnapshotTenantAsync(Guid tenantId)
     {
         string[] tables =
