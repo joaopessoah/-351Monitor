@@ -49,4 +49,13 @@ O fechamento seguinte atacou um padrão que a auditoria encontrou repetido: back
 
 Na mesma leva, do lado da infraestrutura e da cobertura: cópia off-site do backup com cifra do lado do cliente (remote `crypt` do rclone) e verificação explícita da postura de cifra antes de subir qualquer dump, metatags de preview no painel, e uma varredura de testes que fechou os caminhos novos de back-end que tinham entrado sem cobertura (metas semanais da organização, preferências de e-mail, `/readyz`, o comando de plano do backoffice e mais três casos na suíte canônica de isolamento cross-tenant).
 
+Do lado comercial, a cadência de prospecção deixou de ser manual: o CRM interno ganhou
+um motor de envio próprio (cron PHP a cada 10 minutos, fila de saída com horário
+sorteado dentro das janelas do playbook, teto diário por caixa com aquecimento),
+pré-validação do e-mail em camadas, leitura das caixas por IMAP para detectar resposta,
+devolução e pedido de saída, e o descadastro de um clique que o Gmail e o Outlook
+esperam. Tudo em PHP puro, sem serviço de disparo no meio e sem IA no laço de envio —
+a camada opcional com o Claude só escreve rascunho e relatório. Passo a passo em
+`docs/runbooks/cadencia-automatica.md`; desenho em `crm/README.md`.
+
 Pendências externas antes do primeiro cliente real: certificado de code signing (comprar com a data do piloto marcada, lead time de 1 a 3 semanas), revisão jurídica do kit LGPD/DPA e decisão da cloud gerenciada de produção. Staging: VPS Hostinger com deploy automático no push para `main`.

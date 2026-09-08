@@ -14,7 +14,8 @@ if (PHP_SAPI !== 'cli') {
     exit("Só na linha de comando.\n");
 }
 
-$suites = ['cadencia.php', 'mailto_crlf.php', 'migrations.php', 'correcoes.php', 'quadro.php', 'analytics.php'];
+$suites = ['cadencia.php', 'cadencia_auto.php', 'mailer.php', 'inbound.php', 'email_check.php',
+    'mailto_crlf.php', 'migrations.php', 'correcoes.php', 'quadro.php', 'analytics.php'];
 $php = PHP_BINARY;
 $falhou = [];
 

@@ -24,13 +24,51 @@ const SETTING_INT_DEFAULTS = [
     'cadencia_email_4' => 3,
     'cadencia_email_5' => 30,
     'cadencia_hora'    => 9,
+
+    // --- Cadencia AUTOMATICA (migration 012) -------------------------------
+    // auto_ligada e o interruptor geral: 0 nao envia nada, seja qual for o
+    // resto. Os tetos seguem o aquecimento do playbook (15 / 20 / 30 por dia
+    // e por caixa) e auto_max_tick limita cada execucao do cron.
+    'auto_ligada'         => 0,
+    'auto_sandbox'        => 1,
+    'auto_teto_sem1'      => 15,
+    'auto_teto_sem2'      => 20,
+    'auto_teto'           => 30,
+    'auto_max_tick'       => 5,
+    'auto_dominio_dias'   => 7,
+    'auto_avisa_email'    => 1,
+    'auto_avisa_telegram' => 0,
+    'auto_resumo_hora'    => 17,
+    'auto_resumo_minuto'  => 30,
+    // Tarefas HUMANAS da cadencia (ficam visiveis no quadro, ao contrario das
+    // tarefas automaticas de "cobrar retorno", que a automacao aposenta).
+    'cadencia_ligacao_dias'  => 2,
+    'cadencia_linkedin_dias' => 7,
+];
+
+/**
+ * Configuracoes de texto que nao sao modelo de e-mail. Ficam separadas dos
+ * modelos para a tela de Configuracoes conseguir renderizar cada grupo no seu
+ * lugar, e para settings_save() aceitar as duas famílias.
+ */
+const SETTING_STR_DEFAULTS = [
+    'auto_modo'         => 'aprovacao', // 'aprovacao' | 'automatico'
+    'auto_janela1_ini'  => '08:30',
+    'auto_janela1_fim'  => '11:00',
+    'auto_janela2_ini'  => '14:00',
+    'auto_janela2_fim'  => '17:00',
+    'auto_sandbox_para' => '',
+    'auto_etapas'       => '1,2,3,4,5',
+    'auto_inicio'       => '',
+    'auto_cc_avisos'    => '',
 ];
 
 /** Quantos e-mails a cadência acompanha (1º ao 5º). */
 const CADENCIA_EMAIL_PASSOS = 5;
 
 /** Chaves aceitas nos modelos. Ver cadencia_email_vars(). */
-const CADENCIA_EMAIL_CHAVES = ['{empresa}', '{contato}', '{primeiro_nome}', '{cargo}', '{estacoes}', '{meu_nome}'];
+const CADENCIA_EMAIL_CHAVES = ['{empresa}', '{contato}', '{primeiro_nome}', '{cargo}', '{estacoes}',
+    '{meu_nome}', '{linha_pessoal}'];
 
 /** Rodapé obrigatório: remetente real + opt-out (LGPD do outbound). */
 const CADENCIA_EMAIL_ASSINATURA =
@@ -43,7 +81,10 @@ const CADENCIA_EMAIL_ASSINATURA =
 const CADENCIA_EMAIL_DEFAULTS = [
     1 => [
         'assunto' => 'Horas da equipe na {empresa}: quantas viram produção?',
+        // {linha_pessoal} e a unica frase escrita para AQUELA empresa (site,
+        // noticia, indicacao). Vazia, a linha some sem deixar buraco.
         'corpo'   => "Oi, {primeiro_nome}, tudo bem?\n\n"
+            . "{linha_pessoal}\n\n"
             . "No trabalho híbrido quase ninguém consegue responder uma pergunta simples: "
             . "das 8h do time, quantas viram entrega de verdade?\n\n"
             . "O +351 Monitor mostra horas ativas, ociosidade e os sistemas usados em cada "
@@ -88,14 +129,14 @@ const CADENCIA_EMAIL_DEFAULTS = [
     ],
 ];
 
-/** Defaults completos: números + os 5 modelos, cada corpo já com a assinatura. */
+/** Defaults completos: números + textos soltos + os 5 modelos com assinatura. */
 function setting_defaults(): array
 {
     static $d = null;
     if ($d !== null) {
         return $d;
     }
-    $d = SETTING_INT_DEFAULTS;
+    $d = SETTING_INT_DEFAULTS + SETTING_STR_DEFAULTS;
     foreach (CADENCIA_EMAIL_DEFAULTS as $n => $t) {
         $d['cadencia_email_assunto_' . $n] = $t['assunto'];
         $d['cadencia_email_corpo_' . $n]   = $t['corpo'] . "\n\n" . CADENCIA_EMAIL_ASSINATURA;
@@ -135,6 +176,11 @@ function setting_str(string $key): string
     return (string) (settings_all()[$key] ?? setting_defaults()[$key] ?? '');
 }
 
+function setting_bool(string $key): bool
+{
+    return setting_int($key) === 1;
+}
+
 /** Upsert das chaves informadas. Só aceita chaves conhecidas. */
 function settings_save(array $kv): void
 {
@@ -147,4 +193,93 @@ function settings_save(array $kv): void
             [$k, (string) $v]);
     }
     settings_all(true);
+}
+
+/* ---------- Estado interno (nao aparece em Configuracoes) ---------- */
+
+/**
+ * Cursor do IMAP, data do ultimo resumo e afins. Mora no mesmo app_settings,
+ * com prefixo '_' para nunca colidir com uma configuracao de verdade e para
+ * o settings_save() (que so aceita chaves conhecidas) continuar servindo de
+ * guarda contra chave digitada errada na tela.
+ */
+function state_get(string $key, string $default = ''): string
+{
+    $k = '_' . $key;
+    $all = settings_all();
+    if (array_key_exists($k, $all)) {
+        return (string) $all[$k];
+    }
+    try {
+        $v = scalar('SELECT v FROM app_settings WHERE k = ?', [$k]);
+    } catch (Throwable $e) {
+        return $default; // migration 007 ainda nao aplicada
+    }
+    return $v === null ? $default : (string) $v;
+}
+
+function state_set(string $key, string $value): void
+{
+    q('INSERT INTO app_settings (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)',
+        ['_' . $key, $value]);
+    settings_all(true);
+}
+
+/**
+ * Feriados nacionais (migration 012) como mapa 'Y-m-d' => nome.
+ *
+ * Mora aqui, junto de settings_all(), porque tem exatamente a mesma natureza:
+ * leitura de banco com fallback silencioso para quando a migration ainda nao
+ * rodou. business_days_add() continua puro e recebe este conjunto por
+ * parametro — e o que deixa a suite de dias uteis rodar sem banco nenhum.
+ */
+function feriados_set(bool $refresh = false): array
+{
+    static $cache = null;
+    if ($refresh) {
+        $cache = null;
+    }
+    if ($cache !== null) {
+        return $cache;
+    }
+    $cache = [];
+    try {
+        foreach (rows('SELECT dia, nome FROM feriados') as $r) {
+            $cache[(string) $r['dia']] = (string) $r['nome'];
+        }
+    } catch (Throwable $e) {
+        // migration 012 ainda nao aplicada: so fim de semana e pulado
+    }
+    return $cache;
+}
+
+/**
+ * Etapas da cadencia que a automacao envia, na ordem. Desligar a 3 e a 4
+ * (deixando "1,2,5") transforma os 5 e-mails nos 3 toques do playbook sem
+ * mexer em modelo nenhum.
+ *
+ * @return int[]
+ */
+function cadencia_etapas_ativas(): array
+{
+    $out = [];
+    foreach (explode(',', setting_str('auto_etapas')) as $p) {
+        $n = (int) trim($p);
+        if ($n >= 1 && $n <= CADENCIA_EMAIL_PASSOS && !in_array($n, $out, true)) {
+            $out[] = $n;
+        }
+    }
+    sort($out);
+    return $out ?: range(1, CADENCIA_EMAIL_PASSOS);
+}
+
+/** Proxima etapa ativa depois de $seq, ou null quando a cadencia acabou. */
+function cadencia_etapa_seguinte(int $seq): ?int
+{
+    foreach (cadencia_etapas_ativas() as $n) {
+        if ($n > $seq) {
+            return $n;
+        }
+    }
+    return null;
 }

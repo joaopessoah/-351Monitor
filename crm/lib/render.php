@@ -51,6 +51,28 @@ const CADENCIA_EMAIL_LABELS = [
     5 => 'Quinto e-mail',
 ];
 
+/** Status da pre-validacao do e-mail do contato (migration 013). */
+function email_status_badge(?string $status): string
+{
+    $s = $status ?: 'nao_verificado';
+    $classe = match ($s) {
+        'valido'      => 'badge-trial',
+        'generico'    => 'badge-demo_agendada',
+        'bounce', 'invalido', 'descartavel' => 'badge-dup',
+        default       => 'badge-perdido',
+    };
+    $titulo = match ($s) {
+        'valido'      => 'Dominio responde e o endereco parece de uma pessoa',
+        'generico'    => 'Caixa de papel (contato@, financeiro@...): entra na cadencia, com prioridade menor',
+        'invalido'    => 'Dominio sem MX ou sintaxe invalida — a cadencia nao envia',
+        'descartavel' => 'Dominio de e-mail temporario — a cadencia nao envia',
+        'bounce'      => 'O servidor devolveu um envio anterior — corrija o endereco',
+        default       => 'Ainda nao verificado',
+    };
+    return '<span class="badge ' . $classe . '" title="' . esc($titulo) . '">'
+        . esc(EMAIL_STATUS_LABELS[$s] ?? $s) . '</span>';
+}
+
 function fmt_dt(?string $dt): string
 {
     return $dt ? date('d/m/Y H:i', strtotime($dt)) : '—';
@@ -155,10 +177,20 @@ function page_header(string $title, string $active, array $user): void
         'kanban.php'    => 'Kanban',
         'board.php'     => 'Quadro',
         'fila.php'      => 'Fila',
+        'envios.php'    => 'Envios',
         'analytics.php' => 'Site',
         'import.php'    => 'Importar',
         'settings.php'  => 'Configurações',
     ];
+    // Retorno nao tratado e a unica coisa que precisa de gente HOJE: vai no
+    // menu, em todas as telas, para nao depender de abrir o dashboard.
+    $pendentes = 0;
+    try {
+        $pendentes = (int) scalar("SELECT COUNT(*) FROM email_inbound
+                                   WHERE handled_at IS NULL AND kind IN ('humana','optout','bounce')");
+    } catch (Throwable $e) {
+        // migration 014 ainda não aplicada
+    }
     echo '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">';
     echo '<meta name="viewport" content="width=device-width, initial-scale=1">';
     echo '<meta name="robots" content="noindex, nofollow">';
@@ -169,7 +201,10 @@ function page_header(string $title, string $active, array $user): void
     echo '<a class="brand" href="index.php"><em>+</em>351 <span>CRM</span></a>';
     echo '<nav class="topnav">';
     foreach ($items as $href => $label) {
-        echo '<a' . ($href === $active ? ' class="active"' : '') . ' href="' . $href . '">' . $label . '</a>';
+        $sino = $href === 'envios.php' && $pendentes > 0
+            ? ' <span class="nav-badge">' . $pendentes . '</span>'
+            : '';
+        echo '<a' . ($href === $active ? ' class="active"' : '') . ' href="' . $href . '">' . $label . $sino . '</a>';
     }
     echo '</nav>';
     echo '<div class="topbar-user"><span class="user-name">' . esc($user['name']) . '</span>';

@@ -128,5 +128,15 @@ require __DIR__ . '/validate.php';
 require __DIR__ . '/cnpj.php';
 require __DIR__ . '/settings.php';
 require __DIR__ . '/model.php';
+// Cadencia automatica de e-mail (migrations 012-014): envio, validacao,
+// leitura da caixa e avisos. Sao so definicoes de funcao — nada aqui abre
+// socket nem consulta banco enquanto ninguem chamar.
+require __DIR__ . '/smtp.php';
+require __DIR__ . '/mailer.php';
+require __DIR__ . '/email_check.php';
+require __DIR__ . '/cadencia.php';
+require __DIR__ . '/imapmin.php';
+require __DIR__ . '/inbound.php';
+require __DIR__ . '/notify.php';
 require __DIR__ . '/analytics.php';
 require __DIR__ . '/render.php';

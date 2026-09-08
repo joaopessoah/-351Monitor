@@ -23,6 +23,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($res['reconciliados'] > 0) {
                     $msg .= ' (' . $res['reconciliados'] . ' já existiam no CRM e foram apenas marcados na fila)';
                 }
+                // Puxar da fila e comecar a cadencia e o mesmo gesto na segunda
+                // de manha: quem marca a caixa nao precisa passar pela tela de
+                // Leads para selecionar os mesmos leads de novo.
+                if (!empty($_POST['cadencia']) && $res['lead_ids']) {
+                    $entraram = 0;
+                    $fora = 0;
+                    foreach ($res['lead_ids'] as $lid) {
+                        $c = cadencia_auto_iniciar((int) $lid, (int) $user['id'], null, (int) $user['id'], null);
+                        $c['ok'] ? $entraram++ : $fora++;
+                    }
+                    $msg .= ' · ' . $entraram . ' em cadência'
+                        . ($fora > 0 ? ' (' . $fora . ' sem e-mail utilizável)' : '')
+                        . (setting_str('auto_modo') === 'automatico' ? '' : ', aguardando aprovação em Envios');
+                }
                 flash_set('ok', $msg . '.');
             }
         } catch (Throwable $e) {
@@ -76,6 +90,17 @@ page_header('Fila de prospecção', 'fila.php', $user);
                 <option value="<?= esc($v) ?>"><?= esc(POOL_VERTICAL_LABELS[$v]) ?></option>
               <?php endforeach; ?>
             </select>
+          </div>
+          <div class="field field-check">
+            <input id="cadencia" name="cadencia" type="checkbox" value="1"
+                   <?= mail_remetentes() ? '' : 'disabled' ?>>
+            <label for="cadencia">Já iniciar a cadência de e-mail
+              <?php if (!mail_remetentes()): ?>
+                <span class="muted">(nenhuma caixa configurada)</span>
+              <?php else: ?>
+                <span class="muted">(assinada por você)</span>
+              <?php endif; ?>
+            </label>
           </div>
         </div>
         <button class="btn btn-primary" type="submit">Puxar leads</button>

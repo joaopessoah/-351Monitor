@@ -226,6 +226,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             lead_enrich_cnpj($id);
             flash_set('ok', 'Dados da Receita atualizados.');
             redirect('lead.php?id=' . $id);
+        } elseif ($action === 'cadencia_iniciar' && $id > 0) {
+            $res = cadencia_auto_iniciar(
+                $id,
+                (int) ($_POST['sender_user_id'] ?? 0) ?: null,
+                (int) ($_POST['contact_id'] ?? 0) ?: null,
+                $userId,
+                $_POST['linha_pessoal'] ?? null
+            );
+            flash_set($res['ok'] ? 'ok' : 'erro', $res['ok']
+                ? 'Cadência iniciada. Primeiro e-mail ' . (setting_str('auto_modo') === 'automatico'
+                    ? 'agendado para ' : 'aguardando aprovação, previsto para ') . fmt_dt($res['quando']) . '.'
+                : 'Não deu para iniciar: ' . $res['motivo'] . '.');
+            redirect('lead.php?id=' . $id);
+        } elseif ($action === 'cadencia_pausar' && $id > 0) {
+            cadencia_auto_pausar($id);
+            flash_set('ok', 'Cadência pausada. O envio agendado foi cancelado.');
+            redirect('lead.php?id=' . $id);
+        } elseif ($action === 'cadencia_retomar' && $id > 0) {
+            $res = cadencia_auto_retomar($id);
+            flash_set($res['ok'] ? 'ok' : 'erro', $res['ok']
+                ? 'Cadência retomada — próximo e-mail em ' . fmt_dt($res['quando'] ?? null) . '.'
+                : 'Não deu para retomar: ' . $res['motivo'] . '.');
+            redirect('lead.php?id=' . $id);
+        } elseif ($action === 'cadencia_encerrar' && $id > 0) {
+            cadencia_auto_parar($id, norm_text($_POST['motivo'] ?? '', 180) ?: 'encerrada na tela');
+            flash_set('ok', 'Cadência encerrada.');
+            redirect('lead.php?id=' . $id);
+        } elseif ($action === 'cadencia_linha' && $id > 0) {
+            $linha = norm_text($_POST['linha_pessoal'] ?? '', 300);
+            q('UPDATE lead_cadence SET personal_line = ?, personal_line_state = ? WHERE lead_id = ?',
+                [$linha ?: null, $linha !== '' ? 'aprovada' : 'nenhuma', $id]);
+            // O texto do proximo e-mail ja esta congelado no outbox: replaneja
+            // para a linha nova entrar de verdade.
+            q("UPDATE email_outbox SET status = 'cancelado', skip_reason = 'linha pessoal alterada'
+                WHERE lead_id = ? AND status IN ('aguardando','agendado')", [$id]);
+            cadencia_auto_planejar($id);
+            flash_set('ok', 'Linha pessoal salva e próximo e-mail regerado.');
+            redirect('lead.php?id=' . $id);
         } elseif ($action === 'no_contact' && $id > 0) {
             $on = ($_POST['on'] ?? '') === '1';
             lead_set_no_contact($id, $on, $_POST['motivo'] ?? null);
@@ -449,6 +487,145 @@ if ($errors) {
       </form>
     </div>
 
+    <?php
+      /* ---------- Cadencia automatica de e-mail ---------- */
+      $cad = null;
+      $cadErro = null;
+      try {
+          $cad = cadencia_estado($id);
+          scalar('SELECT COUNT(*) FROM email_outbox WHERE lead_id = ?', [$id]);
+      } catch (Throwable $e) {
+          $cadErro = 'Cadência automática indisponível — aplique as migrations 012 a 014.';
+      }
+      $pendente = $cadErro === null ? outbox_pendente_do_lead($id) : null;
+      $alvo = $cadErro === null ? cadencia_contato_alvo($id, $cad['contact_id'] ?? null) : null;
+      $remetentes = $cadErro === null ? mail_remetentes() : [];
+      $impedimento = $cadErro === null ? cadencia_pode_iniciar($lead, $alvo) : null;
+    ?>
+    <div class="card" id="cadencia">
+      <h2 class="card-title">Cadência automática
+        <?php if ($cad !== null): ?>
+          <span class="badge badge-<?= $cad['state'] === 'ativa' ? 'trial' : ($cad['state'] === 'pausada' ? 'demo_agendada' : 'perdido') ?>">
+            <?= esc(CADENCIA_ESTADO_LABELS[$cad['state']] ?? $cad['state']) ?>
+          </span>
+        <?php endif; ?>
+      </h2>
+
+      <?php if ($cadErro !== null): ?>
+        <p class="muted"><?= esc($cadErro) ?></p>
+      <?php elseif (!$remetentes): ?>
+        <p class="muted">Nenhuma caixa de e-mail configurada no <code>crm_config.php</code> — sem isso o motor
+          não tem por onde enviar. Veja <code>crm/README.md</code>.</p>
+      <?php elseif ($cad === null || $cad['state'] !== 'ativa'): ?>
+        <?php if ($cad !== null): ?>
+          <p class="muted">
+            Parou no <strong><?= (int) $cad['current_seq'] ?>º e-mail</strong>
+            em <?= esc(fmt_dt($cad['stopped_at'])) ?><?php if ($cad['stop_reason']): ?>
+            — <?= esc($cad['stop_reason']) ?><?php endif; ?>.
+          </p>
+        <?php endif; ?>
+        <?php if ($impedimento !== null): ?>
+          <p class="muted">Este lead não pode entrar em cadência agora: <strong><?= esc($impedimento) ?></strong>.</p>
+        <?php else: ?>
+          <p class="muted">O motor envia os e-mails da sequência nas datas certas, registra cada um aqui na
+            timeline e para sozinho se a pessoa responder.</p>
+          <form method="post" class="form-stack">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="<?= $cad !== null && $cad['state'] === 'pausada' ? 'cadencia_retomar' : 'cadencia_iniciar' ?>">
+            <?php if ($cad === null || $cad['state'] !== 'pausada'): ?>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="cad_sender">Quem assina</label>
+                  <select id="cad_sender" name="sender_user_id">
+                    <?php foreach ($remetentes as $r): ?>
+                      <option value="<?= (int) $r['id'] ?>"<?= (int) $r['id'] === $userId ? ' selected' : '' ?>>
+                        <?= esc($r['name']) ?> &lt;<?= esc($r['email']) ?>&gt;
+                      </option>
+                    <?php endforeach; ?>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="cad_contato">Para qual contato</label>
+                  <select id="cad_contato" name="contact_id">
+                    <?php foreach (contacts_of($id) as $c): ?>
+                      <?php if (!$c['email']) { continue; } ?>
+                      <option value="<?= (int) $c['id'] ?>"<?= $alvo && (int) $alvo['id'] === (int) $c['id'] ? ' selected' : '' ?>>
+                        <?= esc($c['name']) ?> &lt;<?= esc($c['email']) ?>&gt;<?= $c['is_decisor'] ? ' ★' : '' ?>
+                      </option>
+                    <?php endforeach; ?>
+                  </select>
+                </div>
+                <div class="field field-span">
+                  <label for="cad_linha">Linha pessoal <span class="muted">(uma frase só sobre esta empresa — opcional)</span></label>
+                  <input id="cad_linha" name="linha_pessoal" type="text" maxlength="300"
+                         placeholder="Ex.: vi no site de vocês que abriram a filial de Campinas este ano.">
+                </div>
+              </div>
+            <?php endif; ?>
+            <button class="btn btn-primary" type="submit">
+              <?= $cad !== null && $cad['state'] === 'pausada' ? 'Retomar cadência' : 'Iniciar cadência' ?>
+            </button>
+          </form>
+        <?php endif; ?>
+      <?php else: ?>
+        <ul class="rf-list">
+          <li>Última etapa enviada: <strong><?= (int) $cad['current_seq'] ?>º</strong>
+            <?php if ($cad['last_sent_at']): ?><span class="muted">em <?= esc(fmt_dt($cad['last_sent_at'])) ?></span><?php endif; ?></li>
+          <li>Assinando:
+            <strong><?= esc(($cad['sender_user_id'] ? (row('SELECT name FROM users WHERE id = ?', [(int) $cad['sender_user_id']])['name'] ?? '—') : '—')) ?></strong></li>
+          <li>Para: <strong><?= esc($alvo['name'] ?? '—') ?></strong>
+            <span class="muted"><?= esc($alvo['email'] ?? '') ?></span></li>
+          <?php if ($pendente !== null): ?>
+            <li>Próximo: <strong><?= (int) $pendente['seq'] ?>º e-mail</strong> em
+              <?= esc(fmt_dt($pendente['scheduled_for'])) ?>
+              <span class="badge badge-<?= $pendente['status'] === 'aguardando' ? 'demo_agendada' : 'trial' ?>">
+                <?= esc(OUTBOX_STATUS_LABELS[$pendente['status']] ?? $pendente['status']) ?>
+              </span>
+            </li>
+          <?php else: ?>
+            <li class="muted">Nenhum e-mail agendado no momento.</li>
+          <?php endif; ?>
+        </ul>
+
+        <?php if ($pendente !== null): ?>
+          <details class="tpl">
+            <summary>Ver o texto que vai sair</summary>
+            <p class="muted small">Assunto: <strong><?= esc($pendente['subject']) ?></strong></p>
+            <pre class="previa"><?= esc($pendente['body']) ?></pre>
+            <a class="btn btn-ghost btn-sm" href="envios.php?editar=<?= (int) $pendente['id'] ?>#e<?= (int) $pendente['id'] ?>">Editar em Envios</a>
+          </details>
+        <?php endif; ?>
+
+        <?php if (($cad['personal_line_state'] ?? '') === 'rascunho'): ?>
+          <p class="muted small">
+            <span class="badge badge-demo_agendada">rascunho</span>
+            Sugestão de linha pessoal ainda não aprovada — ela <strong>não entra no e-mail</strong>
+            enquanto você não revisar e salvar aqui embaixo.
+          </p>
+        <?php endif; ?>
+        <form method="post" class="inline-form form-linha">
+          <?= csrf_field() ?>
+          <input type="hidden" name="action" value="cadencia_linha">
+          <input name="linha_pessoal" type="text" maxlength="300" value="<?= esc($cad['personal_line'] ?? '') ?>"
+                 placeholder="Linha pessoal (uma frase só sobre esta empresa)" aria-label="Linha pessoal">
+          <button class="btn btn-ghost btn-sm" type="submit">Salvar linha</button>
+        </form>
+
+        <div class="form-actions">
+          <form method="post" class="inline-form"><?= csrf_field() ?>
+            <input type="hidden" name="action" value="cadencia_pausar">
+            <button class="btn btn-ghost btn-sm" type="submit">Pausar</button>
+          </form>
+          <form method="post" class="inline-form" data-confirm="Encerrar a cadência deste lead?">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="cadencia_encerrar">
+            <input type="hidden" name="motivo" value="encerrada na tela">
+            <button class="btn btn-danger btn-sm" type="submit">Encerrar</button>
+          </form>
+        </div>
+      <?php endif; ?>
+    </div>
+
     <div class="card">
       <h2 class="card-title">Receita Federal</h2>
       <?php if (!$lead['cnpj']): ?>
@@ -665,6 +842,9 @@ if ($errors) {
                     <?= mailto_link($c['email'], null, 'Cadência dos 5 e-mails concluída — sem modelo automático') ?>
                     <span class="seq-hint seq-hint-fim" title="Os 5 e-mails já saíram">fim</span>
                   <?php else: ?><?= esc($c['email']) ?><?php endif; ?>
+                  <?php if ($c['email']): ?>
+                    <div class="small"><?= email_status_badge($c['email_status'] ?? null) ?></div>
+                  <?php endif; ?>
                 </td>
                 <td><?= wa_link($c['whatsapp']) ?></td>
                 <td><?= tel_link($c['phone'] ?? null) ?></td>

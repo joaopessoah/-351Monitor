@@ -1,9 +1,20 @@
 # Templates de e-mail — prospecção +351 Monitor
 
+> **Onde os modelos vivem de verdade:** CRM → Configurações → *Cadência de e-mail*.
+> É de lá que o motor lê o assunto e o corpo de cada etapa na hora de enviar. Este
+> arquivo é a referência de tom e o rascunho de onde eles saíram; editar aqui não muda
+> o que é enviado. As chaves disponíveis: `{empresa}`, `{contato}`, `{primeiro_nome}`,
+> `{cargo}`, `{estacoes}`, `{meu_nome}` e `{linha_pessoal}`.
+
 Regras: texto puro (sem imagem/HTML pesado), **máx. 1 link**, 4–8 linhas, 1 pergunta
 clara no final, rodapé de opt-out sempre. Personalizar as `{chaves}` (vêm do CSV do
 gerador: contato, empresa, município, estações estimadas) + **1 linha sua** quando
 possível (site da empresa, notícia, indicação). Enviar de bruna@mais351monitor.com.br.
+
+**`{linha_pessoal}`** é essa uma linha sua, agora com lugar próprio: fica no card da
+cadência, no detalhe do lead, e entra no 1º e-mail logo depois da saudação. Vazia, ela
+some sem deixar buraco. É o único pedaço do e-mail que muda de empresa para empresa —
+e é o que separa uma sequência de um disparo.
 
 Assinatura padrão:
 

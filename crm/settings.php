@@ -49,6 +49,110 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             error_log('settings coluna: ' . $e->getMessage());
             $error = 'Nao deu para salvar. A migration 010 ja foi aplicada no migrate.php?';
         }
+    } elseif ($action === 'cadencia_auto') {
+        try {
+            $hhmm = function (string $campo, string $rotulo): string {
+                $v = trim((string) ($_POST[$campo] ?? ''));
+                if (!preg_match('/^([01]?\d|2[0-3]):[0-5]\d$/', $v)) {
+                    throw new InvalidArgumentException($rotulo . ' inválido (use HH:MM).');
+                }
+                return $v;
+            };
+            $inteiro = function (string $campo, int $min, int $max, string $rotulo): int {
+                $n = norm_int($_POST[$campo] ?? null, $min, $max);
+                if ($n === false || $n === null) {
+                    throw new InvalidArgumentException($rotulo . " inválido ($min a $max).");
+                }
+                return $n;
+            };
+            $sandboxPara = norm_email($_POST['auto_sandbox_para'] ?? '');
+            if ($sandboxPara === false) {
+                throw new InvalidArgumentException('E-mail do sandbox inválido.');
+            }
+            $cc = [];
+            foreach (explode(',', (string) ($_POST['auto_cc_avisos'] ?? '')) as $e) {
+                $n = norm_email($e);
+                if ($n === false) {
+                    throw new InvalidArgumentException('Cópia dos avisos: "' . trim($e) . '" não é um e-mail válido.');
+                }
+                if (is_string($n) && $n !== '') {
+                    $cc[] = $n;
+                }
+            }
+            $etapas = [];
+            foreach (explode(',', (string) ($_POST['auto_etapas'] ?? '')) as $p) {
+                $n = (int) trim($p);
+                if ($n >= 1 && $n <= CADENCIA_EMAIL_PASSOS && !in_array($n, $etapas, true)) {
+                    $etapas[] = $n;
+                }
+            }
+            if (!$etapas) {
+                throw new InvalidArgumentException('Escolha pelo menos uma etapa ativa (ex.: 1,2,5).');
+            }
+            sort($etapas);
+            $inicio = trim((string) ($_POST['auto_inicio'] ?? ''));
+            if ($inicio !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $inicio)) {
+                throw new InvalidArgumentException('Data de início do aquecimento inválida.');
+            }
+            $ligada = !empty($_POST['auto_ligada']) ? 1 : 0;
+            $sandbox = !empty($_POST['auto_sandbox']) ? 1 : 0;
+            if ($ligada === 1 && $sandbox === 0 && $inicio === '') {
+                $inicio = date('Y-m-d'); // liga o aquecimento a partir de hoje
+            }
+
+            settings_save([
+                'auto_ligada'            => $ligada,
+                'auto_sandbox'           => $sandbox,
+                'auto_sandbox_para'      => $sandboxPara ?: '',
+                'auto_modo'              => in_enum($_POST['auto_modo'] ?? null, ['aprovacao', 'automatico'], 'aprovacao'),
+                'auto_janela1_ini'       => $hhmm('auto_janela1_ini', 'Início da 1ª janela'),
+                'auto_janela1_fim'       => $hhmm('auto_janela1_fim', 'Fim da 1ª janela'),
+                'auto_janela2_ini'       => $hhmm('auto_janela2_ini', 'Início da 2ª janela'),
+                'auto_janela2_fim'       => $hhmm('auto_janela2_fim', 'Fim da 2ª janela'),
+                'auto_teto_sem1'         => $inteiro('auto_teto_sem1', 1, 500, 'Teto da semana 1'),
+                'auto_teto_sem2'         => $inteiro('auto_teto_sem2', 1, 500, 'Teto da semana 2'),
+                'auto_teto'              => $inteiro('auto_teto', 1, 500, 'Teto em regime'),
+                'auto_max_tick'          => $inteiro('auto_max_tick', 1, 50, 'Máximo por execução'),
+                'auto_dominio_dias'      => $inteiro('auto_dominio_dias', 0, 90, 'Intervalo por domínio'),
+                'auto_resumo_hora'       => $inteiro('auto_resumo_hora', 0, 23, 'Hora do resumo'),
+                'auto_resumo_minuto'     => $inteiro('auto_resumo_minuto', 0, 59, 'Minuto do resumo'),
+                'cadencia_ligacao_dias'  => $inteiro('cadencia_ligacao_dias', 1, 30, 'Dias até a ligação'),
+                'cadencia_linkedin_dias' => $inteiro('cadencia_linkedin_dias', 1, 30, 'Dias até o LinkedIn'),
+                'auto_avisa_email'       => !empty($_POST['auto_avisa_email']) ? 1 : 0,
+                'auto_avisa_telegram'    => !empty($_POST['auto_avisa_telegram']) ? 1 : 0,
+                'auto_cc_avisos'         => implode(',', $cc),
+                'auto_etapas'            => implode(',', $etapas),
+                'auto_inicio'            => $inicio,
+            ]);
+            flash_set('ok', 'Cadência automática salva.');
+            redirect('settings.php#cadencia-auto');
+        } catch (InvalidArgumentException $e) {
+            $error = $e->getMessage();
+        } catch (Throwable $e) {
+            error_log('settings cadencia_auto: ' . $e->getMessage());
+            $error = 'Não deu para salvar. A migration 007 já foi aplicada no migrate.php?';
+        }
+    } elseif ($action === 'email_teste') {
+        $conta = mail_conta((string) ($_POST['caixa'] ?? ''));
+        if ($conta === null) {
+            $error = 'Caixa desconhecida.';
+        } else {
+            $r = mail_enviar($conta, [
+                'de_nome'    => (string) $conta['nome'],
+                'de_email'   => (string) $conta['email'],
+                'para_email' => (string) $user['email'],
+                'assunto'    => 'Teste de envio do +351 CRM',
+                'corpo'      => "Se você está lendo isto, o SMTP da caixa " . $conta['email']
+                    . " funciona a partir da hospedagem.\n\nEnviado em " . date('d/m/Y H:i')
+                    . " por " . $user['name'] . ".",
+                'message_id' => mail_message_id(mail_dominio((string) $conta['email'])),
+                'auto'       => true,
+            ]);
+            flash_set($r['ok'] ? 'ok' : 'erro', $r['ok']
+                ? 'E-mail de teste enviado para ' . $user['email'] . '.'
+                : 'Falhou: ' . $r['erro']);
+            redirect('settings.php#cadencia-auto');
+        }
     } elseif ($action === 'cadencia') {
         try {
             $kv = [];
@@ -248,6 +352,164 @@ page_header('Configurações', 'settings.php', $user);
       <button class="btn btn-ghost btn-sm" type="submit">Criar coluna</button>
     </form>
   <?php endif; ?>
+</div>
+
+<div class="card" id="cadencia-auto">
+  <h2 class="card-title">Cadência automática (envio, validação e retorno)</h2>
+  <?php $contas = mail_contas(); ?>
+  <?php if (!$contas): ?>
+    <div class="flash flash-aviso">Nenhuma caixa configurada. Adicione a chave <code>mail</code> ao
+      <code>crm_config.php</code> (modelo em <code>crm/README.md</code>) — sem ela o motor não envia nem lê nada.</div>
+  <?php else: ?>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Caixa</th><th>SMTP</th><th>IMAP</th><th>Último UID lido</th><th></th></tr></thead>
+        <tbody>
+          <?php foreach ($contas as $endereco => $c): ?>
+            <tr>
+              <td class="nowrap"><?= esc($c['nome']) ?><div class="muted small"><?= esc($endereco) ?></div></td>
+              <td class="muted small"><?= esc($c['smtp_host']) ?>:<?= (int) $c['smtp_porta'] ?> (<?= esc($c['smtp_seg']) ?>)</td>
+              <td class="muted small">
+                <?= esc($c['imap_host']) ?>:<?= (int) $c['imap_porta'] ?>
+                <?= (string) $c['imap_senha'] === '' ? '<span class="badge badge-perdido">sem senha</span>' : '' ?>
+              </td>
+              <td class="muted small"><?= esc(state_get('imap_' . $endereco) ?: '—') ?></td>
+              <td>
+                <form method="post" class="inline-form">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="action" value="email_teste">
+                  <input type="hidden" name="caixa" value="<?= esc($endereco) ?>">
+                  <button class="btn btn-ghost btn-sm" type="submit">Enviar teste para mim</button>
+                </form>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  <?php endif; ?>
+
+  <form method="post" class="form-stack">
+    <?= csrf_field() ?>
+    <input type="hidden" name="action" value="cadencia_auto">
+
+    <div class="form-grid">
+      <div class="field field-check">
+        <input id="auto_ligada" name="auto_ligada" type="checkbox" value="1" <?= setting_bool('auto_ligada') ? 'checked' : '' ?>>
+        <label for="auto_ligada"><strong>Motor ligado</strong> — sem isto nada é enviado (a caixa continua sendo lida)</label>
+      </div>
+      <div class="field field-check">
+        <input id="auto_sandbox" name="auto_sandbox" type="checkbox" value="1" <?= setting_bool('auto_sandbox') ? 'checked' : '' ?>>
+        <label for="auto_sandbox"><strong>Sandbox</strong> — todo e-mail vai para o endereço abaixo, nunca para o lead</label>
+      </div>
+      <div class="field">
+        <label for="auto_sandbox_para">E-mail do sandbox <span class="muted">(vazio = a própria caixa remetente)</span></label>
+        <input id="auto_sandbox_para" name="auto_sandbox_para" type="email" maxlength="190"
+               value="<?= esc(setting_str('auto_sandbox_para')) ?>">
+      </div>
+      <div class="field">
+        <label for="auto_modo">Modo</label>
+        <select id="auto_modo" name="auto_modo">
+          <option value="aprovacao"<?= setting_str('auto_modo') === 'aprovacao' ? ' selected' : '' ?>>Aprovação — você libera cada e-mail em Envios</option>
+          <option value="automatico"<?= setting_str('auto_modo') === 'automatico' ? ' selected' : '' ?>>Automático — sai sozinho no horário</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="auto_etapas">Etapas ativas <span class="muted">(1,2,3,4,5 — use 1,2,5 para os 3 toques do playbook)</span></label>
+        <input id="auto_etapas" name="auto_etapas" type="text" maxlength="20" value="<?= esc(setting_str('auto_etapas')) ?>">
+      </div>
+      <div class="field">
+        <label for="auto_inicio">Início do aquecimento <span class="muted">(vazio = ainda na semana 1)</span></label>
+        <input id="auto_inicio" name="auto_inicio" type="date" value="<?= esc(setting_str('auto_inicio')) ?>">
+      </div>
+    </div>
+
+    <h3 class="list-title">Janelas de envio (dias úteis, sem feriado nacional)</h3>
+    <div class="form-grid">
+      <div class="field">
+        <label for="auto_janela1_ini">1ª janela — início</label>
+        <input id="auto_janela1_ini" name="auto_janela1_ini" type="time" required value="<?= esc(setting_str('auto_janela1_ini')) ?>">
+      </div>
+      <div class="field">
+        <label for="auto_janela1_fim">1ª janela — fim</label>
+        <input id="auto_janela1_fim" name="auto_janela1_fim" type="time" required value="<?= esc(setting_str('auto_janela1_fim')) ?>">
+      </div>
+      <div class="field">
+        <label for="auto_janela2_ini">2ª janela — início</label>
+        <input id="auto_janela2_ini" name="auto_janela2_ini" type="time" required value="<?= esc(setting_str('auto_janela2_ini')) ?>">
+      </div>
+      <div class="field">
+        <label for="auto_janela2_fim">2ª janela — fim</label>
+        <input id="auto_janela2_fim" name="auto_janela2_fim" type="time" required value="<?= esc(setting_str('auto_janela2_fim')) ?>">
+      </div>
+    </div>
+
+    <h3 class="list-title">Ritmo</h3>
+    <div class="form-grid">
+      <div class="field">
+        <label for="auto_teto_sem1">Teto diário por caixa — semana 1</label>
+        <input id="auto_teto_sem1" name="auto_teto_sem1" type="number" min="1" max="500" required value="<?= setting_int('auto_teto_sem1') ?>">
+      </div>
+      <div class="field">
+        <label for="auto_teto_sem2">Semana 2</label>
+        <input id="auto_teto_sem2" name="auto_teto_sem2" type="number" min="1" max="500" required value="<?= setting_int('auto_teto_sem2') ?>">
+      </div>
+      <div class="field">
+        <label for="auto_teto">Em regime</label>
+        <input id="auto_teto" name="auto_teto" type="number" min="1" max="500" required value="<?= setting_int('auto_teto') ?>">
+      </div>
+      <div class="field">
+        <label for="auto_max_tick">Máximo por execução do cron</label>
+        <input id="auto_max_tick" name="auto_max_tick" type="number" min="1" max="50" required value="<?= setting_int('auto_max_tick') ?>">
+      </div>
+      <div class="field">
+        <label for="auto_dominio_dias">Dias entre e-mails para o mesmo domínio</label>
+        <input id="auto_dominio_dias" name="auto_dominio_dias" type="number" min="0" max="90" required value="<?= setting_int('auto_dominio_dias') ?>">
+      </div>
+      <div class="field">
+        <label for="cadencia_ligacao_dias">Ligação: dias úteis após o 1º e-mail</label>
+        <input id="cadencia_ligacao_dias" name="cadencia_ligacao_dias" type="number" min="1" max="30" required value="<?= setting_int('cadencia_ligacao_dias') ?>">
+      </div>
+      <div class="field">
+        <label for="cadencia_linkedin_dias">LinkedIn: dias úteis após o 1º e-mail</label>
+        <input id="cadencia_linkedin_dias" name="cadencia_linkedin_dias" type="number" min="1" max="30" required value="<?= setting_int('cadencia_linkedin_dias') ?>">
+      </div>
+    </div>
+
+    <h3 class="list-title">Avisos</h3>
+    <div class="form-grid">
+      <div class="field field-check">
+        <input id="auto_avisa_email" name="auto_avisa_email" type="checkbox" value="1" <?= setting_bool('auto_avisa_email') ? 'checked' : '' ?>>
+        <label for="auto_avisa_email">Avisar por e-mail em resposta, devolução e pedido de saída</label>
+      </div>
+      <div class="field field-check">
+        <input id="auto_avisa_telegram" name="auto_avisa_telegram" type="checkbox" value="1" <?= setting_bool('auto_avisa_telegram') ? 'checked' : '' ?>>
+        <label for="auto_avisa_telegram">Avisar também no Telegram <span class="muted">(precisa de <code>telegram</code> no crm_config.php)</span></label>
+      </div>
+      <div class="field">
+        <label for="auto_cc_avisos">Cópia dos avisos <span class="muted">(e-mails separados por vírgula)</span></label>
+        <input id="auto_cc_avisos" name="auto_cc_avisos" type="text" maxlength="255" value="<?= esc(setting_str('auto_cc_avisos')) ?>">
+      </div>
+      <div class="field">
+        <label for="auto_resumo_hora">Resumo do dia — hora</label>
+        <input id="auto_resumo_hora" name="auto_resumo_hora" type="number" min="0" max="23" required value="<?= setting_int('auto_resumo_hora') ?>">
+      </div>
+      <div class="field">
+        <label for="auto_resumo_minuto">Resumo do dia — minuto</label>
+        <input id="auto_resumo_minuto" name="auto_resumo_minuto" type="number" min="0" max="59" required value="<?= setting_int('auto_resumo_minuto') ?>">
+      </div>
+    </div>
+
+    <p class="muted cad-chaves">O cron precisa estar configurado no hPanel:
+      <code>php <?= esc(dirname(__DIR__)) ?>/crm/cron/tick.php</code> a cada 10 minutos.
+      Última execução: <strong><?= esc(state_get('cron_ultimo') ?: 'nunca') ?></strong>
+      <?php $ult = state_get('cron_ultimo_resumo'); ?>
+      <?= $ult !== '' ? '(' . esc($ult) . ')' : '' ?>.</p>
+
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit" <?= $cadenciaOk ? '' : 'disabled' ?>>Salvar cadência automática</button>
+    </div>
+  </form>
 </div>
 
 <div class="card">

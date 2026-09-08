@@ -474,8 +474,143 @@ try {
             visit_link_lead($ref, (int) ($body['lead_id'] ?? 0));
             api_out(200, ['ok' => true]);
         }
+        case 'POST cadence-start': {
+            // Coloca o lead na cadencia automatica e planeja o 1o e-mail.
+            $leadId = (int) ($body['lead_id'] ?? 0);
+            $sender = isset($body['sender_user_id']) ? (int) $body['sender_user_id'] : null;
+            if ($sender === null && !empty($body['sender'])) {
+                $u = row('SELECT id FROM users WHERE email = ?', [mb_strtolower(trim((string) $body['sender']))]);
+                $sender = $u !== null ? (int) $u['id'] : null;
+            }
+            $res = cadencia_auto_iniciar(
+                $leadId,
+                $sender,
+                isset($body['contact_id']) ? (int) $body['contact_id'] : null,
+                null,
+                $body['linha_pessoal'] ?? null
+            );
+            if (!$res['ok']) {
+                api_err(422, 'invalid', (string) $res['motivo']);
+            }
+            api_out(200, ['ok' => true, 'outbox_id' => $res['outbox_id'], 'scheduled_for' => api_dt($res['quando'])]);
+        }
+        case 'POST cadence-stop': {
+            $leadId = (int) ($body['lead_id'] ?? 0);
+            if (row('SELECT id FROM leads WHERE id = ?', [$leadId]) === null) {
+                api_err(404, 'not_found', 'Lead nao encontrado.');
+            }
+            $estado = in_enum($body['estado'] ?? null, ['interrompida', 'pausada'], 'interrompida');
+            $motivo = norm_text((string) ($body['motivo'] ?? ''), 180) ?: 'encerrada pela API';
+            if ($estado === 'pausada') {
+                cadencia_auto_pausar($leadId, $motivo);
+            } else {
+                cadencia_auto_parar($leadId, $motivo);
+            }
+            api_out(200, ['ok' => true]);
+        }
+        case 'POST cadence-line': {
+            // A linha pessoal do 1o e-mail (o que a camada Claude escreve).
+            $leadId = (int) ($body['lead_id'] ?? 0);
+            if (cadencia_estado($leadId) === null) {
+                api_err(404, 'not_found', 'Lead nao esta em cadencia.');
+            }
+            $linha = norm_text((string) ($body['linha_pessoal'] ?? ''), 300);
+            // 'rascunho' NAO entra no e-mail: so a linha aprovada por gente e
+            // usada. E o que garante que nenhum texto de IA sai sem revisao.
+            $estado = in_enum($body['estado'] ?? null, ['rascunho', 'aprovada'], 'rascunho');
+            q('UPDATE lead_cadence SET personal_line = ?, personal_line_state = ? WHERE lead_id = ?',
+                [$linha ?: null, $linha !== '' ? $estado : 'nenhuma', $leadId]);
+            if ($estado === 'aprovada') {
+                q("UPDATE email_outbox SET status = 'cancelado', skip_reason = 'linha pessoal alterada'
+                    WHERE lead_id = ? AND status IN ('aguardando','agendado')", [$leadId]);
+                cadencia_auto_planejar($leadId);
+            }
+            api_out(200, ['ok' => true, 'estado' => $estado]);
+        }
+        case 'GET outbox': {
+            $status = in_enum($_GET['status'] ?? null,
+                ['aguardando', 'agendado', 'enviado', 'falhou', 'cancelado', 'pulado'], '');
+            $where = [];
+            $params = [];
+            if ($status !== '') {
+                $where[] = 'o.status = ?';
+                $params[] = $status;
+            }
+            if (!empty($_GET['lead_id'])) {
+                $where[] = 'o.lead_id = ?';
+                $params[] = (int) $_GET['lead_id'];
+            }
+            if (!empty($_GET['dia']) && $_GET['dia'] === 'hoje') {
+                $where[] = '(DATE(o.scheduled_for) = CURDATE() OR DATE(o.sent_at) = CURDATE())';
+            }
+            $sql = 'SELECT o.*, l.company FROM email_outbox o LEFT JOIN leads l ON l.id = o.lead_id'
+                . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
+                . ' ORDER BY COALESCE(o.sent_at, o.scheduled_for) DESC LIMIT 100';
+            api_out(200, ['items' => array_map(fn ($o) => [
+                'id'            => (int) $o['id'],
+                'lead_id'       => (int) $o['lead_id'],
+                'company'       => $o['company'],
+                'seq'           => (int) $o['seq'],
+                'to_email'      => $o['to_email'],
+                'from_email'    => $o['from_email'],
+                'subject'       => $o['subject'],
+                'status'        => $o['status'],
+                'skip_reason'   => $o['skip_reason'],
+                'last_error'    => $o['last_error'],
+                'scheduled_for' => api_dt($o['scheduled_for']),
+                'sent_at'       => api_dt($o['sent_at']),
+            ], rows($sql, $params))]);
+        }
+        case 'GET inbox': {
+            $so = ($_GET['status'] ?? 'nao_tratado') !== 'todos';
+            $kind = in_enum($_GET['kind'] ?? null, ['humana', 'auto', 'bounce', 'optout', 'ignorada'], '');
+            $where = [];
+            $params = [];
+            if ($so) {
+                $where[] = 'i.handled_at IS NULL';
+            }
+            if ($kind !== '') {
+                $where[] = 'i.kind = ?';
+                $params[] = $kind;
+            } else {
+                $where[] = "i.kind IN ('humana','optout','bounce')";
+            }
+            $sql = 'SELECT i.*, l.company FROM email_inbound i LEFT JOIN leads l ON l.id = i.lead_id'
+                . ' WHERE ' . implode(' AND ', $where) . ' ORDER BY i.received_at DESC LIMIT 100';
+            api_out(200, ['items' => array_map(fn ($i) => [
+                'id'          => (int) $i['id'],
+                'lead_id'     => $i['lead_id'] !== null ? (int) $i['lead_id'] : null,
+                'company'     => $i['company'],
+                'kind'        => $i['kind'],
+                'bounce_code' => $i['bounce_code'],
+                'from_email'  => $i['from_email'],
+                'from_name'   => $i['from_name'],
+                'subject'     => $i['subject'],
+                'snippet'     => $i['snippet'],
+                'received_at' => api_dt($i['received_at']),
+                'handled_at'  => api_dt($i['handled_at']),
+            ], rows($sql, $params))]);
+        }
+        case 'POST inbox-handled': {
+            inbound_tratar((int) ($body['id'] ?? 0), null);
+            api_out(200, ['ok' => true]);
+        }
+        case 'POST email-check': {
+            $e = norm_email($body['email'] ?? '');
+            if ($e === null || $e === false) {
+                api_err(422, 'invalid', 'Informe um e-mail.');
+            }
+            api_out(200, ['email' => $e] + email_check($e, !empty($body['forcar'])));
+        }
+        case 'GET cadence-report': {
+            $mes = (string) ($_GET['mes'] ?? date('Y-m'));
+            if (!preg_match('/^\d{4}-\d{2}$/', $mes)) {
+                api_err(422, 'invalid', 'Use mes=AAAA-MM.');
+            }
+            api_out(200, cadencia_auto_relatorio($mes));
+        }
         default:
-            api_err(404, 'not_found', 'Rota desconhecida. Rotas: leads, lead, lead-update, lead-status, interactions, tasks, task-done, cnpj-lookup, cnpj-enrich, pool-upsert, pool-stats, analytics, analytics-visita, analytics-vincular.');
+            api_err(404, 'not_found', 'Rota desconhecida. Rotas: leads, lead, lead-update, lead-status, interactions, tasks, task-done, cnpj-lookup, cnpj-enrich, pool-upsert, pool-stats, analytics, analytics-visita, analytics-vincular, cadence-start, cadence-stop, cadence-line, cadence-report, outbox, inbox, inbox-handled, email-check.');
     }
 } catch (InvalidArgumentException $e) {
     api_err(422, 'invalid', $e->getMessage());

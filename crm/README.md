@@ -41,6 +41,25 @@ return [
     'analytics_salt' => 'GERE-MAIS-UM-SEGREDO-43-CHARS', // sal do hash de visitante
     'cookie_secure'  => true,   // exige HTTPS
     'app_env'        => 'prod', // 'dev' liga display_errors
+
+    // --- Cadência automática de e-mail (opcional; sem isto o CRM funciona
+    // --- como antes, só sem enviar nem ler caixa). Detalhes e passo a passo:
+    // --- docs/runbooks/cadencia-automatica.md
+    'mail' => [
+        'bruna@mais351monitor.com.br' => [
+            'nome'  => 'Bruna | +351 Monitor',
+            'senha' => 'SENHA-DA-CAIXA-OU-SENHA-DE-APLICATIVO',
+            // defaults: smtp.hostinger.com:587 (tls) e imap.hostinger.com:993
+            // 'smtp_host' => '...', 'smtp_porta' => 465, 'smtp_seg' => 'ssl',
+            // 'imap_host' => '...', 'imap_porta' => 993, 'imap_senha' => '...',
+        ],
+        'joao@mais351monitor.com.br' => ['nome' => 'João | +351 Monitor', 'senha' => '...'],
+    ],
+    'mail_helo'        => 'mais351monitor.com.br',
+    'site_url'         => 'https://www.mais351monitor.com.br',
+    'optout_secret'    => 'GERE-MAIS-UM-SEGREDO-43-CHARS', // assina o link de descadastro
+    'telegram'         => ['token' => '', 'chat_id' => ''], // opcional
+    'healthchecks_url' => '',                               // dead-man switch do cron
 ];
 ```
 
@@ -77,6 +96,14 @@ Base: `https://www.mais351monitor.com.br/crm/api/index.php`
 | `?r=analytics` | GET | `d=7\|30\|90` (padrão 30) | `{resumo, por_dia, paginas, origens, eventos, dispositivos, funil}` |
 | `?r=analytics-visita&ref=` | GET | código de 6 chars da visita | jornada completa: `views` + `events` |
 | `?r=analytics-vincular` | POST | `{ref*, lead_id*}` | `{ok}` |
+| `?r=cadence-start` | POST | `{lead_id*, sender_user_id\|sender, contact_id, linha_pessoal}` | `{ok, outbox_id, scheduled_for}` |
+| `?r=cadence-stop` | POST | `{lead_id*, estado: interrompida\|pausada, motivo}` | `{ok}` |
+| `?r=cadence-line` | POST | `{lead_id*, linha_pessoal, estado: rascunho\|aprovada}` | `{ok, estado}` |
+| `?r=cadence-report` | GET | `mes=AAAA-MM` | taxas por etapa, resposta, bounce, opt-out, motivos de saída |
+| `?r=outbox` | GET | `status`, `lead_id`, `dia=hoje` | fila de saída (100 últimos) |
+| `?r=inbox` | GET | `status=nao_tratado\|todos`, `kind` | retornos classificados |
+| `?r=inbox-handled` | POST | `{id*}` | `{ok}` |
+| `?r=email-check` | POST | `{email*, forcar}` | `{status, mx_ok, detail}` |
 
 Enums — status: `novo, contato_feito, demo_agendada, demo_realizada, trial, cliente, perdido` ·
 origem: `site, whatsapp, email, indicacao, lista_50, outro` · interação: `whatsapp, email, ligacao,
@@ -134,6 +161,68 @@ As colunas (nome, cor, ordem, qual conclui) são editadas em **Configurações**
 apagar a coluna de conclusão nem a última que sobrou; apagar qualquer outra exige escolher
 para onde os cards dela vão.
 
+## Cadência automática de e-mail (migrations 012-014)
+
+Passo a passo para ligar, aceite de cada fase e diagnóstico:
+**`docs/runbooks/cadencia-automatica.md`**. Aqui fica só o desenho.
+
+**Um e-mail pendente por lead.** O próximo só é planejado depois que o anterior sai —
+assim as guardas são avaliadas com o mundo do dia do envio (o lead pode ter respondido,
+virado cliente ou pedido para sair entre o agendamento e o disparo), e o texto gravado
+no `email_outbox` é exatamente o que foi enviado. A tela mostra esse texto e deixa
+editar enquanto o e-mail não saiu.
+
+**O cron faz tudo.** `crm/cron/tick.php`, a cada 10 minutos: envia o que venceu, lê as
+caixas por IMAP, age nos retornos, manda o resumo às 17h30 e pinga o healthchecks.
+Só CLI (guarda de `PHP_SAPI` + `.htaccess` da pasta) e com `GET_LOCK` no MariaDB, então
+duas execuções simultâneas não duplicam envio. A reserva de cada linha é atômica
+(`UPDATE ... WHERE status = 'agendado'`).
+
+**Sem biblioteca de terceiro.** `lib/smtp.php` e `lib/imapmin.php` falam os dois
+protocolos direto no socket TLS — a hospedagem não tem Composer, o resto do repo é PHP
+puro, e vendorizar um cliente de e-mail traria dezenas de arquivos para o deploy FTPS
+por causa de oito comandos. O diálogo SMTP é separado do socket (`interface SmtpStream`),
+o que deixa `tests/mailer.php` roteirizar as respostas do servidor e exercitar AUTH,
+dot-stuffing e todos os caminhos de erro sem subir nada. A extensão `imap` do PHP **não**
+é necessária; a caixa é aberta em modo leitura (EXAMINE + BODY.PEEK), então nada é
+marcado como lido no Outlook.
+
+**Guardas reavaliadas em cada envio** (o motivo de cada pulo fica gravado): status ainda
+no topo do funil, sem opt-out, sem duplicado, sem resposta já recebida, e-mail válido,
+contato com nome de pessoa, texto sem chave `{...}`, dentro da janela, abaixo do teto
+diário **da caixa** (contado por `from_email`, não por usuário — quem tem limite na
+Hostinger é a caixa) e nenhum outro lead do mesmo domínio nos últimos 7 dias. A decisão
+é uma função pura (`cadencia_guardas_puras`) separada da leitura do banco, e a matriz
+inteira dela está em `tests/cadencia_auto.php`. Cada guarda **encerra**, **pausa** (só a
+chave não substituída, que conserta em dez segundos) ou **adia**: teto e domínio quente
+adiam para amanhã; fora da janela adia para a próxima janela do mesmo dia.
+
+**Duas incertezas tratadas como incerteza, não como palpite.** Se a conexão cair depois
+de o corpo já ter sido entregue ao servidor, ou se o PHP morrer antes de gravar, a linha
+fica em "Travados em envio" esperando alguém conferir a caixa de Enviados — o CRM não
+reenvia sozinho, porque o palpite errado manda o mesmo e-mail duas vezes. E o cursor do
+IMAP só avança depois que a mensagem foi processada de ponta a ponta: uma falha de
+leitura deixa o UID para o próximo tick, em vez de perder a resposta para sempre.
+
+**Retorno.** O classificador (`lib/inbound.php`) separa devolução, resposta automática,
+pedido de saída e gente — nesta ordem, e com viés para **parar** a cadência na dúvida.
+A citação da mensagem anterior é removida antes de procurar "SAIR": sem isso, toda
+resposta que citasse o nosso rodapé viraria um descadastro.
+
+**Ritmo.** Horário sorteado dentro de 8h30–11h e 14h–17h (configurável), só dias úteis,
+feriado nacional na tabela `feriados`, teto por caixa com aquecimento 15 → 20 → 30 e no
+máximo 5 envios por execução do cron. Sem pixel de abertura e sem link rastreado: a
+métrica de engajamento é a resposta.
+
+**Opt-out.** Todo e-mail leva `List-Unsubscribe` + `List-Unsubscribe-Post` (é o que faz
+o Gmail mostrar "cancelar inscrição" em vez de "marcar como spam") e um link assinado
+por HMAC. O POST remove na hora (exigência do padrão de 1 clique); o GET pede
+confirmação, porque antivírus corporativo abre todos os links da mensagem.
+
+**Interruptores.** `Motor ligado` (para o envio; a leitura continua), `Sandbox` (o
+e-mail sai de verdade, mas para a própria caixa) e `Modo aprovação` (nada sai sem alguém
+liberar em Envios). Todos em Configurações.
+
 ## Analytics do site (views e cliques)
 
 Medição própria do `www.mais351monitor.com.br`, sem Google Analytics e sem terceiros.
@@ -168,10 +257,14 @@ Painel em **`/crm/analytics.php`** (aba "Site" do menu).
 ## Testes
 
 `php crm/tests/run.php` — suítes das funções puras (dias úteis da cadência, modelos de
-e-mail e o link mailto, parser das migrations, regressões de code review). Não tocam no
-banco nem sobem servidor: os stubs de `rows/q/scalar/row` estouram de propósito, o que
-também exercita o caminho "migration ainda não aplicada". Rode antes de subir para a
-Hostinger — a hospedagem compartilhada não é lugar de descobrir erro de sintaxe.
+e-mail e o link mailto, parser das migrations, regressões de code review, e as quatro
+da cadência automática: janelas e sorteio de horário, montagem MIME e diálogo SMTP
+inteiro contra um servidor de mentira, classificador de retorno com fixtures reais de
+devolução e auto-resposta, camadas da validação de e-mail com o DNS injetado). Não
+tocam no banco nem sobem servidor: os stubs de `rows/q/scalar/row` estouram de
+propósito, o que também exercita o caminho "migration ainda não aplicada". Rode antes
+de subir para a Hostinger — a hospedagem compartilhada não é lugar de descobrir erro
+de sintaxe.
 
 ## Segurança e LGPD (resumo)
 
@@ -186,6 +279,11 @@ Hostinger — a hospedagem compartilhada não é lugar de descobrir erro de sint
 - Opt-out ("não me contacte"): marcar no detalhe do lead. O registro é **mantido** de propósito —
   é a lista de supressão que impede o contato de voltar pela fila, pelo import ou pelo site
   (`lead_create()` herda o flag do duplicado). Marcar encerra as tarefas abertas e bloqueia a cadência.
+  A cadência automática marca sozinha quando alguém responde "SAIR" ou usa o link de
+  descadastro, e responde confirmando a remoção.
+- Prospecção outbound: base legal é legítimo interesse em contato B2B com dados públicos
+  (art. 7º, IX), declarada na seção "Prospecção comercial" da política de privacidade do
+  site. Corpo do e-mail no outbox e trecho do retorno somem junto com o lead (CASCADE).
 - Analytics do site sem cookie, sem storage no navegador e **sem IP gravado** (hash diário
   irreversível); GPC respeitado; retenção de 365 dias — tudo declarado na seção "Medição de
   audiência deste site" da política de privacidade.

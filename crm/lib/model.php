@@ -166,6 +166,16 @@ function lead_set_status(int $id, string $to, ?string $lostReason, ?int $userId)
         db()->rollBack();
         throw $e;
     }
+    // Avancar no funil encerra a cadencia automatica: demo agendada, trial,
+    // cliente ou perdido viram conversa de gente. Fora da transacao de
+    // proposito — falhar ao encerrar nao pode desfazer a mudanca de status.
+    if (!in_array($to, ['novo', 'contato_feito'], true)) {
+        try {
+            cadencia_auto_parar($id, 'status mudou para ' . ($to === 'perdido' ? 'perdido' : $to));
+        } catch (Throwable $e) {
+            error_log('cadencia parar (status): ' . $e->getMessage());
+        }
+    }
 }
 
 /**
@@ -207,6 +217,13 @@ function lead_set_no_contact(int $leadId, bool $on, ?string $motivo = null): voi
                  next_action_at = NULL, next_action_note = NULL WHERE id = ?',
             [norm_text((string) $motivo, 255) ?: null, $leadId]);
         q('UPDATE tasks SET done_at = NOW() WHERE lead_id = ? AND done_at IS NULL', [$leadId]);
+        // E cancela o que estava agendado para sair: a lista de supressao nao
+        // serve de nada se o outbox continuar com um e-mail pronto no forno.
+        try {
+            cadencia_auto_parar($leadId, 'pediu para nao ser contactado');
+        } catch (Throwable $e) {
+            error_log('cadencia parar (opt-out): ' . $e->getMessage());
+        }
     } else {
         q('UPDATE leads SET no_contact = 0, no_contact_at = NULL, no_contact_reason = NULL WHERE id = ?', [$leadId]);
     }
@@ -428,17 +445,24 @@ function tasks_lista(string $which): array
 
 /**
  * Soma N dias uteis (seg-sex) e devolve 'Y-m-d'. O resultado nunca cai em
- * fim de semana, mesmo com $days = 0. Feriados nao sao considerados.
+ * fim de semana, mesmo com $days = 0.
+ *
+ * $feriados e um mapa 'Y-m-d' => qualquer coisa. Fica como PARAMETRO (e nao
+ * lido do banco aqui dentro) para a funcao continuar pura: a suite de dias
+ * uteis roda sem banco, e a cadencia automatica passa feriados_set().
  */
-function business_days_add(string $from, int $days): string
+function business_days_add(string $from, int $days, array $feriados = []): string
 {
+    $util = static function (DateTimeImmutable $d) use ($feriados): bool {
+        return (int) $d->format('N') <= 5 && !isset($feriados[$d->format('Y-m-d')]);
+    };
     $d = new DateTimeImmutable($from);
     for ($n = max(0, $days); $n > 0; $n--) {
         do {
             $d = $d->modify('+1 day');
-        } while ((int) $d->format('N') > 5);
+        } while (!$util($d));
     }
-    while ((int) $d->format('N') > 5) {
+    while (!$util($d)) {
         $d = $d->modify('+1 day');
     }
     return $d->format('Y-m-d');
@@ -452,10 +476,11 @@ function business_days_add(string $from, int $days): string
 function cadencia_due_at(int $businessDays, ?string $de = null): string
 {
     $hora = max(0, min(23, setting_int('cadencia_hora')));
+    $feriados = feriados_set();
     $base = $de !== null && $de !== '' ? date('Y-m-d', strtotime($de)) : date('Y-m-d');
-    $dia = business_days_add($base, $businessDays);
+    $dia = business_days_add($base, $businessDays, $feriados);
     if ($dia < date('Y-m-d')) {
-        $dia = business_days_add(date('Y-m-d'), 0);
+        $dia = business_days_add(date('Y-m-d'), 0, $feriados);
     }
     return $dia . sprintf(' %02d:00:00', $hora);
 }
@@ -501,6 +526,13 @@ function cadencia_email_agendar(int $leadId, int $seq, ?int $userId, ?string $oc
     if (lead_no_contact($leadId)) {
         return null;
     }
+    // Lead sob cadência AUTOMÁTICA: quem agenda o próximo e-mail é o outbox,
+    // não um card "cobrar retorno". Registrar a etapa na mão (porque a pessoa
+    // respondeu por outro canal e o time mandou o e-mail direto) faz o motor
+    // adotar essa etapa e replanejar, em vez de mandar o mesmo e-mail de novo.
+    if (cadencia_auto_ativa($leadId)) {
+        return cadencia_sincronizar_manual($leadId, $seq, $ocorridaEm);
+    }
     $titulo = $seq >= CADENCIA_EMAIL_PASSOS
         ? 'Cadência esgotada — retomar contato'
         : (CADENCIA_EMAIL_LABELS[$seq + 1] ?? 'Próximo e-mail') . ' — cobrar retorno';
@@ -513,12 +545,13 @@ function cadencia_email_agendar(int $leadId, int $seq, ?int $userId, ?string $oc
  * Modelo do No e-mail com as chaves ja substituidas, pronto para o mailto.
  * @return array{assunto: string, corpo: string}
  */
-function cadencia_email_modelo(int $seq, array $lead, ?array $contato, ?string $meuNome): array
+function cadencia_email_modelo(int $seq, array $lead, ?array $contato, ?string $meuNome, ?string $linhaPessoal = null): array
 {
     $seq = max(1, min(CADENCIA_EMAIL_PASSOS, $seq));
     $empresa = (string) ($lead['company'] ?? '');
     $nome = trim((string) ($contato['name'] ?? $lead['contact_name'] ?? ''));
     $partes = $nome !== '' ? preg_split('/\s+/', $nome) : [];
+    $linha = trim((string) $linhaPessoal);
     $vars = [
         '{empresa}'       => $empresa,
         '{contato}'       => $nome !== '' ? $nome : $empresa,
@@ -527,10 +560,17 @@ function cadencia_email_modelo(int $seq, array $lead, ?array $contato, ?string $
         '{estacoes}'      => isset($lead['estimated_devices']) && $lead['estimated_devices'] !== null
             ? (string) (int) $lead['estimated_devices'] : 'suas',
         '{meu_nome}'      => (string) ($meuNome ?? ''),
+        '{linha_pessoal}' => $linha,
     ];
+    $corpo = strtr(setting_str('cadencia_email_corpo_' . $seq), $vars);
+    if ($linha === '') {
+        // Sem linha pessoal a chave some e deixaria um buraco de duas linhas
+        // em branco no meio do e-mail — o leitor percebe.
+        $corpo = preg_replace("/\n{3,}/", "\n\n", $corpo);
+    }
     return [
         'assunto' => strtr(setting_str('cadencia_email_assunto_' . $seq), $vars),
-        'corpo'   => strtr(setting_str('cadencia_email_corpo_' . $seq), $vars),
+        'corpo'   => $corpo,
     ];
 }
 
@@ -1017,6 +1057,13 @@ function contact_update(int $id, array $d, ?int $expectLeadId = null): void
     }
     $params[] = $id;
     q('UPDATE lead_contacts SET ' . implode(', ', $sets) . ' WHERE id = ?', $params);
+    // Trocar o e-mail apaga o veredito anterior: um bounce vale para o
+    // endereco errado, nao para o contato. Revalida ja, para a tela mostrar.
+    $novoEmail = norm_email($d['email'] ?? null);
+    if (is_string($novoEmail) && $novoEmail !== '') {
+        email_limpar_cache($novoEmail);
+        email_status_gravar($id, email_check($novoEmail, true)['status']);
+    }
     if ((int) $c['is_principal'] === 1) {
         sync_principal_contact((int) $c['lead_id']);
     }

@@ -72,6 +72,41 @@ page_header('Dashboard', 'index.php', $user);
   ?>
 </div>
 
+<?php $cadPainel = cadencia_painel(); ?>
+<div class="card cadencia-painel">
+  <div class="card-head">
+    <h2 class="card-title">Cadência de e-mail</h2>
+    <a class="btn btn-ghost btn-sm" href="envios.php">Envios e retornos</a>
+  </div>
+  <div class="stats stats-4">
+    <div class="stat">
+      <span class="stat-n"><?= (int) $cadPainel['enviados_hoje'] ?></span>
+      <span class="stat-label">Enviados hoje · teto <?= (int) $cadPainel['teto'] ?> por caixa</span>
+    </div>
+    <a class="stat<?= $cadPainel['aguardando'] > 0 ? ' stat-alerta' : '' ?>" href="envios.php">
+      <span class="stat-n"><?= (int) $cadPainel['aguardando'] ?></span>
+      <span class="stat-label">Aguardando aprovação</span>
+    </a>
+    <a class="stat<?= $cadPainel['retornos'] > 0 ? ' stat-alerta' : '' ?>" href="envios.php">
+      <span class="stat-n"><?= (int) $cadPainel['retornos'] ?></span>
+      <span class="stat-label">Retornos não tratados</span>
+    </a>
+    <div class="stat">
+      <span class="stat-n stat-n-txt"><?= $cadPainel['ligada'] ? 'Ligado' : 'Desligado' ?></span>
+      <span class="stat-label">Motor · modo <?= esc($cadPainel['modo'] === 'automatico' ? 'automático' : 'aprovação') ?></span>
+    </div>
+  </div>
+  <p class="muted" style="margin: 12px 0 0">
+    Última execução do cron:
+    <strong><?= $cadPainel['ultimo_tick'] !== '' ? esc(fmt_dt($cadPainel['ultimo_tick'])) : 'nunca' ?></strong>
+    <?php if ($cadPainel['ultimo_tick'] !== '' && strtotime($cadPainel['ultimo_tick']) < time() - 3600): ?>
+      <span class="badge badge-dup">parou de rodar — confira o cron no hPanel</span>
+    <?php elseif ($cadPainel['ultimo_tick'] === ''): ?>
+      <span class="badge badge-demo_agendada">o cron ainda não rodou nenhuma vez</span>
+    <?php endif; ?>
+  </p>
+</div>
+
 <div class="grid-2">
   <div class="card">
     <h2 class="card-title">Tarefas</h2>

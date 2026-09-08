@@ -1,4 +1,4 @@
-/* +351 CRM — interações mínimas (sem inline JS por causa do CSP) */
+﻿/* +351 CRM — interações mínimas (sem inline JS por causa do CSP) */
 (function () {
   'use strict';
 
@@ -291,5 +291,35 @@
       heroBtn.disabled = true;
       heroBtn.textContent = 'Buscando na Receita…';
     });
+  }
+
+  /* ---------- Leads: seleção em lote para iniciar a cadência ----------
+     Progressive enhancement: sem JS os checkboxes continuam funcionando e o
+     botão "Iniciar cadência…" está sempre no DOM (só nasce escondido). */
+  var formLote = document.getElementById('form-lote');
+  if (formLote) {
+    var barra = document.getElementById('barra-lote');
+    var conta = document.getElementById('lote-conta');
+    var todos = document.getElementById('check-todos');
+    var caixas = function () { return [].slice.call(formLote.querySelectorAll('.check-lead')); };
+
+    var sincroniza = function () {
+      var n = caixas().filter(function (c) { return c.checked; }).length;
+      if (conta) { conta.textContent = String(n); }
+      if (barra) { barra.hidden = n === 0; }
+      if (todos) {
+        var total = caixas().length;
+        todos.checked = n > 0 && n === total;
+        todos.indeterminate = n > 0 && n < total;
+      }
+    };
+
+    formLote.addEventListener('change', function (e) {
+      if (e.target === todos) {
+        caixas().forEach(function (c) { c.checked = todos.checked; });
+      }
+      if (e.target === todos || e.target.classList.contains('check-lead')) { sincroniza(); }
+    });
+    sincroniza();
   }
 })();
