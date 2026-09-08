@@ -162,10 +162,35 @@ como decisão de produto; qualquer mudança futura exige nova decisão dele.
 | 3 | Comparação de equipes | **Permitida lado a lado**, com **mínimo de 3 pessoas** por equipe para exibir médias comparativas (abaixo disso, só totais). Substitui a regra anterior de "uma equipe por vez". |
 | 4 | Fórmula do índice | **produtivo ÷ (produtivo + neutro + improdutivo)**, com a **cobertura da classificação** sempre exibida ao lado. Nunca um sem o outro. |
 | 5 | Alertas por pessoa | **Opt-in da organização**, registrado em auditoria. Padrão é equipe. |
-| 6 | Página do colaborador | **Entra**, com os próprios dados, anotação de período e contestação de classificação com revisão do gestor (fase F6). |
+| 6 | Página do colaborador | **Entra**, com os próprios dados, anotação de período e contestação de classificação com revisão do gestor (fase F6). ⚠️ **Emendada pela decisão 10** (seção 7.2): "os próprios dados" são exibidos DENTRO do painel, para quem já tem acesso — o colaborador não recebe acesso nenhum. |
 | 7 | Reagregação retroativa | **Sob demanda até 12 meses**, como job assíncrono, com aviso de custo. Default automático segue 30 dias. |
 | 8 | Máquina ligada sem usuário | **Fora** das horas por pessoa; aparece só como estado do dispositivo em Administração. Mantém a derrogação já documentada no `DailyAggregationService`. |
 | 9 | Site | **Evoluir** a home atual com prints reais e a página "Como medimos"; sem redesenho. |
+
+### 7.2 Decisão 10 — o colaborador não é usuário do painel (07/09/2026, fim do dia)
+
+Ao retomar o item "transparência como produto", a implementação esbarrou numa ambiguidade da
+decisão 6: *onde* o colaborador veria os próprios dados. O caminho descrito na seção 5 era o link
+tokenizado `/t/{token}`, mas esse token é do **dispositivo**, não da pessoa — numa máquina com dois
+usuários do Windows não há resposta para "os números de quem?" — e o `PublicTransparencyController`
+exclui dado pessoal por decisão documentada, porque a URL é uma capability sem autenticação.
+
+**Decisão do dono:** o colaborador **aparece no painel como assunto, nunca como usuário**. Não se
+cria login, token pessoal, magic link nem rota pública com os números dele. Quem entra no painel é
+TI, admin, gerente, diretor e líder.
+
+Consequências, todas dentro do que já existe:
+
+| Onde | O que muda |
+|---|---|
+| `PublicTransparencyController` e `/t/{token}` | **Nada.** Continuam só com a política de coleta. O comentário que exclui dado pessoal está certo e permanece. |
+| Página da pessoa | Ganha a **visão do colaborador**: os mesmos números que a pessoa veria sobre si, no enquadramento "isto é o que mostramos a você", aberta por quem já tem acesso. |
+| `/exports` | O `resumo_pdf` ganha a variante **pessoal**, para o número chegar à mão da pessoa por papel, no 1:1. |
+| Digest pessoal por e-mail | **Permanece como está.** É o canal automático que sustenta a obrigação de transparência sem dar acesso ao sistema. |
+| Anotação e contestação (`person_notes`) | **Permanecem como estão**, escritas por quem tem acesso (Viewer+), revisadas por Admin+. |
+
+Fica aberto, sem decisão e fora desta rodada: hoje um Viewer enxerga a organização inteira, então
+"líder que vê só a própria equipe" não é exprimível nos três papéis atuais (Owner/Admin/Viewer).
 
 ### 7.1 Perguntas originais (histórico)
 
