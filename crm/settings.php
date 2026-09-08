@@ -134,13 +134,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action === 'email_teste') {
         $conta = mail_conta((string) ($_POST['caixa'] ?? ''));
+        $para = norm_email($_POST['teste_para'] ?? '');
         if ($conta === null) {
             $error = 'Caixa desconhecida.';
+        } elseif ($para === false) {
+            $error = 'E-mail de destino inválido.';
         } else {
+            // Destino editável, com a própria caixa como padrão: o e-mail do
+            // usuário logado nem sempre é uma caixa que existe (o CRM tem uma
+            // conta para cada pessoa, mas nem toda pessoa tem caixa), e um
+            // teste que volta 550 parece configuração errada quando não é.
+            $para = $para !== null && $para !== '' ? $para : (string) $conta['email'];
             $r = mail_enviar($conta, [
                 'de_nome'    => (string) $conta['nome'],
                 'de_email'   => (string) $conta['email'],
-                'para_email' => (string) $user['email'],
+                'para_email' => $para,
                 'assunto'    => 'Teste de envio do +351 CRM',
                 'corpo'      => "Se você está lendo isto, o SMTP da caixa " . $conta['email']
                     . " funciona a partir da hospedagem.\n\nEnviado em " . date('d/m/Y H:i')
@@ -149,7 +157,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'auto'       => true,
             ]);
             flash_set($r['ok'] ? 'ok' : 'erro', $r['ok']
-                ? 'E-mail de teste enviado para ' . $user['email'] . '.'
+                ? 'E-mail de teste enviado para ' . $para . '.'
                 : 'Falhou: ' . $r['erro']);
             redirect('settings.php#cadencia-auto');
         }
@@ -379,7 +387,9 @@ page_header('Configurações', 'settings.php', $user);
                   <?= csrf_field() ?>
                   <input type="hidden" name="action" value="email_teste">
                   <input type="hidden" name="caixa" value="<?= esc($endereco) ?>">
-                  <button class="btn btn-ghost btn-sm" type="submit">Enviar teste para mim</button>
+                  <input name="teste_para" type="email" maxlength="190" style="min-width: 200px"
+                         value="<?= esc($endereco) ?>" aria-label="Enviar o teste para qual endereço">
+                  <button class="btn btn-ghost btn-sm" type="submit">Enviar teste</button>
                 </form>
               </td>
             </tr>
