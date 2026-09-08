@@ -129,7 +129,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'auto_etapas'            => implode(',', $etapas),
                 'auto_inicio'            => $inicio,
             ]);
-            flash_set('ok', 'Cadência automática salva.');
+            // A mensagem diz o que FOI GRAVADO, não só que gravou. Se o valor
+            // na tela divergir daqui, o problema é de leitura, não de escrita —
+            // e quem está usando descobre isso sozinho, na hora.
+            flash_set('ok', 'Cadência automática salva. O ensaio (sandbox) entrega em: '
+                . ($sandboxPara ?: 'a própria caixa remetente') . '.');
             redirect('settings.php#cadencia-auto');
         } catch (InvalidArgumentException $e) {
             $error = $e->getMessage();
@@ -139,17 +143,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action === 'email_teste') {
         $conta = mail_conta((string) ($_POST['caixa'] ?? ''));
-        $para = norm_email($_POST['teste_para'] ?? '');
         if ($conta === null) {
             $error = 'Caixa desconhecida.';
-        } elseif ($para === false) {
-            $error = 'E-mail de destino inválido.';
         } else {
-            // Destino editável, com a própria caixa como padrão: o e-mail do
-            // usuário logado nem sempre é uma caixa que existe (o CRM tem uma
-            // conta para cada pessoa, mas nem toda pessoa tem caixa), e um
-            // teste que volta 550 parece configuração errada quando não é.
-            $para = $para !== null && $para !== '' ? $para : (string) $conta['email'];
+            // Mesmo destino do ensaio: um lugar só para configurar, e o botão
+            // já mostra qual é. A própria caixa é o padrão porque ela sempre
+            // existe — o e-mail do usuário logado nem sempre existe como caixa.
+            $alvo = norm_email(setting_str('auto_sandbox_para'));
+            $para = is_string($alvo) && $alvo !== '' ? $alvo : (string) $conta['email'];
             $r = mail_enviar($conta, [
                 'de_nome'    => (string) $conta['nome'],
                 'de_email'   => (string) $conta['email'],
@@ -388,24 +389,25 @@ page_header('Configurações', 'settings.php', $user);
               </td>
               <td class="muted small"><?= esc(state_get('imap_' . $endereco) ?: '—') ?></td>
               <td>
+                <?php
+                  // SEM campo de texto aqui, de proposito. Ter duas caixinhas de
+                  // e-mail parecidas na mesma tela, uma que salva e outra que
+                  // nao, e um convite a digitar no lugar errado e concluir que o
+                  // sistema nao grava. O destino do teste passa a ser o mesmo do
+                  // ensaio, e o botao diz qual e antes de voce clicar.
+                  $destinoTeste = norm_email(setting_str('auto_sandbox_para'));
+                  $destinoTeste = is_string($destinoTeste) && $destinoTeste !== '' ? $destinoTeste : $endereco;
+                ?>
                 <form method="post" class="inline-form">
                   <?= csrf_field() ?>
                   <input type="hidden" name="action" value="email_teste">
                   <input type="hidden" name="caixa" value="<?= esc($endereco) ?>">
-                  <?php
-                    // Segue o e-mail do sandbox quando ele existe: sao dois
-                    // campos parecidos na mesma tela, e a pessoa espera que o
-                    // teste va para o mesmo lugar que o ensaio.
-                    $destinoTeste = norm_email(setting_str('auto_sandbox_para'));
-                    $destinoTeste = is_string($destinoTeste) && $destinoTeste !== '' ? $destinoTeste : $endereco;
-                  ?>
-                  <input name="teste_para" type="email" maxlength="190" style="min-width: 200px"
-                         value="<?= esc($destinoTeste) ?>" aria-label="Enviar o teste para qual endereço">
-                  <button class="btn btn-ghost btn-sm" type="submit">Enviar teste</button>
+                  <button class="btn btn-ghost btn-sm" type="submit">
+                    Enviar teste para <?= esc($destinoTeste) ?>
+                  </button>
                 </form>
                 <p class="muted small" style="margin: 4px 0 0">
-                  Campo avulso: manda um e-mail agora e <strong>não fica salvo</strong>.
-                  Para mudar o destino do sandbox, use "E-mail do sandbox" logo abaixo.
+                  Para mudar esse destino, use o campo <strong>“E-mail do sandbox”</strong> mais abaixo.
                 </p>
               </td>
             </tr>
