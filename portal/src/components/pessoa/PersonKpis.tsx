@@ -7,7 +7,7 @@
 import { CLASSIFICATION_FRAMING } from "@/lib/classification";
 import { formatHours, formatPct } from "@/lib/period";
 import type { DashboardSummaryTotals } from "@/lib/types";
-import { IDLE_DISCLAIMER, personIndicators } from "./pessoaMetrics";
+import { IDLE_DISCLAIMER } from "./pessoaMetrics";
 
 interface Tile {
   label: string;
@@ -15,8 +15,22 @@ interface Tile {
   caption?: string;
 }
 
-export function PersonKpis({ totals }: { totals: DashboardSummaryTotals }) {
-  const { productivityIndex, classificationCoverage } = personIndicators(totals);
+/**
+ * Índice e cobertura chegam PRONTOS do servidor (GET /people/{sid}/self-view,
+ * fórmula única da decisão 4). Antes desta fase a conta era refeita aqui, o que
+ * eram duas fórmulas para manter em sincronia — a duplicação que o self-view
+ * encerrou. `undefined` enquanto a consulta não respondeu: imprime "–", como
+ * qualquer ausência, nunca 0%.
+ */
+export function PersonKpis({
+  totals,
+  productivityIndex,
+  classificationCoverage,
+}: {
+  totals: DashboardSummaryTotals;
+  productivityIndex: number | null | undefined;
+  classificationCoverage: number | null | undefined;
+}) {
   // Ociosidade e "sem classificação" são proporções simples (sem fórmula do
   // servidor para duplicar) - mesma regra do null: sem base, imprime "–".
   const idlePct = totals.seconds_on > 0 ? totals.seconds_idle / totals.seconds_on : null;
@@ -28,10 +42,10 @@ export function PersonKpis({ totals }: { totals: DashboardSummaryTotals }) {
     { label: "Horas ativas", value: `${formatHours(totals.seconds_active)} h` },
     {
       label: "Índice de produtividade",
-      value: formatPct(productivityIndex),
+      value: formatPct(productivityIndex ?? null),
       // Decisão 4 do spec: a cobertura nunca aparece sem o índice, nem o
       // índice sem a cobertura.
-      caption: `Cobertura da classificação: ${formatPct(classificationCoverage)}`,
+      caption: `Cobertura da classificação: ${formatPct(classificationCoverage ?? null)}`,
     },
     { label: "Ociosidade", value: formatPct(idlePct) },
     { label: "Sem classificação", value: formatPct(unclassifiedPct) },

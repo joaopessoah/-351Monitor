@@ -1,42 +1,15 @@
 // =============================================================================
-// Cálculos derivados da visão individual da PESSOA (F6). Duas contas puras,
-// sem estado e sem chamada de rede - a página só passa os baldes já buscados.
+// Cálculos derivados da visão individual da PESSOA (F6). Contas puras, sem
+// estado e sem chamada de rede.
+//
+// O QUE SAIU DAQUI (F9): personIndicators(), que reproduzia no cliente a fórmula
+// do índice e da cobertura porque GET /dashboard/summary é anterior à fase e não
+// devolvia os indicadores prontos. GET /people/{sid}/self-view devolve, e a
+// duplicação foi apagada como o próprio comentário dela pedia — uma fórmula só,
+// no servidor, sem chance de a tela e o relatório divergirem.
 // =============================================================================
 
-import type { BusinessHours, DashboardSummaryTotals } from "@/lib/types";
-
-export interface PersonIndicators {
-  /** produtivo ÷ (produtivo + neutro + improdutivo); null sem base (nada classificado). */
-  productivityIndex: number | null;
-  /** (ativo − sem classificação) ÷ ativo; null sem tempo ativo no período. */
-  classificationCoverage: number | null;
-}
-
-/**
- * Índice de produtividade e cobertura da classificação, a partir dos baldes
- * de `GET /dashboard/summary`.
- *
- * DUPLICAÇÃO DELIBERADA (temporária): a fórmula é a MESMA do servidor -
- * decisão 4 do spec de 07/09/2026 ("produtivo ÷ (produtivo + neutro +
- * improdutivo)", com a cobertura sempre exibida ao lado, nunca um sem o
- * outro) - já usada em `GET /dashboard/overview` e em `GET /people`
- * (productivity_index/classification_coverage prontos). O summary é
- * ANTERIOR a essa fase e não devolve os dois campos calculados, por isso
- * esta função reproduz a conta aqui. Quando o summary passar a devolver
- * productivity_index/classification_coverage prontos, apague esta função e
- * consuma o valor do servidor, como as outras telas já fazem.
- */
-export function personIndicators(totals: DashboardSummaryTotals): PersonIndicators {
-  const classifiedBase =
-    totals.seconds_work_related + totals.seconds_neutral + totals.seconds_not_work_related;
-  const productivityIndex = classifiedBase > 0 ? totals.seconds_work_related / classifiedBase : null;
-
-  const activeBase = totals.seconds_active;
-  const classificationCoverage =
-    activeBase > 0 ? (activeBase - totals.seconds_unclassified) / activeBase : null;
-
-  return { productivityIndex, classificationCoverage };
-}
+import type { BusinessHours } from "@/lib/types";
 
 /** "HH:mm" -> horas fracionárias; null quando o formato não bate. */
 function parseHm(value: string): number | null {

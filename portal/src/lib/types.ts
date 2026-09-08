@@ -770,6 +770,8 @@ export type ExportKind =
   | "usage_csv"
   | "jornada_csv"
   | "fora_horario_csv"
+  /** Resumo em PDF (F6); com params.windows_sid vira a variante PESSOAL (F9). */
+  | "resumo_pdf"
   | "dsr_subject"
   | "dsr_device"
   | "tenant_full";
@@ -802,6 +804,12 @@ export interface ExportParams {
   device_user_id?: string;
   /** dsr_device: dispositivo alvo do pacote. */
   device_id?: string;
+  /**
+   * Apenas resumo_pdf: transforma o resumo agregado na variante PESSOAL, restrita
+   * a esta pessoa. É o caminho de PAPEL da decisão 10 - quem imprime é o gestor,
+   * porque o colaborador não tem acesso ao painel.
+   */
+  windows_sid?: string;
 }
 
 /** Body de `POST /exports` (202 - o job entra na fila do worker). */
@@ -1379,6 +1387,50 @@ export interface OverviewResponse {
   previous: OverviewTotals | null;
   days: DashboardSummaryDay[];
   goals: OverviewGoals;
+}
+
+/**
+ * Um aplicativo da pessoa no período, na visão do colaborador.
+ *
+ * `classification` é +1/0/-1 quando a empresa classificou e NULL quando ninguém
+ * classificou. Null não é zero: zero significa "a empresa decidiu que isto é
+ * neutro", e dizer neutro onde não houve decisão inventaria uma posição da
+ * empresa sobre o trabalho da pessoa.
+ */
+export interface PersonSelfViewApp {
+  process_name: string;
+  display_name: string;
+  classification: number | null;
+  seconds_active: number;
+}
+
+/**
+ * Resposta de `GET /people/{sid}/self-view` - os mesmos números que a pessoa
+ * veria sobre si, servidos DENTRO do painel para quem já tem acesso.
+ *
+ * Índice e cobertura vêm CALCULADOS DO SERVIDOR: é o endpoint que encerra a
+ * duplicação da fórmula no cliente que a página da pessoa carregava.
+ */
+export interface PersonSelfViewResponse {
+  windows_sid: string;
+  display_name: string | null;
+  team_name: string | null;
+  period: OverviewPeriod;
+  seconds_on: number;
+  seconds_active: number;
+  seconds_idle: number;
+  seconds_locked: number;
+  seconds_work_related: number;
+  seconds_neutral: number;
+  seconds_not_work_related: number;
+  seconds_unclassified: number;
+  productivity_index: number | null;
+  classification_coverage: number | null;
+  days_with_data: number;
+  device_count: number;
+  top_apps: PersonSelfViewApp[];
+  open_notes: number;
+  open_disputes: number;
 }
 
 /**

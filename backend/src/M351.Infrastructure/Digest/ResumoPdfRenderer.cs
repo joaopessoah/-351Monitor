@@ -49,8 +49,15 @@ public static class ResumoPdfRenderer
         DateOnly weekStart,
         DateOnly weekEnd,
         ManagerSummary summary,
-        string disclaimer)
+        string disclaimer,
+        string? personLabel = null)
     {
+        // VARIANTE PESSOAL (F9, decisão 10): o mesmo documento, restrito a uma pessoa, para o
+        // gestor imprimir e entregar no 1:1. É o caminho de PAPEL — o colaborador continua sem
+        // acesso ao painel. Muda o enquadramento (o texto fala com a pessoa, não sobre a
+        // equipe) e some o bloco de alertas de gestão, que é assunto de quem gere, não de quem
+        // é medido.
+        var pessoal = !string.IsNullOrWhiteSpace(personLabel);
         var (workLabel, neutralLabel, notWorkLabel, unclassifiedLabel) = WeeklySummary.Labels(vocabulary);
         var totals = summary.Week;
         var previous = summary.Previous;
@@ -65,12 +72,17 @@ public static class ResumoPdfRenderer
 
                 page.Header().Column(header =>
                 {
-                    header.Item().Text("Resumo da semana").FontSize(18).SemiBold();
-                    header.Item().Text($"{organizationName} · {DigestText.Long(weekStart)} a {DigestText.Long(weekEnd)}")
+                    header.Item().Text(pessoal ? "Seu resumo do período" : "Resumo da semana")
+                        .FontSize(18).SemiBold();
+                    header.Item().Text(pessoal
+                            ? $"{personLabel} · {organizationName} · {DigestText.Long(weekStart)} a {DigestText.Long(weekEnd)}"
+                            : $"{organizationName} · {DigestText.Long(weekStart)} a {DigestText.Long(weekEnd)}")
                         .FontSize(10).FontColor(Muted);
-                    header.Item().Text(
-                        $"{totals.PersonCount} pessoa(s) com dado · {totals.DeviceCount} dispositivo(s) · "
-                        + "relatório agregado, sem comparação entre pessoas")
+                    header.Item().Text(pessoal
+                            ? $"{totals.DeviceCount} dispositivo(s) · estes são os seus números, "
+                              + "sem comparação com outras pessoas"
+                            : $"{totals.PersonCount} pessoa(s) com dado · {totals.DeviceCount} dispositivo(s) · "
+                              + "relatório agregado, sem comparação entre pessoas")
                         .FontSize(9).FontColor(Muted);
                     header.Item().PaddingTop(8).LineHorizontal(1).LineColor(Line);
                 });
@@ -101,7 +113,8 @@ public static class ResumoPdfRenderer
                     content.Item().Table(table =>
                     {
                         Columns(table, 3);
-                        Row(table, "Horas ativas da equipe", DigestText.Hours(totals.SecondsActive),
+                        Row(table, pessoal ? "Suas horas ativas" : "Horas ativas da equipe",
+                            DigestText.Hours(totals.SecondsActive),
                             DigestText.HoursDelta(totals.SecondsActive, previous.SecondsActive));
                         Row(table, "Horas com a máquina ligada", DigestText.Hours(totals.SecondsOn),
                             DigestText.HoursDelta(totals.SecondsOn, previous.SecondsOn));
@@ -121,7 +134,9 @@ public static class ResumoPdfRenderer
                         Bucket(table, unclassifiedLabel, totals.SecondsUnclassified, totals.SecondsActive);
                     });
 
-                    if (summary.Alerts.Count > 0)
+                    // alerta de gestão não entra no papel da pessoa: é insumo de quem gere,
+                    // e num resumo pessoal leria como acusação
+                    if (!pessoal && summary.Alerts.Count > 0)
                     {
                         content.Item().Text("Alertas de gestão em aberto").FontSize(13).SemiBold();
                         content.Item().Column(list =>
@@ -136,7 +151,8 @@ public static class ResumoPdfRenderer
 
                     if (summary.TopApps.Count > 0)
                     {
-                        content.Item().Text("Aplicativos mais usados").FontSize(13).SemiBold();
+                        content.Item().Text(pessoal ? "Seus aplicativos mais usados" : "Aplicativos mais usados")
+                            .FontSize(13).SemiBold();
                         content.Item().Table(table =>
                         {
                             Columns(table, 3);
@@ -167,7 +183,7 @@ public static class ResumoPdfRenderer
         });
 
         document.GeneratePdf(output);
-        return summary.TopApps.Count + summary.Alerts.Count;
+        return summary.TopApps.Count + (pessoal ? 0 : summary.Alerts.Count);
     }
 
     private static void Columns(TableDescriptor table, int count) =>

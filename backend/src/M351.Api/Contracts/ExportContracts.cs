@@ -17,7 +17,14 @@ public sealed record ExportCreateRequest(string? Kind, ExportParamsRequest? Para
 /// etiqueta, com a MESMA semântica dos endpoints de leitura: vazio equivale a sem filtro e
 /// etiqueta inexistente gera um CSV vazio, nunca um erro.
 /// </summary>
-public sealed record ExportParamsRequest(string? From, string? To, string[]? DeviceIds, string? GroupBy, string? Tag);
+/// <summary>
+/// Params do POST /exports. <c>WindowsSid</c> (F9) só se aplica ao kind resumo_pdf e o
+/// transforma na variante PESSOAL: o mesmo resumo, restrito a uma pessoa, para o gestor
+/// imprimir e entregar no 1:1. É o caminho de papel da decisão 10 — o colaborador continua
+/// sem acesso ao painel.
+/// </summary>
+public sealed record ExportParamsRequest(
+    string? From, string? To, string[]? DeviceIds, string? GroupBy, string? Tag, string? WindowsSid);
 
 /// <summary>202 do POST — o job entrou na fila do worker.</summary>
 public sealed record ExportCreateResponse(Guid Id, string Kind, string Status, DateTimeOffset CreatedAt);

@@ -106,6 +106,14 @@ public class ExportsController(
             return ProblemResponse(StatusCodes.Status400BadRequest,
                 "resumo_pdf é o resumo agregado da organização: device_ids e tag não se aplicam.");
 
+        // windows_sid (F9) transforma o resumo_pdf na variante PESSOAL. Nos kinds de CSV o
+        // recorte por pessoa não existe, e aceitar em silêncio devolveria a organização
+        // inteira com cara de recorte — a mesma armadilha do device_ids acima.
+        var personSid = string.IsNullOrWhiteSpace(body.Params.WindowsSid) ? null : body.Params.WindowsSid.Trim();
+        if (personSid is not null && body.Kind != ExportService.ResumoPdfKind)
+            return ProblemResponse(StatusCodes.Status400BadRequest,
+                $"Parâmetro windows_sid não se aplica a {body.Kind}: só o resumo_pdf tem variante pessoal.");
+
         Guid[]? deviceIds = null;
         if (body.Params.DeviceIds is { Length: > 0 })
         {
@@ -131,6 +139,26 @@ public class ExportsController(
                 "SELECT count(*)::int FROM devices WHERE tenant_id = @TenantId AND id = ANY(@DeviceIds)",
                 new { TenantId = tenantId, DeviceIds = deviceIds }, cancellationToken: ct));
             if (found != deviceIds.Length) return NotFoundProblem();
+        }
+
+        // A pessoa do resumo pessoal tem de EXISTIR neste tenant. Silêncio aqui seria pior que
+        // o 400: o gestor receberia um PDF de zeros e leria "esta pessoa não trabalhou", quando
+        // o que houve foi um identificador errado. 400 e não 404 porque é parâmetro malformado
+        // de um recurso que ele pode criar, não um recurso alheio que ele tentou abrir.
+        if (personSid is not null)
+        {
+            var exists = await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM device_users du
+                    LEFT JOIN people p ON p.tenant_id = du.tenant_id AND p.windows_sid = du.windows_sid
+                    WHERE du.tenant_id = @TenantId
+                      AND COALESCE(p.merged_into_sid, du.windows_sid) = @Sid)
+                """,
+                new { TenantId = tenantId, Sid = personSid }, cancellationToken: ct));
+            if (!exists)
+                return ProblemResponse(StatusCodes.Status400BadRequest,
+                    "Pessoa não encontrada nesta organização para o resumo pessoal.");
         }
 
         // fora_horario_csv depende da configuração da ORGANIZAÇÃO, não do pedido: sem janela
@@ -172,6 +200,7 @@ public class ExportsController(
         if (deviceIds is { Length: > 0 }) normalizedParams["device_ids"] = deviceIds;
         if (tag is not null) normalizedParams["tag"] = tag;
         if (body.Kind == "usage_csv") normalizedParams["group_by"] = body.Params.GroupBy;
+        if (personSid is not null) normalizedParams["windows_sid"] = personSid;
         var paramsJson = JsonSerializer.Serialize(normalizedParams);
 
         var jobId = Uuid7.NewUuid7();
@@ -345,7 +374,15 @@ public class ExportsController(
         var to = doc.RootElement.TryGetProperty("to", out var t) ? t.GetString() : null;
 
         if (row.Kind == ExportService.ResumoPdfKind)
-            return $"resumo_{from}_{to}.pdf";
+        {
+            // nome próprio para a variante pessoal: quem baixa o agregado e o pessoal no
+            // mesmo dia precisa distinguir os dois na pasta de downloads. O SID NÃO entra no
+            // nome — o arquivo circula, e o identificador da pessoa não tem por que circular
+            // com ele.
+            var pessoal = doc.RootElement.TryGetProperty("windows_sid", out var w)
+                          && !string.IsNullOrWhiteSpace(w.GetString());
+            return pessoal ? $"resumo-pessoal_{from}_{to}.pdf" : $"resumo_{from}_{to}.pdf";
+        }
 
         var prefix = row.Kind switch
         {

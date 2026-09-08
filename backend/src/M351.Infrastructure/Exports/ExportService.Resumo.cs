@@ -53,17 +53,60 @@ public sealed partial class ExportService
             vocabulary = reader.GetString(1);
         }
 
-        var summary = new ManagerSummary(
-            await WeeklySummary.TotalsAsync(connection, job.TenantId, from, to, ct),
-            await WeeklySummary.TotalsAsync(connection, job.TenantId, previousFrom, previousTo, ct),
-            await WeeklySummary.TopAppsAsync(connection, job.TenantId, from, to, ct),
-            await WeeklySummary.LiveAlertsAsync(connection, job.TenantId, ct));
+        // VARIANTE PESSOAL (F9, decisão 10): params.windows_sid restringe o resumo a UMA
+        // pessoa, para o gestor imprimir e entregar no 1:1. É o caminho de PAPEL — não existe
+        // acesso ao painel para o colaborador, e este PDF é gerado por quem já tem o acesso.
+        // Os números saem das MESMAS funções do digest pessoal por e-mail: comparar o e-mail
+        // com o papel tem de dar o mesmo número.
+        ManagerSummary summary;
+        string? personLabel = null;
+
+        if (!string.IsNullOrWhiteSpace(p.WindowsSid))
+        {
+            var atual = await PersonTotalsAsync(connection, job.TenantId, p.WindowsSid, from, to, ct);
+            var anterior = await PersonTotalsAsync(connection, job.TenantId, p.WindowsSid, previousFrom, previousTo, ct);
+            personLabel = atual.Label;
+            summary = new ManagerSummary(
+                atual.Totals,
+                anterior.Totals,
+                await WeeklySummary.PersonTopAppsAsync(connection, job.TenantId, p.WindowsSid, from, to, ct),
+                // alerta de gestão fica FORA do papel da pessoa: é insumo de quem gere
+                []);
+        }
+        else
+        {
+            summary = new ManagerSummary(
+                await WeeklySummary.TotalsAsync(connection, job.TenantId, from, to, ct),
+                await WeeklySummary.TotalsAsync(connection, job.TenantId, previousFrom, previousTo, ct),
+                await WeeklySummary.TopAppsAsync(connection, job.TenantId, from, to, ct),
+                await WeeklySummary.LiveAlertsAsync(connection, job.TenantId, ct));
+        }
 
         await using var stream = new FileStream(absolutePath, FileMode.Create, FileAccess.Write, FileShare.None);
         var rows = ResumoPdfRenderer.Render(
-            stream, organizationName, vocabulary, from, to, summary, JornadaDisclaimer);
+            stream, organizationName, vocabulary, from, to, summary, JornadaDisclaimer, personLabel);
 
         // o PDF é um sumário: não existe teto de linhas a estourar, então nunca é truncado
         return (rows, false);
+    }
+
+    /// <summary>
+    /// Totais de UMA pessoa no período, com o rótulo que a identifica no documento.
+    ///
+    /// Reusa WeeklySummary.PeopleTotalsAsync — a mesma fonte do digest pessoal por e-mail —
+    /// e filtra pelo SID canônico. Pessoa sem NENHUM dado no período não sai da consulta
+    /// (HAVING seconds_on > 0), e nesse caso o resumo vem zerado com o rótulo do SID: um PDF
+    /// honesto de "não houve atividade" é melhor do que uma falha, porque período sem dado é
+    /// uma resposta legítima (férias, afastamento, máquina em manutenção).
+    /// </summary>
+    private static async Task<(WeekTotals Totals, string Label)> PersonTotalsAsync(
+        NpgsqlConnection connection, Guid tenantId, string personSid,
+        DateOnly from, DateOnly to, CancellationToken ct)
+    {
+        var people = await WeeklySummary.PeopleTotalsAsync(connection, tenantId, from, to, ct);
+        var person = people.FirstOrDefault(x => x.Sid == personSid);
+        return person is null
+            ? (new WeekTotals(0, 0, 0, 0, 0, 0, 0, 0, 0, 1), personSid)
+            : (person.Totals, person.Label);
     }
 }

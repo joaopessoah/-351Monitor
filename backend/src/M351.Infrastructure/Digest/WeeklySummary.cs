@@ -134,6 +134,66 @@ public static class WeeklySummary
     }
 
     /// <summary>
+    /// Aplicativos mais usados DE UMA PESSOA (F9, resumo pessoal). Mesmo desenho do
+    /// TopAppsAsync da organização, com duas diferenças que importam:
+    ///  - o recorte são as lanes que resolvem para o SID canônico, então a mesma pessoa em
+    ///    duas máquinas é uma linha só;
+    ///  - a classificação respeita a precedência da F5 (regra da EQUIPE vence a da
+    ///    ORGANIZAÇÃO), porque é o rótulo que a pessoa vai LER sobre o próprio uso — mostrar
+    ///    a regra geral onde vale a da equipe seria dizer a ela algo que a empresa não decidiu.
+    /// </summary>
+    public static async Task<List<TopApp>> PersonTopAppsAsync(
+        NpgsqlConnection connection, Guid tenantId, string personSid,
+        DateOnly from, DateOnly to, CancellationToken ct)
+    {
+        await using var cmd = new NpgsqlCommand(
+            """
+            WITH lane AS (
+                SELECT du.id AS device_user_id, tm.team_id
+                FROM device_users du
+                LEFT JOIN people p ON p.tenant_id = du.tenant_id AND p.windows_sid = du.windows_sid
+                LEFT JOIN team_members tm
+                       ON tm.tenant_id = du.tenant_id
+                      AND tm.windows_sid = COALESCE(p.merged_into_sid, du.windows_sid)
+                WHERE du.tenant_id = @t
+                  AND COALESCE(p.merged_into_sid, du.windows_sid) = @sid
+            )
+            SELECT COALESCE(tac.custom_display_name, ac.display_name) AS display_name,
+                   c.classification,
+                   sum(dau.seconds_active)::bigint AS seconds_active
+            FROM daily_app_usage dau
+            JOIN lane l ON l.device_user_id = dau.device_user_id
+            JOIN app_catalog ac ON ac.id = dau.app_id
+            LEFT JOIN tenant_app_team_categories tatc
+                   ON tatc.tenant_id = dau.tenant_id AND tatc.app_id = dau.app_id
+                  AND tatc.team_id = l.team_id
+            LEFT JOIN tenant_app_categories tac
+                   ON tac.tenant_id = dau.tenant_id AND tac.app_id = dau.app_id
+            LEFT JOIN categories c ON c.id = COALESCE(tatc.category_id, tac.category_id)
+            WHERE dau.tenant_id = @t AND dau.summary_date BETWEEN @from AND @to
+            GROUP BY 1, 2
+            ORDER BY seconds_active DESC
+            LIMIT 5
+            """, connection);
+        cmd.Parameters.AddWithValue("t", tenantId);
+        cmd.Parameters.AddWithValue("sid", personSid);
+        cmd.Parameters.AddWithValue("from", from);
+        cmd.Parameters.AddWithValue("to", to);
+
+        var apps = new List<TopApp>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            apps.Add(new TopApp(
+                reader.GetString(0),
+                reader.IsDBNull(1) ? null : reader.GetInt16(1),
+                reader.GetInt64(2)));
+        }
+
+        return apps;
+    }
+
+    /// <summary>
     /// Alertas de gestão VIVOS (resolved_at IS NULL) agrupados por tipo e escopo, com
     /// CONTAGEM. Agrupar é decisão de produto, não economia: o digest do gestor não lista
     /// pessoa por pessoa, então alerta de escopo "person" viaja só como número — quem

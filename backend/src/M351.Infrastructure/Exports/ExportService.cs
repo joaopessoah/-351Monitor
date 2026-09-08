@@ -638,7 +638,10 @@ public sealed partial class ExportService(
         // tag (F5): ausente nos params = sem recorte de equipe (jobs criados antes do filtro
         // continuam válidos e seguem exportando a organização inteira)
         var tag = root.TryGetProperty("tag", out var t) ? t.GetString() : null;
-        return new ExportParams(from, to, deviceIds, groupBy, tag);
+        // windows_sid (F9): presente só no resumo_pdf PESSOAL. Ausente = resumo agregado da
+        // organização — jobs criados antes da variante continuam válidos.
+        var windowsSid = root.TryGetProperty("windows_sid", out var w) ? w.GetString() : null;
+        return new ExportParams(from, to, deviceIds, groupBy, tag, windowsSid);
     }
 
     /// <summary>Campo CSV: aspas duplas quando contém ';', aspas ou quebra de linha (RFC 4180 com ';').</summary>
@@ -713,5 +716,5 @@ public sealed partial class ExportService(
 
     private sealed record ExportJobRow(Guid Id, Guid TenantId, string Kind, string ParamsJson);
 
-    private sealed record ExportParams(string From, string To, Guid[] DeviceIds, string? GroupBy, string? Tag);
+    private sealed record ExportParams(string From, string To, Guid[] DeviceIds, string? GroupBy, string? Tag, string? WindowsSid);
 }

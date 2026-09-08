@@ -18,11 +18,13 @@
 //    continua alimentando a MESMA query GET /dashboard/summary de sempre;
 //  - KPIs da pessoa no período (ligada, ativa, índice, ociosidade, sem
 //    classificação) em components/pessoa/PersonKpis.tsx. O ÍNDICE e a
-//    COBERTURA são CALCULADOS AQUI a partir dos baldes do summary - ver o
-//    comentário de personIndicators em components/pessoa/pessoaMetrics.ts:
-//    GET /dashboard/summary é anterior a esta fase e não devolve os
-//    indicadores prontos, ao contrário de GET /dashboard/overview e
-//    GET /people. `null` imprime "–", nunca 0%;
+//    COBERTURA vêm PRONTOS de GET /people/{sid}/self-view (F9), pela fórmula
+//    única da decisão 4 - a conta que esta tela refazia no cliente foi apagada.
+//    `null` imprime "–", nunca 0%;
+//  - VISÃO DO COLABORADOR em components/pessoa/VisaoDoColaborador.tsx: o que
+//    mostramos à própria pessoa, e o botão do resumo pessoal em PDF. O
+//    colaborador NÃO tem acesso ao painel (decisão 10): os canais dele são o
+//    papel que o gestor imprime e o digest pessoal por e-mail;
 //  - COMPOSIÇÃO POR DIA em components/pessoa/PersonDailyComposition.tsx:
 //    colunas empilhadas (ECharts) com os quatro baldes de classificação mais
 //    o Ocioso, linha tracejada da jornada declarada (business_hours do /me,
@@ -50,12 +52,13 @@
 // mesclagem/renomeação arriscada demais para adivinhar. A unificação das duas
 // identidades (registro por dispositivo e pessoa) entra na fase seguinte.
 //
-// USO POR APLICATIVO NÃO ENTRA nesta versão: o GET /reports/usage só aceita
-// filtro por device_ids (parâmetro real do ReportsController) - não há filtro por
-// titular. Passar o device do registro mostraria o uso de TODAS as pessoas
-// daquela máquina rotulado como se fosse desta pessoa, o que seria falso num
-// dispositivo compartilhado. Enquanto o endpoint não aceitar um recorte por
-// titular, a página mostra só o resumo e explica a ausência.
+// USO POR APLICATIVO, que esta página explicava como ausência, EXISTE desde a
+// F9: GET /people/{sid}/self-view recorta por TITULAR (as lanes que resolvem
+// para o SID canônico), e não por dispositivo. Era esse o impedimento — o
+// /reports/usage só aceita device_ids, e passar o device de um registro
+// mostraria o uso de TODAS as pessoas daquela máquina rotulado como se fosse
+// desta pessoa. O cartão de ausência deu lugar à visão do colaborador, que traz
+// os aplicativos dela e mais nada de ninguém.
 //
 // Vocabulário NEUTRO: nada de ranking de pessoas, "Primeiro/Último evento" -
 // jamais "Entrada/Saída".
@@ -66,7 +69,7 @@ import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, MonitorSmartphone, Pencil, Scale, UserRound, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { classificationColor, classificationLabel } from "@/lib/classification";
+import { classificationColor, classificationLabel, classificationVocabularyOf } from "@/lib/classification";
 import { formatDateTime, formatDuration } from "@/lib/format";
 import { genericErrorMessage, JORNADA_DISCLAIMER } from "@/lib/messages";
 import { PERIOD_CODEC, PERIOD_LABELS, resolvePeriod, type PeriodPreset } from "@/lib/period";
@@ -90,6 +93,7 @@ import { PersonDailyComposition } from "@/components/pessoa/PersonDailyCompositi
 import { PersonIdentityCard } from "@/components/pessoa/PersonIdentityCard";
 import { PersonKpis } from "@/components/pessoa/PersonKpis";
 import { PersonNotes } from "@/components/pessoa/PersonNotes";
+import { VisaoDoColaborador, usePersonSelfView } from "@/components/pessoa/VisaoDoColaborador";
 
 const MAX_DISPLAY_NAME = 200;
 
@@ -129,6 +133,11 @@ export function PessoaPage() {
       ),
     enabled: id.length > 0 && resolved !== null && person !== undefined,
   });
+
+  // Visão do colaborador (F9): os mesmos números que a pessoa vê sobre si, com
+  // índice e cobertura CALCULADOS NO SERVIDOR. Alimenta também os KPIs acima,
+  // que por isso não refazem mais a fórmula.
+  const selfView = usePersonSelfView(id, resolved);
 
   function setPreset(preset: PeriodPreset): void {
     if (preset === "custom" && resolved !== null) {
@@ -269,7 +278,11 @@ export function PessoaPage() {
               <Skeleton className="h-3 w-1/2" />
             </div>
           ) : (
-            <PersonKpis totals={summaryQuery.data.totals} />
+            <PersonKpis
+              totals={summaryQuery.data.totals}
+              productivityIndex={selfView.data?.productivity_index}
+              classificationCoverage={selfView.data?.classification_coverage}
+            />
           )}
         </CardContent>
       </Card>
@@ -375,25 +388,19 @@ export function PessoaPage() {
         canReview={canEdit}
       />
 
-      {/* Ausência EXPLÍCITA do uso por aplicativo (ver comentário do topo). */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Uso por aplicativo</CardTitle>
-          <CardDescription>
-            Ainda não disponível por pessoa. O relatório de uso recorta por dispositivo, e num
-            dispositivo compartilhado isso somaria o uso de todas as pessoas da máquina, o que
-            atribuiria a esta pessoa um tempo que não é dela. Enquanto o recorte por pessoa não
-            existir, consulte o uso por aplicativo do dispositivo em{" "}
-            <Link
-              to="/relatorios/uso?group_by=app"
-              className="font-medium text-primary underline underline-offset-2"
-            >
-              Relatórios de uso
-            </Link>
-            .
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      {/* VISÃO DO COLABORADOR (F9, decisão 10) — no lugar do cartão que
+          explicava a ausência do uso por aplicativo. O recorte por TITULAR que
+          faltava existe agora, e vem no mesmo bloco que responde "o que esta
+          pessoa lê quando pergunta sobre si".
+
+          O colaborador NÃO abre esta tela: ele não é usuário do sistema. O que
+          chega a ele é o PDF que o botão daqui gera e o digest pessoal por
+          e-mail — os dois canais da decisão 10. */}
+      <VisaoDoColaborador
+        query={selfView}
+        period={resolved}
+        vocabulary={classificationVocabularyOf(meQuery.data)}
+      />
 
       {/* Disclaimer FIXO da Portaria 671/MTE (DoD 11.3) - verbatim, sem botão de fechar. */}
       <div

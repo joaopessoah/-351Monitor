@@ -30,6 +30,9 @@ const KIND_LABELS: Record<ExportKind, string> = {
   jornada_csv: "Jornada (CSV)",
   usage_csv: "Uso de aplicativos (CSV)",
   fora_horario_csv: "Atividade fora do horário de trabalho (CSV)",
+  // O resumo em PDF (F6) e, com params.windows_sid, a variante PESSOAL (F9). O
+  // rótulo genérico serve aos dois; o que distingue é o resumo dos filtros ao lado.
+  resumo_pdf: "Resumo do período (PDF)",
   // Pacotes DSR/offboarding (F4.5): ZIP, solicitados em Privacidade, prazo de 72h.
   dsr_subject: "Dados do titular (ZIP)",
   dsr_device: "Dados do dispositivo (ZIP)",
@@ -60,6 +63,14 @@ function paramsSummary(item: ExportJobItem): string {
   if (params.from !== undefined && params.to !== undefined) {
     parts.push(`${ddmm(params.from)} a ${ddmm(params.to)}`);
   }
+  if (kind === "resumo_pdf") {
+    // O resumo não aceita recorte por dispositivo, então "todos os dispositivos"
+    // seria ruído. O que distingue os dois resumos é o ESCOPO — e o windows_sid
+    // NÃO aparece: o identificador da pessoa não precisa circular numa lista que
+    // qualquer Viewer abre.
+    parts.push(params.windows_sid !== undefined ? "resumo pessoal" : "resumo da organização");
+    return parts.join(" · ");
+  }
   const n = params.device_ids?.length ?? 0;
   parts.push(n === 0 ? "todos os dispositivos" : n === 1 ? "1 dispositivo" : `${n} dispositivos`);
   if (params.group_by !== undefined && params.group_by in GROUP_BY_LABELS) {
@@ -83,6 +94,11 @@ function downloadFallbackName(item: ExportJobItem): string {
     const prefix =
       item.kind === "dsr_subject" ? "dsr_titular" : item.kind === "dsr_device" ? "dsr_dispositivo" : "acervo_tenant";
     return `${prefix}_${target ?? item.id}.zip`;
+  }
+  // o resumo é PDF: cair no ramo dos CSVs daria um .csv que não abre
+  if (item.kind === "resumo_pdf") {
+    const prefixoPdf = item.params.windows_sid !== undefined ? "resumo-pessoal" : "resumo";
+    return `${prefixoPdf}_${item.params.from}_${item.params.to}.pdf`;
   }
   const prefix =
     item.kind === "jornada_csv"
