@@ -25,6 +25,18 @@ public class DashboardController(
     /// <summary>Intervalo máximo dos dashboards históricos: 92 dias (um trimestre).</summary>
     public const int MaxRangeDays = 92;
 
+    /// <summary>
+    /// Grão MENSAL (F9): janela máxima de 24 meses. É exatamente a retenção dos agregados
+    /// (RetentionPurgeService.SummariesRetentionMonths), então a janela máxima do produto passa a
+    /// ser a do dado que ele guarda — pedir mais devolveria meses vazios com cara de meses sem
+    /// trabalho.
+    /// </summary>
+    public const int MaxRangeMonths = 24;
+
+    /// <summary>Os dois grãos aceitos em ?grain. Ausente equivale a "day".</summary>
+    public const string GrainDay = "day";
+    public const string GrainMonth = "month";
+
     public const int TopAppsDefaultLimit = 10;
     public const int TopAppsMaxLimit = 50;
 
@@ -340,9 +352,10 @@ public class DashboardController(
         [FromQuery(Name = "to")] string? to,
         [FromQuery(Name = "tag")] string? tag,
         [FromQuery(Name = "compare")] bool compare,
+        [FromQuery(Name = "grain")] string? grain,
         CancellationToken ct)
     {
-        var invalid = ValidateRange(from, to);
+        var invalid = ValidateGrainAndRange(from, to, grain, out var monthly);
         if (invalid is not null) return invalid;
 
         var fromDay = DateOnly.ParseExact(from!, "yyyy-MM-dd");
@@ -352,8 +365,8 @@ public class DashboardController(
 
         await using var connection = await dataSource.OpenConnectionAsync(ct);
 
-        var days = await OverviewDaysAsync(connection, tenantId, fromDay, toDay, normalizedTag, ct);
-        var totals = await OverviewTotalsAsync(connection, tenantId, fromDay, toDay, normalizedTag, ct);
+        var days = await OverviewDaysAsync(connection, tenantId, fromDay, toDay, normalizedTag, monthly, ct);
+        var totals = await OverviewTotalsAsync(connection, tenantId, fromDay, toDay, normalizedTag, monthly, ct);
 
         OverviewTotalsResponse? previous = null;
         if (compare)
@@ -362,7 +375,7 @@ public class DashboardController(
             var length = toDay.DayNumber - fromDay.DayNumber + 1;
             var prevTo = fromDay.AddDays(-1);
             var prevFrom = prevTo.AddDays(-(length - 1));
-            previous = await OverviewTotalsAsync(connection, tenantId, prevFrom, prevTo, normalizedTag, ct);
+            previous = await OverviewTotalsAsync(connection, tenantId, prevFrom, prevTo, normalizedTag, monthly, ct);
         }
 
         var goals = await connection.QuerySingleAsync<GoalsRow>(new CommandDefinition(
@@ -380,31 +393,56 @@ public class DashboardController(
             new OverviewGoalsResponse(goals.Weekly, goals.Pct)));
     }
 
-    /// <summary>Série por dia do overview: mesmos baldes do summary, sem a linha de totais.</summary>
+    /// <summary>
+    /// Régua de período do overview, sensível ao GRÃO (F9). O grão mensal lê de
+    /// monthly_summaries e por isso admite 24 meses onde o diário admite 92 dias; grão
+    /// desconhecido é 400, e não um silencioso "day", porque a tela que pediu "trimestre" tem de
+    /// saber que recebeu outra coisa.
+    /// </summary>
+    private ObjectResult? ValidateGrainAndRange(string? from, string? to, string? grain, out bool monthly)
+    {
+        monthly = string.Equals(grain, GrainMonth, StringComparison.OrdinalIgnoreCase);
+
+        if (!string.IsNullOrWhiteSpace(grain)
+            && !monthly
+            && !string.Equals(grain, GrainDay, StringComparison.OrdinalIgnoreCase))
+        {
+            return ProblemResponse(StatusCodes.Status400BadRequest,
+                $"Parâmetro grain deve ser {GrainDay} ou {GrainMonth}.");
+        }
+
+        if (!monthly)
+        {
+            return ValidateRange(from, to);
+        }
+
+        if (!DateOnly.TryParseExact(from, "yyyy-MM-dd", out var fromDay))
+            return ProblemResponse(StatusCodes.Status400BadRequest, "Parâmetro from é obrigatório no formato yyyy-MM-dd.");
+        if (!DateOnly.TryParseExact(to, "yyyy-MM-dd", out var toDay))
+            return ProblemResponse(StatusCodes.Status400BadRequest, "Parâmetro to é obrigatório no formato yyyy-MM-dd.");
+        if (fromDay > toDay)
+            return ProblemResponse(StatusCodes.Status400BadRequest, "Intervalo inválido: from deve ser anterior ou igual a to.");
+
+        // contagem em MESES DE CALENDÁRIO tocados, não em dias: "de janeiro a dezembro" são 12
+        // meses independentemente de o recorte começar no dia 1 ou no 15
+        var months = ((toDay.Year - fromDay.Year) * 12) + toDay.Month - fromDay.Month + 1;
+        if (months > MaxRangeMonths)
+            return ProblemResponse(StatusCodes.Status400BadRequest, $"Intervalo máximo de {MaxRangeMonths} meses no grão mensal.");
+
+        return null;
+    }
+
+    /// <summary>
+    /// Série do overview: mesmos baldes do summary, sem a linha de totais. No grão mensal a
+    /// leitura sai de monthly_summaries e cada ponto é um MÊS, mas o contrato é o mesmo — `date`
+    /// traz o primeiro dia do mês. Um segundo contrato para a mesma tela seria a forma mais
+    /// barata de deixar os dois divergirem.
+    /// </summary>
     private static async Task<List<DashboardSummaryDayResponse>> OverviewDaysAsync(
-        NpgsqlConnection connection, Guid tenantId, DateOnly from, DateOnly to, string? tag, CancellationToken ct) =>
+        NpgsqlConnection connection, Guid tenantId, DateOnly from, DateOnly to, string? tag, bool monthly,
+        CancellationToken ct) =>
         (await connection.QueryAsync<SummaryRow>(new CommandDefinition(
-            """
-            SELECT s.summary_date::text AS date,
-                   COALESCE(sum(s.seconds_active), 0)::bigint AS seconds_active,
-                   COALESCE(sum(s.seconds_idle), 0)::bigint AS seconds_idle,
-                   COALESCE(sum(s.seconds_locked), 0)::bigint AS seconds_locked,
-                   COALESCE(sum(s.seconds_on), 0)::bigint AS seconds_on,
-                   COALESCE(sum(s.seconds_work_related), 0)::bigint AS seconds_work_related,
-                   COALESCE(sum(s.seconds_neutral), 0)::bigint AS seconds_neutral,
-                   COALESCE(sum(s.seconds_not_work_related), 0)::bigint AS seconds_not_work_related,
-                   COALESCE(sum(s.seconds_unclassified), 0)::bigint AS seconds_unclassified,
-                   COALESCE(bool_or(s.data_incomplete), false) AS data_incomplete,
-                   count(DISTINCT s.device_id)::int AS device_count
-            FROM daily_device_summaries s
-            JOIN devices d ON d.id = s.device_id AND d.tenant_id = s.tenant_id
-            WHERE s.tenant_id = @TenantId
-              AND d.status <> 'archived'
-              AND s.summary_date BETWEEN @From::date AND @To::date
-              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
-            GROUP BY s.summary_date
-            ORDER BY s.summary_date
-            """,
+            monthly ? OverviewDaysMonthlySql : OverviewDaysDailySql,
             new
             {
                 TenantId = tenantId,
@@ -422,35 +460,18 @@ public class DashboardController(
     /// <summary>
     /// Totais do período + índice e cobertura. person_count/person_days ignoram a lane-máquina
     /// (UUID zero) porque máquina não é pessoa (decisão 8 do spec).
+    ///
+    /// No grão mensal a fonte é monthly_summaries. Os baldes somam igual; o que muda é
+    /// person_days, que na diária é a contagem de LINHAS com tempo ligado (uma por lane e dia) e
+    /// no mensal já vem somado em days_with_data — a coluna existe exatamente porque essa
+    /// contagem se perderia ao somar os dias fora e não daria para reconstruir depois.
     /// </summary>
     private static async Task<OverviewTotalsResponse> OverviewTotalsAsync(
-        NpgsqlConnection connection, Guid tenantId, DateOnly from, DateOnly to, string? tag, CancellationToken ct)
+        NpgsqlConnection connection, Guid tenantId, DateOnly from, DateOnly to, string? tag, bool monthly,
+        CancellationToken ct)
     {
         var row = await connection.QuerySingleAsync<OverviewTotalsRow>(new CommandDefinition(
-            """
-            SELECT COALESCE(sum(s.seconds_on), 0)::bigint AS seconds_on,
-                   COALESCE(sum(s.seconds_active), 0)::bigint AS seconds_active,
-                   COALESCE(sum(s.seconds_idle), 0)::bigint AS seconds_idle,
-                   COALESCE(sum(s.seconds_locked), 0)::bigint AS seconds_locked,
-                   COALESCE(sum(s.seconds_work_related), 0)::bigint AS seconds_work_related,
-                   COALESCE(sum(s.seconds_neutral), 0)::bigint AS seconds_neutral,
-                   COALESCE(sum(s.seconds_not_work_related), 0)::bigint AS seconds_not_work_related,
-                   COALESCE(sum(s.seconds_unclassified), 0)::bigint AS seconds_unclassified,
-                   COALESCE(bool_or(s.data_incomplete), false) AS data_incomplete,
-                   count(DISTINCT s.device_id)::int AS device_count,
-                   count(DISTINCT s.device_user_id) FILTER (
-                       WHERE s.device_user_id <> '00000000-0000-0000-0000-000000000000'::uuid
-                         AND s.seconds_on > 0)::int AS person_count,
-                   count(*) FILTER (
-                       WHERE s.device_user_id <> '00000000-0000-0000-0000-000000000000'::uuid
-                         AND s.seconds_on > 0)::int AS person_days
-            FROM daily_device_summaries s
-            JOIN devices d ON d.id = s.device_id AND d.tenant_id = s.tenant_id
-            WHERE s.tenant_id = @TenantId
-              AND d.status <> 'archived'
-              AND s.summary_date BETWEEN @From::date AND @To::date
-              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
-            """,
+            monthly ? OverviewTotalsMonthlySql : OverviewTotalsDailySql,
             new
             {
                 TenantId = tenantId,
@@ -473,6 +494,118 @@ public class DashboardController(
             row.SecondsWorkRelated, row.SecondsNeutral, row.SecondsNotWorkRelated, row.SecondsUnclassified,
             index, coverage, row.DeviceCount, row.PersonCount, row.PersonDays, row.DataIncomplete);
     }
+
+    // ------------------------------------------------------------------ SQL do overview, por grão
+    //
+    // Quatro constantes em vez de uma string montada por interpolação: o par diário/mensal de
+    // cada leitura fica lado a lado, e a diferença entre eles é legível de uma vez — que é o que
+    // se quer conferir quando alguém desconfia de os dois grãos discordarem.
+
+    /// <summary>Série por DIA (fonte diária).</summary>
+    private const string OverviewDaysDailySql = """
+        SELECT s.summary_date::text AS date,
+               COALESCE(sum(s.seconds_active), 0)::bigint AS seconds_active,
+               COALESCE(sum(s.seconds_idle), 0)::bigint AS seconds_idle,
+               COALESCE(sum(s.seconds_locked), 0)::bigint AS seconds_locked,
+               COALESCE(sum(s.seconds_on), 0)::bigint AS seconds_on,
+               COALESCE(sum(s.seconds_work_related), 0)::bigint AS seconds_work_related,
+               COALESCE(sum(s.seconds_neutral), 0)::bigint AS seconds_neutral,
+               COALESCE(sum(s.seconds_not_work_related), 0)::bigint AS seconds_not_work_related,
+               COALESCE(sum(s.seconds_unclassified), 0)::bigint AS seconds_unclassified,
+               COALESCE(bool_or(s.data_incomplete), false) AS data_incomplete,
+               count(DISTINCT s.device_id)::int AS device_count
+        FROM daily_device_summaries s
+        JOIN devices d ON d.id = s.device_id AND d.tenant_id = s.tenant_id
+        WHERE s.tenant_id = @TenantId
+          AND d.status <> 'archived'
+          AND s.summary_date BETWEEN @From::date AND @To::date
+          AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
+        GROUP BY s.summary_date
+        ORDER BY s.summary_date
+        """;
+
+    /// <summary>
+    /// Série por MÊS (fonte mensal). `date` traz o primeiro dia do mês: o contrato é o mesmo da
+    /// série diária, e quem lê a tela sabe pelo grão pedido o que cada ponto significa.
+    /// O recorte é por mês TOCADO (o mês entra inteiro se o intervalo pega qualquer dia dele) —
+    /// coerente com a régua de 24 meses, que também conta meses de calendário.
+    /// </summary>
+    private const string OverviewDaysMonthlySql = """
+        SELECT s.month_start::text AS date,
+               COALESCE(sum(s.seconds_active), 0)::bigint AS seconds_active,
+               COALESCE(sum(s.seconds_idle), 0)::bigint AS seconds_idle,
+               COALESCE(sum(s.seconds_locked), 0)::bigint AS seconds_locked,
+               COALESCE(sum(s.seconds_on), 0)::bigint AS seconds_on,
+               COALESCE(sum(s.seconds_work_related), 0)::bigint AS seconds_work_related,
+               COALESCE(sum(s.seconds_neutral), 0)::bigint AS seconds_neutral,
+               COALESCE(sum(s.seconds_not_work_related), 0)::bigint AS seconds_not_work_related,
+               COALESCE(sum(s.seconds_unclassified), 0)::bigint AS seconds_unclassified,
+               COALESCE(bool_or(s.data_incomplete), false) AS data_incomplete,
+               count(DISTINCT s.device_id)::int AS device_count
+        FROM monthly_summaries s
+        JOIN devices d ON d.id = s.device_id AND d.tenant_id = s.tenant_id
+        WHERE s.tenant_id = @TenantId
+          AND d.status <> 'archived'
+          AND s.month_start BETWEEN date_trunc('month', @From::date)::date AND @To::date
+          AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
+        GROUP BY s.month_start
+        ORDER BY s.month_start
+        """;
+
+    /// <summary>Totais do período (fonte diária). person_days = linhas de lane com tempo ligado.</summary>
+    private const string OverviewTotalsDailySql = """
+        SELECT COALESCE(sum(s.seconds_on), 0)::bigint AS seconds_on,
+               COALESCE(sum(s.seconds_active), 0)::bigint AS seconds_active,
+               COALESCE(sum(s.seconds_idle), 0)::bigint AS seconds_idle,
+               COALESCE(sum(s.seconds_locked), 0)::bigint AS seconds_locked,
+               COALESCE(sum(s.seconds_work_related), 0)::bigint AS seconds_work_related,
+               COALESCE(sum(s.seconds_neutral), 0)::bigint AS seconds_neutral,
+               COALESCE(sum(s.seconds_not_work_related), 0)::bigint AS seconds_not_work_related,
+               COALESCE(sum(s.seconds_unclassified), 0)::bigint AS seconds_unclassified,
+               COALESCE(bool_or(s.data_incomplete), false) AS data_incomplete,
+               count(DISTINCT s.device_id)::int AS device_count,
+               count(DISTINCT s.device_user_id) FILTER (
+                   WHERE s.device_user_id <> '00000000-0000-0000-0000-000000000000'::uuid
+                     AND s.seconds_on > 0)::int AS person_count,
+               count(*) FILTER (
+                   WHERE s.device_user_id <> '00000000-0000-0000-0000-000000000000'::uuid
+                     AND s.seconds_on > 0)::int AS person_days
+        FROM daily_device_summaries s
+        JOIN devices d ON d.id = s.device_id AND d.tenant_id = s.tenant_id
+        WHERE s.tenant_id = @TenantId
+          AND d.status <> 'archived'
+          AND s.summary_date BETWEEN @From::date AND @To::date
+          AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
+        """;
+
+    /// <summary>
+    /// Totais do período (fonte mensal). person_days vem de days_with_data somado: no mensal
+    /// cada linha é uma lane no MÊS, então contar linhas daria "lanes ativas", não "pares
+    /// (pessoa, dia)" — que é o denominador de toda média por pessoa por dia da tela.
+    /// </summary>
+    private const string OverviewTotalsMonthlySql = """
+        SELECT COALESCE(sum(s.seconds_on), 0)::bigint AS seconds_on,
+               COALESCE(sum(s.seconds_active), 0)::bigint AS seconds_active,
+               COALESCE(sum(s.seconds_idle), 0)::bigint AS seconds_idle,
+               COALESCE(sum(s.seconds_locked), 0)::bigint AS seconds_locked,
+               COALESCE(sum(s.seconds_work_related), 0)::bigint AS seconds_work_related,
+               COALESCE(sum(s.seconds_neutral), 0)::bigint AS seconds_neutral,
+               COALESCE(sum(s.seconds_not_work_related), 0)::bigint AS seconds_not_work_related,
+               COALESCE(sum(s.seconds_unclassified), 0)::bigint AS seconds_unclassified,
+               COALESCE(bool_or(s.data_incomplete), false) AS data_incomplete,
+               count(DISTINCT s.device_id)::int AS device_count,
+               count(DISTINCT s.device_user_id) FILTER (
+                   WHERE s.device_user_id <> '00000000-0000-0000-0000-000000000000'::uuid
+                     AND s.seconds_on > 0)::int AS person_count,
+               COALESCE(sum(s.days_with_data) FILTER (
+                   WHERE s.device_user_id <> '00000000-0000-0000-0000-000000000000'::uuid), 0)::int AS person_days
+        FROM monthly_summaries s
+        JOIN devices d ON d.id = s.device_id AND d.tenant_id = s.tenant_id
+        WHERE s.tenant_id = @TenantId
+          AND d.status <> 'archived'
+          AND s.month_start BETWEEN date_trunc('month', @From::date)::date AND @To::date
+          AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
+        """;
 
     /// <summary>
     /// from/to no fuso do tenant, inclusivos, formato yyyy-MM-dd; from ≤ to e janela
