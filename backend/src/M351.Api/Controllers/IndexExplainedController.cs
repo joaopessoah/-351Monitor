@@ -120,9 +120,12 @@ public class IndexExplainedController(NpgsqlDataSource dataSource) : ApiControll
 
     /// <summary>
     /// As maiores contribuições EM MÓDULO, com o sinal preservado. Ordenar por módulo é o ponto:
-    /// a pergunta é "onde a variação está", e uma queda de 4 pontos importa tanto quanto uma
-    /// alta de 4. Membro que não mexeu no índice (parcela zero) não entra — ocuparia linha sem
-    /// dizer nada.
+    /// a pergunta é "onde a variação está", e uma queda de 4 pontos importa tanto quanto uma alta
+    /// de 4.
+    ///
+    /// Parcela ZERO não é filtrada, e não precisa ser: ordenada por módulo, ela afunda para o fim
+    /// da lista e o limite a corta sozinho. Ela só chega à tela quando há menos contribuições que
+    /// o limite — e aí "este aplicativo não mexeu no índice" é informação, não ruído.
     /// </summary>
     private static IReadOnlyList<IndexContributionResponse> Top(IReadOnlyList<MemberSeconds> members, int take)
     {

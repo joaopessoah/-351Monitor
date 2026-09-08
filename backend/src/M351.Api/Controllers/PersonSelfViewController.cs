@@ -218,12 +218,31 @@ public class PersonSelfViewController(NpgsqlDataSource dataSource) : ApiControll
     /// </summary>
     private const string TopAppsSql = """
         WITH lane AS (
-            SELECT du.id AS device_user_id, tm.team_id
+            -- EQUIPE DA LANE, com a MESMA precedência do DailyAggregationService (F7):
+            --   1. equipe da PESSOA, pelo SID canônico;
+            --   2. etiqueta legada do dispositivo que alguma equipe declarou em teams.tag;
+            --   3. NULL — cai na regra da organização.
+            -- Resolver só por team_members mostraria à pessoa a regra da ORGANIZAÇÃO enquanto
+            -- os números dela foram somados pela regra da EQUIPE: dois rótulos para o mesmo
+            -- tempo, na mesma tela. O LATERAL com LIMIT 1 é obrigatório — sem ele, device com
+            -- duas etiquetas reivindicadas por duas equipes duplicaria a lane.
+            SELECT du.id AS device_user_id,
+                   COALESCE(tm.team_id, tag_team.team_id) AS team_id
             FROM device_users du
             LEFT JOIN people p ON p.tenant_id = du.tenant_id AND p.windows_sid = du.windows_sid
             LEFT JOIN team_members tm
                    ON tm.tenant_id = du.tenant_id
                   AND tm.windows_sid = COALESCE(p.merged_into_sid, du.windows_sid)
+            LEFT JOIN devices dev
+                   ON dev.tenant_id = du.tenant_id AND dev.id = du.device_id
+            LEFT JOIN LATERAL (
+                SELECT t2.id AS team_id
+                FROM teams t2
+                WHERE t2.tenant_id = du.tenant_id
+                  AND t2.tag IS NOT NULL AND t2.tag = ANY(dev.tags)
+                ORDER BY t2.name
+                LIMIT 1
+            ) tag_team ON true
             WHERE du.tenant_id = @TenantId
               AND COALESCE(p.merged_into_sid, du.windows_sid) = @Sid
         )

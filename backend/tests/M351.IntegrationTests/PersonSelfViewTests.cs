@@ -168,6 +168,44 @@ public class PersonSelfViewTests(ApiTestFixture fixture)
             porDeviceUser.RootElement.GetProperty("seconds_active").GetInt64());
     }
 
+    [Fact]
+    public async Task SelfView_Respeita_A_Equipe_Vinda_Da_Etiqueta_Legada_Do_Dispositivo()
+    {
+        var (tenantId, client, token, day, _) = await SeedPessoaAsync("SvTag");
+
+        // EQUIPE POR ETIQUETA LEGADA: teams.tag reivindica uma etiqueta de devices.tags, e a
+        // agregação diária resolve a equipe da lane por esse caminho quando a pessoa não está
+        // em team_members. Se o self-view resolvesse só por team_members, ele mostraria à
+        // pessoa a regra da ORGANIZAÇÃO enquanto os números dela foram somados pela regra da
+        // EQUIPE — dois rótulos diferentes para o mesmo tempo, na mesma tela.
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            "UPDATE devices SET tags = ARRAY['comercial'] WHERE tenant_id = @t", ("t", tenantId));
+
+        var teamId = Uuid7.NewUuid7();
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            "INSERT INTO teams (id, tenant_id, name, tag) VALUES (@id, @t, 'Comercial', 'comercial')",
+            ("id", teamId), ("t", tenantId));
+
+        // a organização diz que o zap é improdutivo (semeado); a EQUIPE diz que é produtivo
+        var categoryId = Uuid7.NewUuid7();
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            "INSERT INTO categories (id, tenant_id, name, classification) VALUES (@c, @t, 'Atendimento', 1)",
+            ("c", categoryId), ("t", tenantId));
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            """
+            INSERT INTO tenant_app_team_categories (tenant_id, team_id, app_id, category_id)
+            SELECT @t, @tm, a.id, @c FROM app_catalog a WHERE a.process_name = 'sv-zap.exe'
+            """,
+            ("t", tenantId), ("tm", teamId), ("c", categoryId));
+
+        using var doc = await GetJsonAsync(client, token,
+            $"/api/v1/people/{EventFactory.DefaultSid}/self-view?from={day}&to={day}");
+
+        var zap = doc.RootElement.GetProperty("top_apps").EnumerateArray()
+            .Single(a => a.GetProperty("process_name").GetString() == "sv-zap.exe");
+        Assert.Equal(1, zap.GetProperty("classification").GetInt32());
+    }
+
     // ------------------------------------------------------------------ ausências
 
     [Fact]

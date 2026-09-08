@@ -149,12 +149,29 @@ public static class WeeklySummary
         await using var cmd = new NpgsqlCommand(
             """
             WITH lane AS (
-                SELECT du.id AS device_user_id, tm.team_id
+                -- MESMA precedência do DailyAggregationService (F7): equipe da pessoa, depois
+                -- a etiqueta legada do dispositivo, depois nenhuma. Resolver só por
+                -- team_members rotularia o app pela regra da ORGANIZAÇÃO num tenant que usa o
+                -- atalho da etiqueta — e o PDF diria à pessoa algo diferente do que os números
+                -- dela dizem. LATERAL com LIMIT 1: sem ele, device com duas etiquetas
+                -- reivindicadas por duas equipes duplicaria a lane e dobraria os segundos.
+                SELECT du.id AS device_user_id,
+                       COALESCE(tm.team_id, tag_team.team_id) AS team_id
                 FROM device_users du
                 LEFT JOIN people p ON p.tenant_id = du.tenant_id AND p.windows_sid = du.windows_sid
                 LEFT JOIN team_members tm
                        ON tm.tenant_id = du.tenant_id
                       AND tm.windows_sid = COALESCE(p.merged_into_sid, du.windows_sid)
+                LEFT JOIN devices dev
+                       ON dev.tenant_id = du.tenant_id AND dev.id = du.device_id
+                LEFT JOIN LATERAL (
+                    SELECT t2.id AS team_id
+                    FROM teams t2
+                    WHERE t2.tenant_id = du.tenant_id
+                      AND t2.tag IS NOT NULL AND t2.tag = ANY(dev.tags)
+                    ORDER BY t2.name
+                    LIMIT 1
+                ) tag_team ON true
                 WHERE du.tenant_id = @t
                   AND COALESCE(p.merged_into_sid, du.windows_sid) = @sid
             )

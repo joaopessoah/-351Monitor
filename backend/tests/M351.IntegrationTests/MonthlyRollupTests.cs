@@ -175,14 +175,37 @@ public class MonthlyRollupTests(ApiTestFixture fixture)
     }
 
     [Fact]
-    public async Task Segunda_Passada_Sem_Diaria_Nova_Nao_Reprocessa_Nada()
+    public async Task Segunda_Passada_Nao_Revisita_Mes_Antigo()
     {
-        await SeedDoisDiasAsync("MrlMarca");
-        await RunRollupAsync();
+        var tenantId = await SeedDoisDiasAsync("MrlMarca");
 
-        // a marca-d'água é o que impede o job de hora em hora de revarrer 24 meses de diária a
-        // cada ciclo; sem ela o rollup seria O(histórico) para sempre
-        Assert.Equal(0, await RunRollupAsync());
+        // um mês ANTIGO, com carimbo bem fora da margem de segurança
+        var device = await TestDb.ScalarAsync<Guid>(fixture.Database.ConnectionString,
+            "SELECT id FROM devices WHERE tenant_id = @t LIMIT 1", ("t", tenantId));
+        var mesAntigo = new DateOnly(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1).AddMonths(-6);
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            """
+            INSERT INTO daily_device_summaries (
+                tenant_id, summary_date, device_id, device_user_id, seconds_on, computed_at)
+            VALUES (@t, @d, @dev, '00000000-0000-0000-0000-000000000000'::uuid, 3600,
+                    now() - INTERVAL '2 days')
+            """,
+            ("t", tenantId), ("d", mesAntigo), ("dev", device));
+
+        var primeira = await RunRollupAsync();
+        Assert.True(primeira >= 2, $"a primeira passada tinha de pegar o mês antigo e o recente; pegou {primeira}");
+
+        // A MARCA-D'ÁGUA É O QUE IMPEDE o job de hora em hora de revarrer 24 meses de diária a
+        // cada ciclo. A segunda passada pode revisitar o que foi escrito dentro da margem de
+        // segurança (SafetyMargin), mas o mês de seis meses atrás NÃO pode voltar.
+        var segunda = await RunRollupAsync();
+        Assert.True(segunda < primeira,
+            $"a segunda passada tinha de revisitar menos meses que a primeira: {segunda} vs {primeira}");
+
+        // e o mês antigo continua correto depois de tudo
+        Assert.Equal(3600, await TestDb.ScalarAsync<long>(fixture.Database.ConnectionString,
+            "SELECT COALESCE(sum(seconds_on), 0)::bigint FROM monthly_summaries WHERE tenant_id = @t AND month_start = @m",
+            ("t", tenantId), ("m", mesAntigo)));
     }
 
     // ------------------------------------------------------------------ reagregação retroativa
@@ -219,6 +242,40 @@ public class MonthlyRollupTests(ApiTestFixture fixture)
         Assert.Equal(produtivoAntes, await TestDb.ScalarAsync<long>(fixture.Database.ConnectionString,
             "SELECT COALESCE(sum(seconds_not_work_related), 0)::bigint FROM monthly_summaries WHERE tenant_id = @t",
             ("t", tenantId)));
+    }
+
+    [Fact]
+    public async Task Diaria_Escrita_Com_Carimbo_Levemente_Anterior_Nao_E_Perdida()
+    {
+        var tenantId = await SeedDoisDiasAsync("MrlCorr");
+        await RunRollupAsync();
+
+        var antes = await TestDb.ScalarAsync<long>(fixture.Database.ConnectionString,
+            "SELECT COALESCE(sum(seconds_active), 0)::bigint FROM monthly_summaries WHERE tenant_id = @t",
+            ("t", tenantId));
+
+        // A CORRIDA QUE A MARGEM FECHA: computed_at é now(), que no Postgres é o INÍCIO da
+        // transação. Uma agregação diária que começou antes de o rollup ler max(computed_at) e
+        // só commitou depois grava um carimbo ANTERIOR à marca — e sem margem de segurança essa
+        // linha ficaria para sempre fora do mensal, em silêncio. Simulamos exatamente isso:
+        // muda a diária carimbando um minuto no passado.
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString,
+            """
+            UPDATE daily_device_summaries
+            SET seconds_active = seconds_active + 600,
+                computed_at = now() - INTERVAL '1 minute'
+            WHERE tenant_id = @t
+            """,
+            ("t", tenantId));
+
+        await RunRollupAsync();
+
+        var depois = await TestDb.ScalarAsync<long>(fixture.Database.ConnectionString,
+            "SELECT COALESCE(sum(seconds_active), 0)::bigint FROM monthly_summaries WHERE tenant_id = @t",
+            ("t", tenantId));
+
+        Assert.True(depois > antes,
+            $"o mensal tinha de acompanhar a diária reescrita: antes {antes}, depois {depois}");
     }
 
     // ------------------------------------------------------------------ retenção

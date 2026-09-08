@@ -19,9 +19,10 @@ namespace M351.Infrastructure.Aggregation;
 /// computed_at das linhas afetadas, então o mês antigo reaparece na pergunta sozinho — sem
 /// ninguém precisar avisar o rollup.
 ///
-/// A marca nova é lida ANTES de recomputar e o recorte é (watermark, novaMarca]. Uma linha
-/// diária escrita durante o ciclo tem computed_at acima da marca nova e fica para o ciclo
-/// seguinte, em vez de ser pulada para sempre.
+/// A marca nova é lida ANTES de recomputar e o recorte é (watermark, novaMarca], mas quem
+/// realmente fecha a janela de perda é a SafetyMargin — ver o comentário dela: computed_at é
+/// o INÍCIO da transação, então uma agregação concorrente pode gravar um carimbo anterior à
+/// marca e ficar invisível a esta leitura.
 ///
 /// Recompute por DELETE + INSERT do mês inteiro, dentro de uma transação, e não upsert: o
 /// delete-and-rebuild elimina linha obsoleta — a lane de um usuário que sumiu do mês depois de
@@ -34,9 +35,26 @@ namespace M351.Infrastructure.Aggregation;
 public sealed class MonthlyRollupService(NpgsqlDataSource dataSource, ILogger<MonthlyRollupService>? logger = null)
 {
     /// <summary>
+    /// MARGEM DE SEGURANÇA da marca-d'água. A marca gravada é <c>max(computed_at) − margem</c>,
+    /// e não o máximo cru.
+    ///
+    /// POR QUÊ: computed_at é <c>now()</c>, que no Postgres é o INÍCIO da transação. Uma
+    /// agregação diária que começou ANTES de este ciclo ler o máximo e só commitou DEPOIS grava
+    /// um carimbo anterior à marca — invisível na leitura, e portanto perdida para sempre se a
+    /// marca avançasse até o máximo cru. Silenciosamente: o mês ficaria eternamente defasado
+    /// sem nenhum erro em lugar nenhum.
+    ///
+    /// O CUSTO é revisitar os meses tocados nos últimos cinco minutos, que na prática é UM mês,
+    /// e recompor um mês é um DELETE + INSERT barato. O que a marca continua evitando — varrer
+    /// 24 meses de diária a cada ciclo — permanece evitado.
+    /// </summary>
+    public static readonly TimeSpan SafetyMargin = TimeSpan.FromMinutes(5);
+
+    /// <summary>
     /// Um ciclo: para cada organização, recompõe os meses tocados desde a marca-d'água.
-    /// Devolve quantos pares (tenant, mês) foram reprocessados — zero significa "nada mudou",
-    /// que é o caso comum e o ponto da marca-d'água.
+    /// Devolve quantos pares (tenant, mês) foram reprocessados. Num ciclo sem novidade o número
+    /// é zero ou, quando houve escrita nos últimos minutos, o punhado de meses dentro da
+    /// SafetyMargin — nunca o histórico inteiro, que é o ponto da marca.
     /// </summary>
     public async Task<int> RunOnceAsync(CancellationToken ct = default)
     {
@@ -128,6 +146,7 @@ public sealed class MonthlyRollupService(NpgsqlDataSource dataSource, ILogger<Mo
             await ExecAsync(connection, tx, RollUpSql, ct, ("t", tenantId), ("m", mes));
         }
 
+        // a marca recua a margem de segurança: ver SafetyMargin
         await ExecAsync(connection, tx,
             """
             INSERT INTO monthly_rollup_state (tenant_id, watermark, updated_at)
@@ -135,7 +154,7 @@ public sealed class MonthlyRollupService(NpgsqlDataSource dataSource, ILogger<Mo
             ON CONFLICT (tenant_id) DO UPDATE
                 SET watermark = EXCLUDED.watermark, updated_at = now()
             """,
-            ct, ("t", tenantId), ("nova", novaMarca.Value));
+            ct, ("t", tenantId), ("nova", novaMarca.Value - SafetyMargin));
 
         await tx.CommitAsync(ct);
         return meses.Count;
