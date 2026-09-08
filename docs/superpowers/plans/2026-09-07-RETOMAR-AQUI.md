@@ -120,6 +120,20 @@ Referência: **445 testes verdes**. PostgreSQL 16 local em `localhost:5432`, `po
 
 ## Deploy
 
+> **EMPURRE ANTES DE IMPLANTAR.** O script faz `git fetch origin main && git reset --hard
+> origin/main` **no servidor**: ele constrói o que está no `origin`, nunca o que está na sua
+> máquina. Rodar o deploy com commits locais não empurrados reconstrói o código ANTIGO e o
+> `[deploy] concluído` aparece igual — foi o que aconteceu em 08/09. Confira com
+> `git status -sb` antes, e depois do deploy confirme o bundle novo com
+> `curl -s https://painel.2-25-193-15.sslip.io/ | grep -o 'index-[A-Za-z0-9_-]*\.js'`.
+
+> **O worker sobe antes de a migration existir.** Os jobs usam `StartNow()` e a migration é
+> aplicada pela API; no deploy que cria tabela nova, o primeiro ciclo do job que a usa falha com
+> `relation "..." does not exist`. Não é defeito: o ciclo seguinte funciona, e o `try/catch` por
+> tenant do `MonthlyRollupService` impede que isso derrube o resto. Se quiser o dado na hora,
+> `docker restart m351-staging-worker-1` depois que a API subiu.
+
+
 O job `deploy-staging` do CI **falha** por bloqueio de rede: a proteção antiforça-bruta do
 servidor barrou o endereço do runner do GitHub em 07/09. Enquanto isso, o deploy é manual e
 funciona:
