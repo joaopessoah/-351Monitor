@@ -95,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $error === null) {
             }
             // Usuários seed: gera senha temporária e mostra UMA única vez.
             foreach (rows("SELECT id, name, email FROM users WHERE password_hash = '!'") as $u) {
-                $tmp = substr(strtr(base64_encode(random_bytes(12)), '+/', 'Ax'), 0, 16);
+                $tmp = senha_temporaria();
                 q('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?',
                     [password_hash($tmp, PASSWORD_DEFAULT), $u['id']]);
                 $tempPasswords[] = ['name' => $u['name'], 'email' => $u['email'], 'senha' => $tmp];

@@ -203,7 +203,7 @@ page_header('Leads', 'leads.php', $user);
     <?php if ($previa['aptos']): ?>
       <?php $remetentes = mail_remetentes(); ?>
       <?php if (!$remetentes): ?>
-        <p class="muted">Nenhuma caixa configurada no <code>crm_config.php</code> — o motor não tem por onde enviar.</p>
+        <?= aviso_sem_remetente() ?>
       <?php else: ?>
         <form method="post" class="form-stack">
           <?= csrf_field() ?>
@@ -220,6 +220,7 @@ page_header('Leads', 'leads.php', $user);
                 </option>
               <?php endforeach; ?>
             </select>
+            <?= aviso_caixas_sem_usuario() ?>
           </div>
           <div class="form-actions">
             <button class="btn btn-primary" type="submit">Confirmar e iniciar <?= count($previa['aptos']) ?> cadência(s)</button>

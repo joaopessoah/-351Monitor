@@ -66,6 +66,17 @@ return [
 Rotacionar o token da API = trocar o valor aqui. O token dá acesso a dados pessoais de leads —
 trate como credencial de operador (LGPD).
 
+### Uma caixa em `mail` não basta para ela virar remetente
+
+Quem assina o e-mail é um **usuário do CRM** cujo login é a própria caixa. O seletor "Quem assina"
+(em Leads, no detalhe do lead e na Fila) é a **interseção** entre a chave `mail` e a tabela `users`,
+e `mail_remetentes()` percorre `users` — endereço que só existe no `crm_config.php` nunca é olhado.
+
+Depois de acrescentar um endereço a `mail`, abra **Configurações → Usuários e remetentes**: a caixa
+nova aparece em "Caixas configuradas que ainda não assinam nada", com um botão que cria o usuário e
+mostra a senha temporária uma única vez. A mesma tela reativa quem foi desativado e gera senha nova.
+Nada disso precisa de phpMyAdmin.
+
 ## Dev local (Windows)
 
 1. PHP 8.2+ portátil (com `pdo_mysql` habilitado no `php.ini`) e um MySQL/MariaDB local **ou**

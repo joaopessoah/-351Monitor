@@ -49,6 +49,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             error_log('settings coluna: ' . $e->getMessage());
             $error = 'Nao deu para salvar. A migration 010 ja foi aplicada no migrate.php?';
         }
+    } elseif ($action === 'usuario') {
+        try {
+            $op = $_POST['op'] ?? '';
+            $alvo = (int) ($_POST['id'] ?? 0);
+            if ($op === 'criar') {
+                $novo = user_criar($_POST['nome'] ?? '', $_POST['email'] ?? '');
+                flash_set('ok', 'Usuário criado: ' . $novo['email'] . ' — senha temporária '
+                    . $novo['senha'] . '. Anote agora: ela não aparece de novo, e a troca é '
+                    . 'obrigatória no primeiro login.');
+            } elseif ($op === 'ativar' || $op === 'desativar') {
+                user_set_ativo($alvo, $op === 'ativar', (int) $user['id']);
+                flash_set('ok', $op === 'ativar'
+                    ? 'Usuário reativado — já aparece como remetente se a caixa dele estiver no crm_config.php.'
+                    : 'Usuário desativado.');
+            } elseif ($op === 'senha') {
+                if ($alvo === (int) $user['id']) {
+                    throw new InvalidArgumentException('Para a sua própria senha use “Trocar senha”, ali em cima.');
+                }
+                $r = user_nova_senha_temporaria($alvo);
+                flash_set('ok', 'Senha temporária de ' . $r['email'] . ': ' . $r['senha']
+                    . ' — anote agora. A troca é obrigatória no próximo login dele.');
+            }
+            redirect('settings.php#usuarios');
+        } catch (InvalidArgumentException $e) {
+            $error = $e->getMessage();
+        } catch (Throwable $e) {
+            error_log('settings usuario: ' . $e->getMessage());
+            $error = 'Não deu para salvar o usuário. Confira o log de erros do hPanel.';
+        }
     } elseif ($action === 'cadencia_auto') {
         try {
             $hhmm = function (string $campo, string $rotulo): string {
@@ -433,6 +462,120 @@ page_header('Configurações', 'settings.php', $user);
   <?php endif; ?>
 </div>
 
+<div class="card" id="usuarios">
+  <h2 class="card-title">Usuários e remetentes</h2>
+  <p class="muted">Quem assina o e-mail da cadência é um <strong>usuário do CRM</strong> cujo login é a própria
+    caixa. Um endereço só vira opção de remetente se estiver nos <strong>dois</strong> lugares: na chave
+    <code>mail</code> do <code>crm_config.php</code> (que guarda a senha SMTP, no servidor) e aqui, como
+    usuário ativo. Colocar no arquivo e não criar o usuário é o motivo mais comum de um e-mail novo
+    não aparecer em Leads.</p>
+
+  <?php $cadsPorUser = users_cadencias_ativas(); ?>
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr><th>Nome</th><th>E-mail (login)</th><th>Caixa no <code>crm_config.php</code></th>
+          <th>Cadências ativas</th><th>Último login</th><th>Ações</th></tr>
+      </thead>
+      <tbody>
+        <?php foreach (users_todos() as $u): ?>
+          <?php $ativo = (int) $u['is_active'] === 1; $eu = (int) $u['id'] === (int) $user['id']; ?>
+          <tr>
+            <td class="nowrap"><?= esc($u['name']) ?><?= $eu ? ' <span class="muted small">(você)</span>' : '' ?></td>
+            <td class="nowrap"><?= esc($u['email']) ?></td>
+            <td>
+              <?php if (mail_conta($u['email']) !== null): ?>
+                <span class="badge badge-trial">configurada</span>
+              <?php else: ?>
+                <span class="badge badge-perdido">sem caixa</span>
+              <?php endif; ?>
+            </td>
+            <td class="muted small"><?= (int) ($cadsPorUser[(int) $u['id']] ?? 0) ?></td>
+            <td class="muted small"><?= esc($u['last_login_at'] ? fmt_dt($u['last_login_at']) : 'nunca entrou') ?></td>
+            <td>
+              <?php if (!$ativo): ?>
+                <span class="badge badge-perdido">desativado</span>
+                <form method="post" class="inline-form">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="action" value="usuario">
+                  <input type="hidden" name="op" value="ativar">
+                  <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
+                  <button class="btn btn-ghost btn-sm" type="submit">Reativar</button>
+                </form>
+              <?php elseif (!$eu): ?>
+                <form method="post" class="inline-form"
+                      data-confirm="Gerar uma senha temporária para <?= esc($u['name']) ?>? A senha atual dele para de valer na hora.">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="action" value="usuario">
+                  <input type="hidden" name="op" value="senha">
+                  <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
+                  <button class="btn btn-ghost btn-sm" type="submit">Nova senha temporária</button>
+                </form>
+                <form method="post" class="inline-form"
+                      data-confirm="Desativar <?= esc($u['name']) ?>? Ele perde o login e sai da lista de quem assina. As <?= (int) ($cadsPorUser[(int) $u['id']] ?? 0) ?> cadência(s) já em andamento continuam saindo pela caixa dele — pause uma a uma se não for isso que você quer.">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="action" value="usuario">
+                  <input type="hidden" name="op" value="desativar">
+                  <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
+                  <button class="btn btn-danger btn-sm" type="submit">Desativar</button>
+                </form>
+              <?php else: ?>
+                <span class="muted small">use “Trocar senha”, ali em cima</span>
+              <?php endif; ?>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+
+  <?php $orfas = mail_caixas_sem_usuario(); ?>
+  <?php if ($orfas): ?>
+    <h3 class="list-title list-title-warn">Caixas configuradas que ainda não assinam nada (<?= count($orfas) ?>)</h3>
+    <p class="muted">Estão no <code>crm_config.php</code>, mas não há usuário ativo com esse login — por isso
+      não aparecem em Leads nem no detalhe do lead.</p>
+    <?php foreach ($orfas as $endereco => $conta): ?>
+      <?php $jaExiste = user_por_email($endereco); ?>
+      <?php if ($jaExiste !== null): ?>
+        <form method="post" class="inline-form" style="margin-bottom: 8px">
+          <?= csrf_field() ?>
+          <input type="hidden" name="action" value="usuario">
+          <input type="hidden" name="op" value="ativar">
+          <input type="hidden" name="id" value="<?= (int) $jaExiste['id'] ?>">
+          <span><strong><?= esc($endereco) ?></strong> — o usuário existe, só está desativado.</span>
+          <button class="btn btn-primary btn-sm" type="submit">Reativar</button>
+        </form>
+      <?php else: ?>
+        <form method="post" class="inline-form" style="margin-bottom: 8px">
+          <?= csrf_field() ?>
+          <input type="hidden" name="action" value="usuario">
+          <input type="hidden" name="op" value="criar">
+          <input type="hidden" name="email" value="<?= esc($endereco) ?>">
+          <span><strong><?= esc($endereco) ?></strong></span>
+          <input name="nome" type="text" maxlength="80" required value="<?= esc($conta['nome']) ?>"
+                 aria-label="Nome de quem usa <?= esc($endereco) ?>">
+          <button class="btn btn-primary btn-sm" type="submit">Criar usuário para esta caixa</button>
+        </form>
+      <?php endif; ?>
+    <?php endforeach; ?>
+  <?php endif; ?>
+
+  <h3 class="list-title">Criar usuário</h3>
+  <p class="muted">Serve para quem só vai usar o CRM. Para <em>assinar e-mail</em>, o endereço também precisa
+    estar na chave <code>mail</code> do <code>crm_config.php</code> — sem a senha SMTP não há como enviar.</p>
+  <form method="post" class="task-quick">
+    <?= csrf_field() ?>
+    <input type="hidden" name="action" value="usuario">
+    <input type="hidden" name="op" value="criar">
+    <input name="nome" type="text" placeholder="Nome" maxlength="80" required aria-label="Nome">
+    <input name="email" type="email" placeholder="email@mais351monitor.com.br" maxlength="190" required
+           aria-label="E-mail (login)">
+    <button class="btn btn-ghost btn-sm" type="submit">Criar</button>
+  </form>
+  <p class="muted small">A senha temporária aparece <strong>uma única vez</strong> no aviso verde do topo desta
+    tela, logo depois de criar. Não fica guardada em lugar nenhum.</p>
+</div>
+
 <div class="card" id="cadencia-auto">
   <h2 class="card-title">Cadência automática (envio, validação e retorno)</h2>
   <?php $contas = mail_contas(); ?>
@@ -480,6 +623,7 @@ page_header('Configurações', 'settings.php', $user);
         </tbody>
       </table>
     </div>
+    <?= aviso_caixas_sem_usuario() ?>
   <?php endif; ?>
 
   <?php

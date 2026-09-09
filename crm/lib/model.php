@@ -1281,3 +1281,125 @@ function intake_log(string $ip, string $outcome, ?int $leadId = null, ?string $d
     q('INSERT INTO intake_log (ip, outcome, lead_id, detail) VALUES (?,?,?,?)',
         [$ip, $outcome, $leadId, $detail !== null ? mb_substr($detail, 0, 255) : null]);
 }
+
+/* ---------- Usuarios ---------- */
+
+/**
+ * Todos os usuarios, ativos primeiro. A tela de remetentes precisa ver tambem
+ * os inativos: "sumiu da lista" quase sempre e um usuario desativado, e sem
+ * mostra-lo a unica saida seria o phpMyAdmin.
+ */
+function users_todos(): array
+{
+    return rows('SELECT id, name, email, is_active, last_login_at FROM users
+                 ORDER BY is_active DESC, name');
+}
+
+function user_por_email(?string $email): ?array
+{
+    $e = mb_strtolower(trim((string) $email));
+    return $e === '' ? null : row('SELECT id, name, email, is_active FROM users WHERE email = ?', [$e]);
+}
+
+/**
+ * Senha temporaria de 16 caracteres, sem '+' nem '/': ela e lida em voz alta e
+ * copiada da tela, entao caractere que confunde so gera chamado de suporte.
+ */
+function senha_temporaria(): string
+{
+    return substr(strtr(base64_encode(random_bytes(12)), '+/', 'Ax'), 0, 16);
+}
+
+/**
+ * Valida nome e e-mail de um usuario novo. Separado de user_criar() para o
+ * teste exercitar a regra sem banco.
+ *
+ * @return array{nome:string, email:string}
+ */
+function user_valida_novo(?string $nome, ?string $email): array
+{
+    $n = norm_text((string) $nome, 80);
+    if (mb_strlen($n) < 2) {
+        throw new InvalidArgumentException('O nome precisa ter pelo menos 2 caracteres.');
+    }
+    $e = norm_email($email);
+    if ($e === false || $e === null || $e === '') {
+        throw new InvalidArgumentException('E-mail inválido: "' . mb_substr(trim((string) $email), 0, 60) . '".');
+    }
+    return ['nome' => $n, 'email' => $e];
+}
+
+/**
+ * Cria o usuario com uma senha temporaria e a devolve UMA vez — nao fica
+ * guardada em lugar nenhum, so o hash vai para o banco.
+ *
+ * @return array{id:int, email:string, senha:string}
+ */
+function user_criar(?string $nome, ?string $email): array
+{
+    ['nome' => $n, 'email' => $e] = user_valida_novo($nome, $email);
+    $existe = user_por_email($e);
+    if ($existe !== null) {
+        throw new InvalidArgumentException((int) $existe['is_active'] === 1
+            ? 'Já existe um usuário com esse e-mail.'
+            : 'Esse e-mail já existe, mas está desativado — use “Reativar” na linha dele.');
+    }
+    $senha = senha_temporaria();
+    q('INSERT INTO users (name, email, password_hash, must_change_password) VALUES (?, ?, ?, 1)',
+        [$n, $e, password_hash($senha, PASSWORD_DEFAULT)]);
+    return ['id' => last_id(), 'email' => $e, 'senha' => $senha];
+}
+
+/**
+ * Liga/desliga o login. Duas travas: ninguem se desativa (sairia da propria
+ * sessao sem conseguir voltar) e o ultimo ativo nao pode cair, senao o CRM
+ * fica sem ninguem para entrar.
+ */
+function user_set_ativo(int $id, bool $ativo, int $quemPede): void
+{
+    $u = row('SELECT id, name, is_active FROM users WHERE id = ?', [$id]);
+    if ($u === null) {
+        throw new InvalidArgumentException('Usuário não encontrado.');
+    }
+    if (!$ativo) {
+        if ($id === $quemPede) {
+            throw new InvalidArgumentException('Você não pode desativar a si mesmo.');
+        }
+        if ((int) scalar('SELECT COUNT(*) FROM users WHERE is_active = 1') <= 1) {
+            throw new InvalidArgumentException('Este é o único usuário ativo — desativá-lo tranca o CRM.');
+        }
+    }
+    q('UPDATE users SET is_active = ? WHERE id = ?', [$ativo ? 1 : 0, $id]);
+}
+
+/** Nova senha temporaria (troca obrigatoria no proximo login). Devolvida uma vez. */
+function user_nova_senha_temporaria(int $id): array
+{
+    $u = row('SELECT id, name, email FROM users WHERE id = ?', [$id]);
+    if ($u === null) {
+        throw new InvalidArgumentException('Usuário não encontrado.');
+    }
+    $senha = senha_temporaria();
+    q('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?',
+        [password_hash($senha, PASSWORD_DEFAULT), $id]);
+    return ['email' => (string) $u['email'], 'senha' => $senha];
+}
+
+/**
+ * Quantas cadencias ativas cada usuario assina, por id. Vazio se a migration
+ * 012 ainda nao rodou — a tela de usuarios nao depende dela.
+ */
+function users_cadencias_ativas(): array
+{
+    try {
+        $out = [];
+        foreach (rows("SELECT sender_user_id AS uid, COUNT(*) AS n FROM lead_cadence
+                       WHERE state = 'ativa' AND sender_user_id IS NOT NULL
+                       GROUP BY sender_user_id") as $r) {
+            $out[(int) $r['uid']] = (int) $r['n'];
+        }
+        return $out;
+    } catch (Throwable $e) {
+        return [];
+    }
+}

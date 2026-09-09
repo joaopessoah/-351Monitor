@@ -227,3 +227,35 @@ function asset_url(string $rel): string
     $mtime = @filemtime(dirname(__DIR__) . '/' . $rel);
     return $rel . ($mtime ? '?v=' . $mtime : '');
 }
+
+/**
+ * Por que nao ha ninguem para assinar o e-mail. Distingue os dois casos, que
+ * pedem acoes diferentes: nao ha caixa no crm_config.php (mexer no servidor)
+ * ou ha caixa sem usuario ativo (resolve dentro do CRM).
+ */
+function aviso_sem_remetente(): string
+{
+    $orfas = mail_caixas_sem_usuario();
+    if (!$orfas) {
+        return '<p class="muted">Nenhuma caixa configurada no <code>crm_config.php</code> — o motor não tem'
+            . ' por onde enviar. O modelo está em <code>crm/README.md</code>.</p>';
+    }
+    $lista = implode(', ', array_map('esc', array_keys($orfas)));
+    return '<p class="muted">' . (count($orfas) === 1 ? 'A caixa <strong>' : 'As caixas <strong>') . $lista
+        . '</strong> ' . (count($orfas) === 1 ? 'está' : 'estão') . ' no <code>crm_config.php</code>, mas'
+        . ' nenhuma tem usuário ativo no CRM — e quem assina o e-mail é o usuário, não o arquivo.'
+        . ' <a href="settings.php#usuarios">Crie o usuário em Configurações</a> e '
+        . (count($orfas) === 1 ? 'ela aparece' : 'elas aparecem') . ' aqui.</p>';
+}
+
+/** Nota curta quando ja ha remetente, mas alguma caixa configurada ficou de fora. */
+function aviso_caixas_sem_usuario(): string
+{
+    $orfas = mail_caixas_sem_usuario();
+    if (!$orfas) {
+        return '';
+    }
+    return '<p class="muted small">Fora da lista: <strong>' . implode(', ', array_map('esc', array_keys($orfas)))
+        . '</strong> — configurada no <code>crm_config.php</code>, sem usuário ativo no CRM.'
+        . ' <a href="settings.php#usuarios">Criar em Configurações</a>.</p>';
+}

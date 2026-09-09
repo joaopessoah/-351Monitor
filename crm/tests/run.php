@@ -15,7 +15,10 @@ if (PHP_SAPI !== 'cli') {
 }
 
 $suites = ['cadencia.php', 'cadencia_auto.php', 'mailer.php', 'inbound.php', 'email_check.php',
-    'mailto_crlf.php', 'migrations.php', 'correcoes.php', 'quadro.php', 'analytics.php'];
+    'mailto_crlf.php', 'migrations.php', 'correcoes.php', 'quadro.php', 'analytics.php',
+    // usuarios_caixa.php nao entra aqui: usuarios.php o roda como sub-processo,
+    // porque o cache static de mail_contas() so deixa uma config por processo.
+    'usuarios.php'];
 $php = PHP_BINARY;
 $falhou = [];
 

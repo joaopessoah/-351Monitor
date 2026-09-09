@@ -196,6 +196,7 @@ honrados, que é o comportamento certo).
 
 | Sintoma | Causa provável | O que fazer |
 |---|---|---|
+| Acrescentei um e-mail em `mail` e ele não aparece em "Quem assina" | o seletor é a interseção entre a chave `mail` e a tabela `users`: falta o usuário ativo com esse login | **Configurações → Usuários e remetentes** → "Caixas configuradas que ainda não assinam nada" → *Criar usuário para esta caixa*. A senha temporária aparece uma única vez |
 | "o cron parou de rodar" no dashboard | cron desligado ou caminho do PHP errado | hPanel → Cron Jobs; rode o comando manualmente com `-v` |
 | Nada sai, fila cheia de "Agendado" | motor desligado, fora da janela, teto batido | Configurações; o motivo aparece em **Não saíram** |
 | Falha de autenticação no teste | senha errada, ou 2FA sem senha de aplicativo | gere a senha de aplicativo no hPanel |

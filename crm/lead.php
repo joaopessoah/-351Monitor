@@ -514,8 +514,7 @@ if ($errors) {
       <?php if ($cadErro !== null): ?>
         <p class="muted"><?= esc($cadErro) ?></p>
       <?php elseif (!$remetentes): ?>
-        <p class="muted">Nenhuma caixa de e-mail configurada no <code>crm_config.php</code> — sem isso o motor
-          não tem por onde enviar. Veja <code>crm/README.md</code>.</p>
+        <?= aviso_sem_remetente() ?>
       <?php elseif ($cad === null || $cad['state'] !== 'ativa'): ?>
         <?php if ($cad !== null): ?>
           <p class="muted">
@@ -543,6 +542,7 @@ if ($errors) {
                       </option>
                     <?php endforeach; ?>
                   </select>
+                  <?= aviso_caixas_sem_usuario() ?>
                 </div>
                 <div class="field">
                   <label for="cad_contato">Para qual contato</label>

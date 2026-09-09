@@ -84,6 +84,29 @@ function mail_remetentes(): array
     return $out;
 }
 
+/**
+ * Caixas do crm_config.php que NENHUM usuario ativo assina.
+ *
+ * Essa e a causa numero um de "adicionei o e-mail no crm_config.php e ele nao
+ * aparece": a lista de remetentes e a intersecao entre a chave 'mail' e a
+ * tabela users, e o laco parte de users — endereco que so existe no arquivo
+ * nunca chega a ser olhado. Subtrai de mail_contas() exatamente quem
+ * mail_remetentes() aceitou, para as duas regras nao poderem divergir.
+ *
+ * @return array<string, array> endereco => conta configurada
+ */
+function mail_caixas_sem_usuario(): array
+{
+    $contas = mail_contas();
+    if (!$contas) {
+        return [];
+    }
+    foreach (mail_remetentes() as $r) {
+        unset($contas[mb_strtolower(trim((string) $r['email']))]);
+    }
+    return $contas;
+}
+
 function mail_dominio(string $email): string
 {
     $p = strrpos($email, '@');

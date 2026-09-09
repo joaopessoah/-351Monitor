@@ -96,7 +96,9 @@ page_header('Fila de prospecção', 'fila.php', $user);
                    <?= mail_remetentes() ? '' : 'disabled' ?>>
             <label for="cadencia">Já iniciar a cadência de e-mail
               <?php if (!mail_remetentes()): ?>
-                <span class="muted">(nenhuma caixa configurada)</span>
+                <span class="muted">(<?= mail_caixas_sem_usuario()
+                  ? 'caixa configurada sem usuário ativo — resolva em Configurações'
+                  : 'nenhuma caixa configurada' ?>)</span>
               <?php else: ?>
                 <span class="muted">(assinada por você)</span>
               <?php endif; ?>
