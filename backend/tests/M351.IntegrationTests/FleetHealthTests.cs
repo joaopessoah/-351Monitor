@@ -204,4 +204,30 @@ public class FleetHealthTests(ApiTestFixture fixture)
         Assert.NotNull(fixture.Emails.LastFor(owner.Email));
         Assert.Null(fixture.Emails.LastFor(admin.Email));
     }
+
+    [Fact]
+    public async Task HealthSummary_LicensedDevices_ContaPausado_EIgnoraArquivadoERevogado()
+    {
+        var (client, tenantId, ownerToken) = await SetupAsync("Org Licenças Frota");
+
+        await fixture.CreateDeviceAsync(tenantId, "NB-ATIVO");
+        var pausado = await fixture.CreateDeviceAsync(tenantId, "NB-PAUSADO");
+        var arquivado = await fixture.CreateDeviceAsync(tenantId, "NB-ARQUIVADO");
+        var revogado = await fixture.CreateDeviceAsync(tenantId, "NB-REVOGADO");
+        await TestDb.ExecuteAsync(Cs, "UPDATE devices SET status = 'paused' WHERE id = @id", ("id", pausado.Id));
+        await TestDb.ExecuteAsync(Cs, "UPDATE devices SET status = 'archived' WHERE id = @id", ("id", arquivado.Id));
+        await TestDb.ExecuteAsync(Cs, "UPDATE devices SET status = 'revoked' WHERE id = @id", ("id", revogado.Id));
+
+        using var request = AuthClient.AuthorizedRequest(HttpMethod.Get, "/api/v1/devices/health-summary", ownerToken);
+        var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = body.RootElement;
+        // licença = a MESMA regra do enroll (EnrollmentService): pausado ocupa, arquivado e
+        // revogado liberam — é o número do medidor "N de 10 licenças" da versão de teste
+        Assert.Equal(2, root.GetProperty("licensed_devices").GetInt32());
+        // e os contadores de saúde continuam olhando só os ativos
+        Assert.Equal(1, root.GetProperty("active_devices").GetInt32());
+    }
 }

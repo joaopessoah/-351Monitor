@@ -326,6 +326,12 @@ export interface DeviceTransparencyLinkResponse {
 export interface DeviceHealthSummaryResponse {
   /** Devices não arquivados da organização (base de todos os contadores). */
   active_devices: number;
+  /**
+   * Dispositivos que ocupam licença: não arquivados e não revogados, a mesma regra
+   * do limite de instalação (um "pausado" ocupa licença). Alimenta o medidor de
+   * licenças da versão de teste (LicencasDeTeste).
+   */
+  licensed_devices: number;
   offline: number;
   /** Sem comunicação há mais de 30 min E em horário de trabalho. */
   offline_severe: number;

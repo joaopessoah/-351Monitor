@@ -38,6 +38,7 @@ import type {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { LicencasDeTeste } from "@/components/LicencasDeTeste";
 import {
   Dialog,
   DialogContent,
@@ -177,6 +178,8 @@ export function ChavesPage() {
           </Button>
         )}
       </div>
+
+      <LicencasDeTeste />
 
       {created !== null && (
         <CreatedKeyPanel

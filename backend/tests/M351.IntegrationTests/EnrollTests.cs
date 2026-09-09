@@ -87,7 +87,7 @@ public class EnrollTests(ApiTestFixture fixture)
     }
 
     [Fact]
-    public async Task EnrollAlemDoDeviceLimit_Retorna422()
+    public async Task EnrollAlemDoDeviceLimit_Retorna422_ComFraseDoTrial_EGravaNaAuditoria()
     {
         var client = fixture.CreateApiClient();
         var org = await fixture.CreateOrganizationAsync("Org Limite 1", deviceLimit: 1);
@@ -95,9 +95,51 @@ public class EnrollTests(ApiTestFixture fixture)
 
         await AgentClient.EnrollAsync(client, fullKey); // 1º device ocupa o limite
 
+        var response = await AgentClient.EnrollRawAsync(client, fullKey, AgentClient.NewFingerprint(), "NB-BARRADA");
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("device_limit_exceeded", body);
+
+        // trial (decisão de 09/09/2026): a frase comercial no lugar do erro técnico — quem lê é o
+        // TI do prospect instalando a máquina excedente, não um operador nosso
+        using var doc = JsonDocument.Parse(body);
+        Assert.Equal(
+            "Como é uma versão de teste, tem somente 1 licença. Entre em contato com o time da +351 Monitor.",
+            doc.RootElement.GetProperty("title").GetString());
+
+        // a recusa fica na trilha do tenant, com a máquina que tentou entrar e o teto vigente
+        var detail = await TestDb.ScalarAsync<string>(Cs,
+            "SELECT detail::text FROM audit_log WHERE tenant_id = @t AND action = 'enroll_refused_device_limit'",
+            ("t", org.Id));
+        Assert.NotNull(detail);
+        using var detailDoc = JsonDocument.Parse(detail);
+        Assert.Equal("NB-BARRADA", detailDoc.RootElement.GetProperty("hostname").GetString());
+        Assert.Equal(1, detailDoc.RootElement.GetProperty("limit").GetInt32());
+        Assert.Equal(1, detailDoc.RootElement.GetProperty("licensed_devices").GetInt32());
+        Assert.Equal("trial", detailDoc.RootElement.GetProperty("plan").GetString());
+
+        // e a tentativa barrada não criou device nenhum
+        Assert.Equal("1", await TestDb.ScalarAsync<string>(Cs,
+            "SELECT count(*)::text FROM devices WHERE tenant_id = @t", ("t", org.Id)));
+    }
+
+    [Fact]
+    public async Task EnrollAlemDoDeviceLimit_ForaDoTrial_MantemAMensagemTecnica()
+    {
+        var client = fixture.CreateApiClient();
+        var org = await fixture.CreateOrganizationAsync("Org Limite Pro", deviceLimit: 1);
+        await TestDb.ExecuteAsync(Cs, "UPDATE organizations SET plan = 'pro' WHERE id = @id", ("id", org.Id));
+        var (_, fullKey) = await fixture.CreateEnrollmentKeyWithSecretAsync(org.Id);
+
+        await AgentClient.EnrollAsync(client, fullKey);
+
         var response = await AgentClient.EnrollRawAsync(client, fullKey, AgentClient.NewFingerprint());
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
-        Assert.Contains("device_limit_exceeded", await response.Content.ReadAsStringAsync());
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("device_limit_exceeded", body);
+
+        using var doc = JsonDocument.Parse(body);
+        Assert.Equal("Limite de dispositivos do plano atingido (1).", doc.RootElement.GetProperty("title").GetString());
     }
 
     [Fact]

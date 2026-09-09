@@ -48,6 +48,7 @@ import type {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { LicencasDeTeste } from "@/components/LicencasDeTeste";
 import {
   Dialog,
   DialogContent,
@@ -802,6 +803,8 @@ export function DispositivosPage() {
           Inventário e saúde dos agentes: estado agora, último contato, versão, fuso e relógio.
         </p>
       </div>
+
+      <LicencasDeTeste />
 
       {/* Filtros - qualquer mudança volta para a página 1 */}
       <div className="flex flex-wrap items-center gap-3">

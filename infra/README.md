@@ -27,6 +27,34 @@ docker compose -f infra/docker-compose.staging.yml --env-file infra/.env up -d -
 
 DNS: aponte `STAGING_DOMAIN` (A record) para o IP da VPS **antes** do primeiro `up` — o Caddy emite o certificado Let's Encrypt automaticamente. Firewall: liberar só 22/80/443.
 
+## Trocar o domínio do painel (uma vez, ANTES do primeiro cliente)
+
+O endereço do painel é gravado em cada máquina na instalação do agente (`SERVERURL`) e no
+manifesto de auto-update. Trocar de hostname depois que há clientes enrolados significa
+reinstalar agente por agente. Por isso a regra é: **um endereço definitivo, decidido antes do
+primeiro enroll de cliente**, e a infraestrutura atrás dele pode mudar à vontade (VPS hoje,
+Postgres gerenciado amanhã) sem que nenhuma máquina perceba.
+
+Passo a passo para sair de um hostname provisório (ex.: `painel.2-25-193-15.sslip.io`) para
+o definitivo (ex.: `painel.mais351monitor.com.br`):
+
+1. No DNS do domínio, crie o registro **A** `painel` apontando para o IP da VPS. Espere
+   propagar (`nslookup painel.mais351monitor.com.br`).
+2. Em `infra/.env` na VPS: `STAGING_DOMAIN=painel.mais351monitor.com.br` e
+   `EXTRA_DOMAIN=painel.2-25-193-15.sslip.io` (o antigo continua sendo servido pelo mesmo
+   site do Caddy, com certificado próprio, para quem já instalou o agente pelo endereço antigo).
+3. `docker compose -f infra/docker-compose.staging.yml --env-file infra/.env up -d` — o Caddy
+   emite o certificado do hostname novo; `Portal__BaseUrl` segue `STAGING_DOMAIN`, então os
+   convites e links de e-mail passam a sair com o endereço novo.
+4. Instalações novas usam `SERVERURL=https://painel.mais351monitor.com.br`. Máquinas antigas
+   continuam pelo `EXTRA_DOMAIN` até serem reinstaladas; quando a última migrar, limpe a
+   variável.
+5. No próximo `publish-agent-release`, passe `--server-url https://painel.mais351monitor.com.br`
+   para o manifesto de auto-update apontar para o endereço definitivo.
+
+Não crie um hostname separado "só para trials": trial e cliente pago são a MESMA organização
+com um flag de plano diferente, e um trial que converte não pode exigir reinstalação.
+
 ## Onde ficam os segredos
 
 | Onde | O quê |

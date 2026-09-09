@@ -109,7 +109,7 @@ Princípio do corte: **o MVP é o menor produto pelo qual uma PME paga R$ 500–
 - Ancoragem competitiva: Essencial a R$ 19,90 fica na faixa do player BR direto e a ~1/3 do custo em reais de um ActivTrak; Pro a R$ 34,90 ainda é ~50–60% do global.
 
 ### 4.3 Trial e piloto
-- **Piloto sem prazo fixo e sem cartão (billing é manual mesmo)**, limitado a 25 dispositivos, **com onboarding assistido obrigatório**: call de 30 min para instalar os 5 primeiros agentes junto com a TI do cliente. Isso resolve ativação E qualifica o lead ao mesmo tempo.
+- **Piloto sem prazo fixo e sem cartão (billing é manual mesmo)**, limitado a 10 dispositivos (25 até 09/2026), **com onboarding assistido obrigatório**: call de 30 min para instalar os 5 primeiros agentes junto com a TI do cliente. Isso resolve ativação E qualifica o lead ao mesmo tempo.
 - Programa de piloto fundador (F5): 2–3 empresas amigas, 3 meses com 50–70% de desconto em troca de feedback quinzenal estruturado + depoimento/logo no site + permissão para case.
 
 ### 4.4 Unit economics alvo (hipóteses para o modelo, não promessas)

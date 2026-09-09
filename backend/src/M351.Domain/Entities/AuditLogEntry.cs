@@ -179,6 +179,15 @@ public static class AuditActions
     /// utilizada. Fica auditado porque mexe num número que embasa decisão de contratação.
     /// </summary>
     public const string UpdateHolidays = "update_holidays";
+
+    /// <summary>
+    /// POST /agent/enroll RECUSADO pelo limite de dispositivos do plano (N24, 09/09/2026): a
+    /// máquina tentou entrar e não havia licença livre. Sem ator humano (o agente é anônimo até o
+    /// enroll), gravado sob o tenant da enrollment key com detail {hostname, limit,
+    /// licensed_devices, plan}. Existe para o gestor VER no portal que uma instalação foi barrada,
+    /// em vez de descobrir pelo log do agente na máquina.
+    /// </summary>
+    public const string EnrollRefusedDeviceLimit = "enroll_refused_device_limit";
 }
 
 /// <summary>Tabela audit_log — append-only, particionada por mês, retenção 24 meses (N13).</summary>

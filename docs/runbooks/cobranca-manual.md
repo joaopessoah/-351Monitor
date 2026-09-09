@@ -24,14 +24,14 @@ Origem: PROMPT-DESENVOLVIMENTO Seção 1 e CONSIDERACOES Seção 3 (tabela "Pre�
 | Plano Pro | **R$ 34,90** / device / mês | [DECISÃO DO JOÃO] |
 | Piso de faturamento | **10 devices** (≈ R$ 199 no Essencial) | [DECISÃO DO JOÃO] |
 | Plano anual | **~2 meses grátis** (hipótese) | [DECISÃO DO JOÃO] |
-| Trial | **sem prazo fixo** (caso a caso), limitado a **25 devices**, onboarding assistido | [SISTEMA] limite de 25 devices é enforced no enroll (N24); a duração é controle comercial |
+| Trial | **sem prazo fixo** (caso a caso), limitado a **10 devices**, onboarding assistido | [SISTEMA] limite de 10 devices é enforced no enroll (N24); a duração é controle comercial |
 | Forma de pagamento (MVP) | **Pix ou boleto**, com **NFS-e** | [DECISÃO DO JOÃO] / processo manual |
 | Criação de conta | **via backoffice** (sem signup self-service) | [SISTEMA] - DPA assinado é pré-condição de provisionamento |
 
 Importante: os **preços e o piso são hipótese comercial**, não regra codificada. O sistema só
 **conta** os dispositivos cobráveis; multiplicar pela tarifa, aplicar piso, desconto anual e
 emitir a cobrança é trabalho manual do João (ou do comercial). O único limite que o sistema
-**aplica de fato** é o teto de 25 devices no trial (recusa enroll acima disso).
+**aplica de fato** é o teto de 10 devices no trial (recusa enroll acima disso).
 
 A coluna `plan` da org (`trial | essencial | pro`) e `device_limit` existem no banco, mas no MVP
 não geram fatura automática. Servem para o controle de trial e como referência da tarifa a
@@ -116,7 +116,7 @@ Notas importantes:
 - **Revogado NÃO é excluído**: se o dispositivo usou o serviço no mês, ele conta (a regra só
   exclui arquivados). Revogar não é o mesmo que arquivar para efeito de cobrança.
 - **Cuidado com a assimetria revogar vs. faturar (regra do trial ≠ regra do billing).** O teto de
-  25 devices do trial, conferido no enroll, **desconta tanto `archived` quanto `revoked`** - então
+  10 devices do trial, conferido no enroll, **desconta tanto `archived` quanto `revoked`** - então
   **revogar um device libera vaga para enrolar outro**. Já a contagem de cobráveis só desconta
   `archived`. Consequência: um device revogado deixa de ocupar cota de trial, mas **continua na
   fatura do mês em que foi usado**. Para tirar um device da cobrança do mês, **arquive-o antes do
@@ -193,7 +193,7 @@ adotá-la como regra. Confirme prazos e consequências no contrato/DPA de cada c
 | Item | Detalhe | Quem aplica |
 |---|---|---|
 | Duração | **sem prazo fixo, caso a caso** | [DECISÃO DO JOÃO] - controle comercial; a oferta pública de 14 dias foi descontinuada em 08/2026; o sistema não expira o trial sozinho |
-| Limite de dispositivos | **25 devices** (N24) | **[SISTEMA]** - enforced no enroll: tentar enrolar o 26º device é recusado |
+| Limite de dispositivos | **10 devices** (N24) | **[SISTEMA]** - enforced no enroll: tentar enrolar o 11º device é recusado com a frase "Como é uma versão de teste, tem somente 10 licenças. Entre em contato com o time da +351 Monitor." e a recusa aparece em Configurações › Auditoria (`enroll_refused_device_limit`) |
 | Onboarding | **assistido** (comercial/João acompanham) | processo manual |
 | Criação | via **backoffice** (`create-org`), com DPA assinado | [SISTEMA] sem signup self-service |
 
@@ -201,14 +201,14 @@ Conversão do trial em contrato pago:
 
 1. Definir o **plano** (Essencial ou Pro) e o **número de devices** contratado com o cliente
    [DECISÃO DO JOÃO].
-2. Atualizar a org no backoffice: `plan` para `essencial`/`pro` e `device_limit` para o teto
-   contratado (acima de 25, conforme o contrato). Sem isso, o cliente continua preso ao teto de 25
-   do trial.
+2. Atualizar a org no backoffice, dois comandos no container da API: `set-org-plan --org-slug <slug>
+   --plan essencial|pro` e `set-org-limit --org-slug <slug> --device-limit <contratado>`. Sem o
+   segundo, o cliente continua preso ao teto de 10 do trial.
 3. A **primeira cobrança** segue o fluxo da Seção 4, usando o relatório de cobráveis do primeiro
    mês pago.
 4. Meta de aceite da F5 (Seção 10): pelo menos 1 piloto converte em contrato pago e o relatório de
    cobráveis bate com a contagem manual.
 
-> O número de 25 é o **único** limite que o produto impõe sozinho. Duração de trial, plano,
+> O número de 10 é o **único** limite que o produto impõe sozinho (`set-org-limit` muda por org). Duração de trial, plano,
 > tarifa, piso, desconto anual e suspensão por inadimplência são todos decisão comercial e ação
 > manual - o sistema apenas fornece a **contagem de dispositivos cobráveis** sobre a qual você fatura.

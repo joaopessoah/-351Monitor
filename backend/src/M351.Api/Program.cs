@@ -197,6 +197,13 @@ if (args.Length > 0 && string.Equals(args[0], "set-org-plan", StringComparison.O
     return await SetOrgPlanCommand.RunAsync(app.Services, args[1..]);
 }
 
+// Backoffice CLI (09/09/2026): define o limite de dispositivos da organização — o teto do trial
+// (10, N24) ou o contratado na conversão. Antes disso era UPDATE à mão no Postgres.
+if (args.Length > 0 && string.Equals(args[0], "set-org-limit", StringComparison.OrdinalIgnoreCase))
+{
+    return await SetOrgLimitCommand.RunAsync(app.Services, args[1..]);
+}
+
 // Backoffice CLI (F3.6): tenant demo sintético injetado pelo pipeline REAL de intervalização
 if (args.Length > 0 && string.Equals(args[0], "seed-demo-tenant", StringComparison.OrdinalIgnoreCase))
 {

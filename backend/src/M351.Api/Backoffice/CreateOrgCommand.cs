@@ -14,13 +14,21 @@ namespace M351.Api.Backoffice;
 
 /// <summary>
 /// Backoffice (SEM signup self-service): cria tenant + Owner pendente + convite por e-mail.
-/// Uso: dotnet run --project src/M351.Api -- create-org --name "Empresa X" --owner-email dono@empresa.com.br [--slug empresa-x]
+/// Uso: dotnet run --project src/M351.Api -- create-org --name "Empresa X" --owner-email dono@empresa.com.br [--slug empresa-x] [--device-limit 10]
 /// </summary>
 public static class CreateOrgCommand
 {
+    /// <summary>
+    /// N24 — teto de dispositivos com que todo trial nasce. Era 25; em 09/09/2026 passou a 10:
+    /// "qualquer trial pode ter 10 licenças, e fica a critério do cliente usar todas ou não".
+    /// Acima disso o enroll responde com a frase comercial do trial (EnrollmentService). Para
+    /// mudar o teto de uma org já criada: set-org-limit.
+    /// </summary>
+    public const int TrialDeviceLimit = 10;
+
     public static async Task<int> RunAsync(IServiceProvider services, string[] args)
     {
-        string? name = null, ownerEmail = null, slug = null;
+        string? name = null, ownerEmail = null, slug = null, deviceLimitArg = null;
         for (var i = 0; i < args.Length - 1; i++)
         {
             switch (args[i])
@@ -28,12 +36,21 @@ public static class CreateOrgCommand
                 case "--name": name = args[++i]; break;
                 case "--owner-email": ownerEmail = args[++i]; break;
                 case "--slug": slug = args[++i]; break;
+                case "--device-limit": deviceLimitArg = args[++i]; break;
             }
         }
 
         if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(ownerEmail) || !ownerEmail.Contains('@'))
         {
-            Console.Error.WriteLine("Uso: create-org --name \"Empresa X\" --owner-email dono@empresa.com.br [--slug empresa-x]");
+            Console.Error.WriteLine("Uso: create-org --name \"Empresa X\" --owner-email dono@empresa.com.br [--slug empresa-x] [--device-limit 10]");
+            return 1;
+        }
+
+        // Teto do trial: 10 por padrão (N24); --device-limit cobre o piloto negociado fora do padrão.
+        var deviceLimit = TrialDeviceLimit;
+        if (deviceLimitArg is not null && (!int.TryParse(deviceLimitArg, out deviceLimit) || deviceLimit < 1))
+        {
+            Console.Error.WriteLine("ERRO: --device-limit precisa ser um inteiro maior que zero.");
             return 1;
         }
 
@@ -65,7 +82,7 @@ public static class CreateOrgCommand
             Name = name.Trim(),
             Slug = slug,
             Plan = "trial",
-            DeviceLimit = 25, // N24 — limite do trial
+            DeviceLimit = deviceLimit, // N24 — teto do trial (TrialDeviceLimit) ou o --device-limit informado
             Status = "active",
             CreatedAt = DateTimeOffset.UtcNow,
         };
@@ -117,6 +134,7 @@ public static class CreateOrgCommand
         Console.WriteLine($"  Nome      : {org.Name}");
         Console.WriteLine($"  Slug      : {org.Slug}");
         Console.WriteLine($"  Owner     : {email}");
+        Console.WriteLine($"  Licenças  : {deviceLimit} dispositivos (plano trial)");
         Console.WriteLine($"  Convite   : {link}");
 
         try

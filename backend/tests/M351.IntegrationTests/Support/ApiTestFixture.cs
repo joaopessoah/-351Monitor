@@ -1,3 +1,4 @@
+using M351.Api.Backoffice;
 using M351.Domain;
 using M351.Domain.Entities;
 using M351.Infrastructure.Data;
@@ -83,7 +84,7 @@ public class ApiTestFixture : WebApplicationFactory<Program>
     public HttpClient CreateApiClient() =>
         CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
 
-    public async Task<Organization> CreateOrganizationAsync(string name, int? deviceLimit = 25)
+    public async Task<Organization> CreateOrganizationAsync(string name, int? deviceLimit = CreateOrgCommand.TrialDeviceLimit)
     {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<M351DbContext>();

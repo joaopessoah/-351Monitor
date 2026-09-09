@@ -39,6 +39,9 @@ services:
       # é o multi-tenant; o DNS de demo.* deve apontar para esta VPS). Default
       # demo.localhost = inerte quando não configurado.
       DEMO_DOMAIN: ${DEMO_DOMAIN:-demo.localhost}
+      # Hostname antigo do painel servido em paralelo durante a troca de domínio (ver
+      # Caddyfile): as máquinas gravam o SERVERURL na instalação. Default = inerte.
+      EXTRA_DOMAIN: ${EXTRA_DOMAIN:-extra.localhost}
       ACME_EMAIL: ${ACME_EMAIL:?defina ACME_EMAIL em infra/.env}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro

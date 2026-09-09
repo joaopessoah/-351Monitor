@@ -5,7 +5,8 @@
 // update_user_role, revoke_key, revoke_device, view_report, update_category,
 // export_csv, update_device, publish_agent_release, rollback_agent_release,
 // dsr_export, dsr_delete, view_timeline (F4.7), password_reset, mfa_reset,
-// mfa_recovery_codes e update_device_user (F5). Ações desconhecidas caem num
+// mfa_recovery_codes, update_device_user (F5) e enroll_refused_device_limit
+// (09/09/2026: máquina barrada pelo teto de licenças do trial). Ações desconhecidas caem num
 // rótulo neutro derivado do próprio verbo — a tela nunca quebra com um verbo novo.
 // Vocabulário NEUTRO, sem travessão.
 // =============================================================================
@@ -32,6 +33,7 @@ export const auditActionLabels: Record<string, string> = {
   update_privacy_config: "Alterou configuração de privacidade",
   collection_window_choice: "Escolheu a janela de coleta",
   update_device_user: "Alterou nome de pessoa",
+  enroll_refused_device_limit: "Instalação recusada pelo limite de licenças",
 };
 
 /**
@@ -52,6 +54,7 @@ export const AUDIT_ACTION_FILTER_OPTIONS: { value: string; label: string }[] = [
   "collection_window_choice",
   "revoke_device",
   "revoke_key",
+  "enroll_refused_device_limit",
   "update_user_role",
   "invite_accept",
   "login",
@@ -141,6 +144,15 @@ export function auditDetailSummary(detail: Record<string, unknown> | null): stri
   const deviceIds = detail.device_ids;
   if (Array.isArray(deviceIds) && deviceIds.length > 0) {
     parts.push(deviceIds.length === 1 ? "1 dispositivo filtrado" : `${deviceIds.length} dispositivos filtrados`);
+  }
+
+  // Instalação recusada pelo limite de licenças (enroll_refused_device_limit): qual máquina
+  // tentou entrar e quantas licenças estavam em uso naquele momento.
+  const hostname = asText(detail.hostname);
+  const limit = typeof detail.limit === "number" ? detail.limit : null;
+  if (hostname !== null && limit !== null) {
+    const used = typeof detail.licensed_devices === "number" ? `${detail.licensed_devices} de ${limit}` : `${limit}`;
+    parts.push(`Máquina ${hostname} · ${used} licenças em uso`);
   }
 
   if (parts.length > 0) return parts.join(" · ");

@@ -23,7 +23,7 @@ Composição do produto (3 componentes + 1 contrato):
 | **Portal Web** | SPA React para o cliente (gestor/RH/TI): dashboard, timeline, relatórios, configurações, LGPD |
 | **Contrato canônico** | Seção 5 deste documento — envelope de eventos, tipos, config, números. Agente, ingestão, pipeline e portal usam EXATAMENTE a mesma tabela |
 
-Modelo comercial (contexto, não escopo de código além do indicado): cobrança **por dispositivo/mês** (Essencial R$ 19,90 / Pro R$ 34,90, piso 10 devices), billing **manual** no MVP (Pix/boleto), piloto sem prazo fixo limitado a **25 devices** com onboarding assistido, org criada via backoffice (sem signup self-service). Meta de dimensionamento técnico: **~2.500 devices** (10–30 contas de 20–80 devices com folga) — NÃO dimensionar para 10k.
+Modelo comercial (contexto, não escopo de código além do indicado): cobrança **por dispositivo/mês** (Essencial R$ 19,90 / Pro R$ 34,90, piso 10 devices), billing **manual** no MVP (Pix/boleto), piloto sem prazo fixo limitado a **10 devices** (N24; era 25 até 09/09/2026) com onboarding assistido, org criada via backoffice (sem signup self-service). Meta de dimensionamento técnico: **~2.500 devices** (10–30 contas de 20–80 devices com folga) — NÃO dimensionar para 10k.
 
 Papéis LGPD: a empresa cliente é **controladora**; nós somos **operadora**. DPA assinado é pré-condição de provisionamento de tenant (processo comercial, não código).
 
@@ -396,7 +396,7 @@ Estes números aparecem em TODO o documento sempre com o mesmo valor. Se algum c
 | N21 | Resolução da timeline (server-side) | fixa **1 min**; cap ~**3.000 intervalos** por resposta |
 | N22 | Lockout de login do portal | 10 tentativas → 15 min |
 | N23 | JWT de acesso / senha | 15 min / mínimo 12 chars (Argon2id) |
-| N24 | Limite de trial | 25 devices |
+| N24 | Limite de trial | 10 devices (25 até 09/09/2026). Acima do teto o enroll responde 422 `device_limit_exceeded` com a frase "Como é uma versão de teste, tem somente 10 licenças. Entre em contato com o time da +351 Monitor." e grava `enroll_refused_device_limit` na auditoria do tenant |
 | N25 | Dimensionamento alvo | ~2.500 devices (≈ 3–5 M eventos/dia; rajada de catch-up ~400 eventos/s) |
 
 ---
@@ -518,7 +518,7 @@ CREATE TABLE organizations (
   timezone text NOT NULL DEFAULT 'America/Sao_Paulo',  -- IANA; corte do "dia" dos agregados
   business_hours jsonb,            -- {"days":[1..5],"start":"08:00","end":"18:00"} p/ referência visual e collection_window
   plan text NOT NULL DEFAULT 'trial',      -- trial|essencial|pro
-  device_limit int,                        -- 25 no trial (N24); enforcement no enroll
+  device_limit int,                        -- 10 no trial (N24, era 25); enforcement no enroll; set-org-limit altera
   status text NOT NULL DEFAULT 'active',   -- active|suspended|closing|closed
   created_at timestamptz NOT NULL DEFAULT now()
 );

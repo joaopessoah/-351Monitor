@@ -47,7 +47,7 @@ public class SetOrgPlanCommandTests(ApiTestFixture fixture)
         Assert.Equal("pro", await PlanoAsync(org.Id));
 
         // device_limit é régua comercial do contrato: o comando não pode tocar nele
-        Assert.Equal("25", await LimiteAsync(org.Id));
+        Assert.Equal(CreateOrgCommand.TrialDeviceLimit.ToString(), await LimiteAsync(org.Id));
 
         // e o gate abriu de verdade para o cliente que assinou
         using (var depois = AuthClient.AuthorizedRequest(

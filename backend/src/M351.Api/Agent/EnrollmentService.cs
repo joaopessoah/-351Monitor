@@ -1,5 +1,7 @@
+using System.Text.Json;
 using M351.Api.Auth;
 using M351.Api.Contracts;
+using M351.Api.Services;
 using M351.Domain;
 using M351.Domain.Entities;
 using M351.Infrastructure.Data;
@@ -10,7 +12,8 @@ namespace M351.Api.Agent;
 
 /// <summary>
 /// POST /api/v1/agent/enroll (Seção 5.7): anônimo + enrollment key no body.
-/// Valida a key (SHA-256), respeita device_limit do plano (422), reconcilia re-enroll
+/// Valida a key (SHA-256), respeita device_limit do plano (422 com trilha enroll_refused_device_limit
+/// e, no trial, a frase comercial do teto), reconcilia re-enroll
 /// pela machine_fingerprint (mesmo device_id, token novo) e responde device_id +
 /// device_token (opaco dt_, hash no banco) + config inicial + config_version.
 /// </summary>
@@ -19,6 +22,7 @@ public class EnrollmentService(
     TenantContext tenantContext,
     AgentConfigService configService,
     TimeProvider clock,
+    AuditWriter auditWriter,
     ILogger<EnrollmentService> logger)
 {
     public async Task<IResult> EnrollAsync(EnrollRequest? request, CancellationToken ct)
@@ -96,8 +100,26 @@ public class EnrollmentService(
                 .CountAsync(d => d.Status != "archived" && d.Status != "revoked", ct);
             if (org.DeviceLimit is { } limit && activeDevices >= limit)
             {
+                // A recusa vai para a trilha do tenant (sem ator: o agente é anônimo até o enroll)
+                // para o gestor ver no portal QUAL máquina foi barrada, em vez de descobrir pelo
+                // log do agente. Commit próprio: nenhum device foi criado, só a trilha.
+                auditWriter.Add(key.TenantId, AuditActions.EnrollRefusedDeviceLimit,
+                    targetType: "device",
+                    detailJson: JsonSerializer.Serialize(new
+                    {
+                        hostname = request.Hostname.Trim(),
+                        limit,
+                        licensed_devices = activeDevices,
+                        plan = org.Plan,
+                    }));
+                await db.SaveChangesAsync(ct);
+
+                logger.LogWarning(
+                    "Enroll recusado pelo limite de dispositivos: {Hostname} no tenant {TenantId} ({Ativos}/{Limite}, plano {Plano})",
+                    request.Hostname.Trim(), key.TenantId, activeDevices, limit, org.Plan);
+
                 return Problem(StatusCodes.Status422UnprocessableEntity,
-                    $"Limite de dispositivos do plano atingido ({limit}).", "device_limit_exceeded");
+                    DeviceLimitMessage(org.Plan, limit), "device_limit_exceeded");
             }
 
             device = new Device
@@ -127,6 +149,21 @@ public class EnrollmentService(
 
         return Results.Created($"/api/v1/devices/{device.Id}", response);
     }
+
+    /// <summary>
+    /// Texto do 422 de limite. No TRIAL é a frase comercial decidida em 09/09/2026 (quem lê isso
+    /// é o TI do prospect instalando a 11ª máquina, não um operador nosso); nos planos pagos
+    /// continua o texto técnico com o teto contratado. O reason "device_limit_exceeded" não muda.
+    /// </summary>
+    public static string DeviceLimitMessage(string plan, int limit) =>
+        plan == "trial" ? TrialLimitMessage(limit) : $"Limite de dispositivos do plano atingido ({limit}).";
+
+    /// <summary>
+    /// A MESMA frase que o portal exibe ao atingir o teto (components/LicencasDeTeste.tsx):
+    /// quem instala vê no log do agente e quem gerencia vê no painel. Mudou uma, muda a outra.
+    /// </summary>
+    public static string TrialLimitMessage(int limit) =>
+        $"Como é uma versão de teste, tem somente {limit} {(limit == 1 ? "licença" : "licenças")}. Entre em contato com o time da +351 Monitor.";
 
     private async Task<TenantAgentConfig> GetOrCreateConfigAsync(Guid tenantId, CancellationToken ct)
     {

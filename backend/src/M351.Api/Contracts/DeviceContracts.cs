@@ -36,6 +36,12 @@ public record DeviceTransparencyLinkResponse(Guid DeviceId, string Url);
 /// </summary>
 public record DeviceHealthSummaryResponse(
     int ActiveDevices,
+    /// <summary>
+    /// Dispositivos que OCUPAM licença: não arquivados e não revogados, a MESMA regra do teto de
+    /// enroll (N24). Difere de ActiveDevices porque "paused" ocupa licença sem estar ativo. É o
+    /// número do medidor de licenças da versão de teste no portal.
+    /// </summary>
+    int LicensedDevices,
     int Offline,
     int OfflineSevere,
     int ClockSkewed,

@@ -107,6 +107,11 @@ public class DevicesController(M351DbContext db, AuditWriter audit, NpgsqlDataSo
         var withinBusinessHours = BusinessHoursWindow.IsWithin(org.BusinessHours, org.Timezone, now);
         var minVersion = await CurrentStableMinVersionAsync(ct);
 
+        // Mesma regra do enforcement no enroll (EnrollmentService): paused ocupa licença, archived
+        // e revoked liberam. É o número que o medidor de licenças do trial exibe no portal.
+        var licensedDevices = await db.Devices
+            .CountAsync(d => d.Status != "archived" && d.Status != "revoked", ct);
+
         var rows = await db.Devices
             .Where(d => d.Status == "active")
             .Select(d => new HealthRow(d.LastSeenAt, d.ClockOffsetMs, d.AgentVersion, d.NoticeAckedAt, d.LastTamperAt))
@@ -135,7 +140,7 @@ public class DevicesController(M351DbContext db, AuditWriter audit, NpgsqlDataSo
         }
 
         return Ok(new DeviceHealthSummaryResponse(
-            rows.Count, offline, offlineSevere, clockSkewed, outdated, tampered, noticePending,
+            rows.Count, licensedDevices, offline, offlineSevere, clockSkewed, outdated, tampered, noticePending,
             withAlert, withinBusinessHours, now));
     }
 

@@ -38,6 +38,7 @@ import type { EChartsOption } from "echarts";
 import { ArrowRight, Info, Tags } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { LicencasDeTeste } from "@/components/LicencasDeTeste";
 import { formatDuration } from "@/lib/format";
 import type { ActivityByHourItem, MeResponse, OverviewResponse } from "@/lib/types";
 import {
@@ -138,6 +139,7 @@ export function VisaoGeralPage() {
   const header = (
     <div className="space-y-4">
       <AgoraFaixa tag={tag} />
+      <LicencasDeTeste somenteQuandoCheio />
 
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
