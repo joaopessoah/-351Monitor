@@ -78,11 +78,15 @@ services:
       Email__Provider: ${EMAIL_PROVIDER:-Smtp}
       # Diretório gravável pelo usuário não-root do container (provider Dev)
       Email__DevMailDirectory: /tmp/dev-mail
-      Email__SmtpHost: ${SMTP_HOST:-}
+      Email__SmtpHost: ${SMTP_HOST:-smtp.hostinger.com}
       Email__SmtpPort: ${SMTP_PORT:-587}
-      Email__SmtpUsername: ${SMTP_USERNAME:-}
+      # 587 + STARTTLS: a 465 (SSL implicito) o System.Net.Mail nao fala.
+      Email__SmtpUseTls: ${SMTP_USE_TLS:-true}
+      Email__SmtpUsername: ${SMTP_USERNAME:-contato@mais351monitor.com.br}
       Email__SmtpPassword: ${SMTP_PASSWORD:-}
-      Email__FromAddress: ${SMTP_FROM_ADDRESS:-nao-responda@351monitor.com.br}
+      # Precisa ser a MESMA caixa de SMTP_USERNAME (a Hostinger recusa outro
+      # remetente, e o SPF do dominio so cobre o que sai por ela).
+      Email__FromAddress: ${SMTP_FROM_ADDRESS:-contato@mais351monitor.com.br}
       # Serilog → Seq (sink configurado por env; índice 0 = Console no appsettings)
       Serilog__WriteTo__1__Name: Seq
       Serilog__WriteTo__1__Args__serverUrl: http://seq:5341
@@ -134,11 +138,15 @@ services:
       Portal__BaseUrl: https://${STAGING_DOMAIN:?defina STAGING_DOMAIN em infra/.env}
       Email__Provider: ${EMAIL_PROVIDER:-Smtp}
       Email__DevMailDirectory: /tmp/dev-mail
-      Email__SmtpHost: ${SMTP_HOST:-}
+      Email__SmtpHost: ${SMTP_HOST:-smtp.hostinger.com}
       Email__SmtpPort: ${SMTP_PORT:-587}
-      Email__SmtpUsername: ${SMTP_USERNAME:-}
+      # 587 + STARTTLS: a 465 (SSL implicito) o System.Net.Mail nao fala.
+      Email__SmtpUseTls: ${SMTP_USE_TLS:-true}
+      Email__SmtpUsername: ${SMTP_USERNAME:-contato@mais351monitor.com.br}
       Email__SmtpPassword: ${SMTP_PASSWORD:-}
-      Email__FromAddress: ${SMTP_FROM_ADDRESS:-nao-responda@351monitor.com.br}
+      # Precisa ser a MESMA caixa de SMTP_USERNAME (a Hostinger recusa outro
+      # remetente, e o SPF do dominio so cobre o que sai por ela).
+      Email__FromAddress: ${SMTP_FROM_ADDRESS:-contato@mais351monitor.com.br}
       # F3.5 — CSVs exportados: o worker gera, a API serve o download (MESMO volume)
       Exports__Directory: /var/lib/m351/exports
       # F5, score de saúde de conta (telemetria INTERNA de CS): destinatário do e-mail
