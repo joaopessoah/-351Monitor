@@ -42,12 +42,18 @@ Acrescente as chaves abaixo às que já existem (banco, `migrate_key`, `api_toke
 ```php
     // Caixas que assinam a cadência. A chave é o próprio endereço.
     'mail' => [
-        'bruna@mais351monitor.com.br' => [
-            'nome'       => 'Bruna | +351 Monitor',
+        // Institucional: os e-mails automáticos sem dono saem daqui.
+        'contato@mais351monitor.com.br' => [
+            'nome'       => '+351 Monitor',
             'senha'      => 'SENHA-OU-SENHA-DE-APLICATIVO',
             // Os campos abaixo já têm estes valores por padrão:
             // 'smtp_host' => 'smtp.hostinger.com', 'smtp_porta' => 587, 'smtp_seg' => 'tls',
             // 'imap_host' => 'imap.hostinger.com', 'imap_porta' => 993,
+        ],
+        // Pessoais: quem assina a cadência (a resposta cai no Outlook da pessoa).
+        'bruna@mais351monitor.com.br' => [
+            'nome'  => 'Bruna | +351 Monitor',
+            'senha' => 'OUTRA-SENHA',
         ],
         'joao@mais351monitor.com.br' => [
             'nome'  => 'João | +351 Monitor',
@@ -210,9 +216,17 @@ honrados, que é o comportamento certo).
 Diagnóstico manual, com saída detalhada:
 
 ```bash
+# PRIMEIRO: encanamento (não envia nada, não escreve no banco). Testa cada caixa
+# do crm_config.php: SMTP até o AUTH, login IMAP, usuário ativo, interruptores.
+php /caminho/para/crm/cron/diagnostico-email.php
+
 php /caminho/para/crm/cron/tick.php -v
 php /caminho/para/crm/cron/tick.php --so-ler   # só lê a caixa, não envia nada
 ```
+
+Rode o `diagnostico-email.php` antes de mexer em qualquer coisa: ele distingue
+"senha errada" de "caixa sem usuário" de "porta bloqueada" de "motor desligado",
+que na tela de Envios aparecem todas como a mesma fila parada.
 
 ---
 

@@ -46,12 +46,20 @@ return [
     // --- como antes, só sem enviar nem ler caixa). Detalhes e passo a passo:
     // --- docs/runbooks/cadencia-automatica.md
     'mail' => [
-        'bruna@mais351monitor.com.br' => [
-            'nome'  => 'Bruna | +351 Monitor',
+        // Caixa institucional: é dela que saem os e-mails que não têm dono
+        // (resumo do dia, aviso de retorno, confirmação de descadastro).
+        'contato@mais351monitor.com.br' => [
+            'nome'  => '+351 Monitor',
             'senha' => 'SENHA-DA-CAIXA-OU-SENHA-DE-APLICATIVO',
             // defaults: smtp.hostinger.com:587 (tls) e imap.hostinger.com:993
             // 'smtp_host' => '...', 'smtp_porta' => 465, 'smtp_seg' => 'ssl',
             // 'imap_host' => '...', 'imap_porta' => 993, 'imap_senha' => '...',
+        ],
+        // Caixas pessoais: quem assina a cadência de prospecção. A resposta do
+        // prospect cai no Outlook da pessoa, que é a regra do playbook.
+        'bruna@mais351monitor.com.br' => [
+            'nome'  => 'Bruna | +351 Monitor',
+            'senha' => 'SENHA-DA-CAIXA-OU-SENHA-DE-APLICATIVO',
         ],
         'joao@mais351monitor.com.br' => ['nome' => 'João | +351 Monitor', 'senha' => '...'],
     ],
@@ -266,6 +274,18 @@ Painel em **`/crm/analytics.php`** (aba "Site" do menu).
   os hits seguintes não gravam nada lá. Tetos por visita: 200 views e 300 eventos.
 
 ## Testes
+
+**Antes de abrir qualquer chamado de "o e-mail não sai"**, rode no servidor:
+
+```bash
+php /caminho/para/crm/cron/diagnostico-email.php
+```
+
+Ele não envia nada e não escreve no banco: abre o socket, faz a conversa SMTP até
+o AUTH, faz login no IMAP e desliga. Separa as cinco causas que a tela não mostra
+— caixa fora do `crm_config.php`, senha errada (ou 2FA sem senha de aplicativo),
+caixa sem usuário ativo (por isso não aparece em "Quem assina"), porta 587
+bloqueada, e motor/sandbox desligados. Sai com código 1 se achar problema.
 
 `php crm/tests/run.php` — suítes das funções puras (dias úteis da cadência, modelos de
 e-mail e o link mailto, parser das migrations, regressões de code review, e as quatro
