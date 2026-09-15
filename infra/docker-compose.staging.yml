@@ -134,6 +134,7 @@ services:
       # (vazio = jobs nem são registrados). A senha do viewer fica ESTÁVEL entre reseeds.
       Demo__Slug: ${DEMO_SLUG:-}
       Demo__ViewerPassword: ${DEMO_VIEWER_PASSWORD:-}
+      Demo__OwnerPassword: ${DEMO_OWNER_PASSWORD:-}
       # F5 — digest semanal por e-mail: mesmo SMTP e mesma base de links da API
       Portal__BaseUrl: https://${STAGING_DOMAIN:?defina STAGING_DOMAIN em infra/.env}
       Email__Provider: ${EMAIL_PROVIDER:-Smtp}

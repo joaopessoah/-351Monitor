@@ -102,6 +102,9 @@ public sealed class DemoReseedJob(
                 ViewerPassword = string.IsNullOrWhiteSpace(configuration["Demo:ViewerPassword"])
                     ? null
                     : configuration["Demo:ViewerPassword"],
+                OwnerPassword = string.IsNullOrWhiteSpace(configuration["Demo:OwnerPassword"])
+                    ? null
+                    : configuration["Demo:OwnerPassword"],
             }, context.CancellationToken);
 
             logger.LogInformation(

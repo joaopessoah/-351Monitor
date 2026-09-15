@@ -1,0 +1,93 @@
+# =============================================================================
+# +351 Monitor — re-semeia o tenant DEMO no staging com senhas ESTÁVEIS
+#
+# Quando usar: login do demo@empresademo.com.br / dono@... falhando no staging
+# (o reseed de domingo gera senha aleatória quando DEMO_VIEWER_PASSWORD não está
+# no infra/.env da VPS) ou para renovar os dados do demo até hoje.
+#
+# O que faz, por SSH na VPS (mesmos secrets STAGING_SSH_* do deploy):
+#   1. grava DEMO_SLUG / DEMO_VIEWER_PASSWORD / DEMO_OWNER_PASSWORD em infra/.env
+#      (assim o reseed semanal do worker mantém as mesmas senhas);
+#   2. recria o worker para ler o .env novo;
+#   3. roda `seed-demo-tenant --reset` no container da API com as senhas dos
+#      secrets DEMO_VIEWER_PASSWORD / DEMO_OWNER_PASSWORD;
+#   4. confere o login do viewer em /api/v1/auth/login (espera status "ok").
+#
+# Disparo: workflow_dispatch (Actions › "Reseed demo (staging)" › Run workflow).
+# =============================================================================
+name: Reseed demo (staging)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  reseed:
+    name: reseed demo tenant (SSH)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+      STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      DEMO_VIEWER_PASSWORD: ${{ secrets.DEMO_VIEWER_PASSWORD }}
+      DEMO_OWNER_PASSWORD: ${{ secrets.DEMO_OWNER_PASSWORD }}
+    steps:
+      - name: Reseed do tenant demo
+        run: |
+          set -euo pipefail
+          for v in STAGING_SSH_HOST STAGING_SSH_KEY DEMO_VIEWER_PASSWORD DEMO_OWNER_PASSWORD; do
+            if [ -z "${!v}" ]; then echo "::error::secret $v ausente"; exit 1; fi
+          done
+          mkdir -p ~/.ssh
+          printf '%s\n' "${STAGING_SSH_KEY}" > ~/.ssh/staging_key
+          chmod 600 ~/.ssh/staging_key
+          USER="${STAGING_SSH_USER:-deploy}"
+
+          # Valores viajam como atribuições de ambiente (ver deploy-staging.sh: o ssh não
+          # preserva argumentos posicionais vazios). O bloco remoto chega por stdin.
+          ssh -i ~/.ssh/staging_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 \
+            "${USER}@${STAGING_SSH_HOST}" \
+            "M351_DIR='/opt/351monitor' M351_V='${DEMO_VIEWER_PASSWORD}' M351_O='${DEMO_OWNER_PASSWORD}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$M351_DIR"
+          ENV=infra/.env
+
+          upsert() {
+            # troca a linha (comentada ou não) ou acrescenta no fim; valor sem caracteres
+            # especiais de sed além de '@' (delimitador é '|')
+            if grep -qE "^#?$1=" "$ENV"; then
+              sed -i -E "s|^#?$1=.*|$1=$2|" "$ENV"
+            else
+              printf '%s=%s\n' "$1" "$2" >> "$ENV"
+            fi
+          }
+          upsert DEMO_SLUG empresa-demo
+          upsert DEMO_VIEWER_PASSWORD "$M351_V"
+          upsert DEMO_OWNER_PASSWORD "$M351_O"
+          echo "[reseed] infra/.env: DEMO_SLUG e senhas do demo gravados"
+
+          COMPOSE="docker compose -f infra/docker-compose.staging.yml --env-file $ENV"
+
+          echo "[reseed] recriando o worker para ler o .env novo"
+          $COMPOSE up -d --no-deps worker < /dev/null
+
+          echo "[reseed] seed-demo-tenant --reset (senhas ocultas na saída)"
+          $COMPOSE exec -T api dotnet M351.Api.dll seed-demo-tenant --reset --slug empresa-demo \
+            --viewer-password "$M351_V" --owner-password "$M351_O" < /dev/null \
+            | sed -E 's#^(  (Owner|Viewer \(demo\)) *: [^ ]+) / .*$#\1 / ***#'
+
+          DOMAIN="$(grep -E '^STAGING_DOMAIN=' "$ENV" | cut -d= -f2-)"
+          echo "[reseed] conferindo login do viewer em https://${DOMAIN}"
+          BODY="$(printf '{"email":"demo@empresademo.com.br","password":"%s"}' "$M351_V")"
+          RESP="$(curl -sS -m 20 -H 'Content-Type: application/json' -d "$BODY" "https://${DOMAIN}/api/v1/auth/login" || true)"
+          if printf '%s' "$RESP" | grep -q '"status":"ok"'; then
+            echo "[reseed] OK: viewer autenticou"
+          else
+            echo "[reseed] ERRO: login do viewer falhou: $(printf '%s' "$RESP" | cut -c1-200)"
+            exit 1
+          fi
+          REMOTE
