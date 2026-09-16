@@ -25,4 +25,12 @@ public record AgentConfigAdminResponse(
     string NoticeDefaultBody,
     string NoticeFixedFraming,
     int NoticeMaxLength,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    /// <summary>
+    /// Coleta do DOMÍNIO do site em foco no navegador (nunca a URL completa). Editável pela
+    /// controladora; o estado aparece na página pública de transparência e na janela "o que está
+    /// sendo coletado agora" do agente.
+    /// </summary>
+    bool SiteCapture = true,
+    /// <summary>Coleta do NOME do arquivo aberto (nunca o caminho, nunca o conteúdo).</summary>
+    bool DocumentCapture = true);

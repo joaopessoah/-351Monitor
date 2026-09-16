@@ -20,8 +20,9 @@ namespace M351.Infrastructure.Intervalization;
 ///     (occurred_at, seq), com timestamps corrigidos por clock_offset_ms (corrigido = cru + offset;
 ///     o skew servidor−agente é a EMA de 5 lotes calculada na ingestão — raw fica intacto);
 ///  4. divide intervalos na meia-noite do fuso da org (source_day exato por dia local);
-///  5. resolve app_id no app_catalog (auto-insert não-curado; JAMAIS window_title no catálogo)
-///     e device_user_id por (device_id, windows_sid);
+///  5. resolve app_id no app_catalog e site_id no site_catalog (auto-insert não-curado nos dois;
+///     JAMAIS window_title ou nome de arquivo em catálogo — só process_name e domínio, que não
+///     são dado pessoal) e device_user_id por (device_id, windows_sid);
 ///  6. grava intervalos + dirty_days (dias dos intervalos novos E dos deletados; upsert
 ///     no-op com lock de linha para fechar a corrida com a agregação diária) e finaliza o
 ///     cursor — dirty_from só é zerado se o updated_at não mudou (lote que chegou DURANTE
@@ -132,7 +133,8 @@ public sealed class IntervalizationService(NpgsqlDataSource dataSource, ILogger<
         var events = new List<PipelineEvent>();
         await using (var command = new NpgsqlCommand("""
             SELECT seq, occurred_at, event_type, windows_sid, process_name, window_title,
-                   payload->>'last_input_at', payload->>'state', payload->>'oldest_dropped_at'
+                   payload->>'last_input_at', payload->>'state', payload->>'oldest_dropped_at',
+                   site_domain, document_name
             FROM raw_events
             WHERE tenant_id = @t AND device_id = @d AND occurred_at >= @from AND occurred_at <= @to
             ORDER BY occurred_at, seq
@@ -157,6 +159,8 @@ public sealed class IntervalizationService(NpgsqlDataSource dataSource, ILogger<
                     LastInputAt = ParseIso(reader, 6, offset),
                     HeartbeatState = reader.IsDBNull(7) ? null : reader.GetString(7),
                     OldestDroppedAt = ParseIso(reader, 8, offset),
+                    SiteDomain = reader.IsDBNull(9) ? null : reader.GetString(9),
+                    DocumentName = reader.IsDBNull(10) ? null : reader.GetString(10),
                 });
             }
         }
@@ -228,7 +232,8 @@ public sealed class IntervalizationService(NpgsqlDataSource dataSource, ILogger<
     // ------------------------------------------------------------ materialização
     private sealed record IntervalRow(
         Guid Id, Guid? DeviceUserId, DateTimeOffset StartedAt, DateTimeOffset EndedAt,
-        string State, Guid? AppId, string? WindowTitle, bool DataIncomplete, DateOnly SourceDay);
+        string State, Guid? AppId, string? WindowTitle, bool DataIncomplete, DateOnly SourceDay,
+        Guid? SiteId, string? DocumentName);
 
     private async Task<List<IntervalRow>> MaterializeAsync(
         NpgsqlConnection conn, NpgsqlTransaction tx, Guid tenantId, Guid deviceId,
@@ -257,6 +262,31 @@ public sealed class IntervalizationService(NpgsqlDataSource dataSource, ILogger<
             while (await reader.ReadAsync(ct)) appIds[reader.GetString(0)] = reader.GetGuid(1);
         }
 
+        // site_catalog: auto-insert não-curado por domínio (display_name = domínio), espelho
+        // exato do que o app_catalog faz com process_name. O catálogo é GLOBAL: o domínio em si
+        // não é dado pessoal (é o mesmo "mercadolivre.com.br" para todo mundo), e é o que
+        // permite o dicionário brasileiro curar uma vez e servir a todos os tenants. O que é do
+        // tenant — a CLASSIFICAÇÃO — mora em tenant_site_categories.
+        var domains = intervals
+            .Where(i => i.State == IntervalStates.Active && i.SiteDomain is not null)
+            .Select(i => i.SiteDomain!).Distinct().ToList();
+        var siteIds = new Dictionary<string, Guid>(StringComparer.Ordinal);
+        if (domains.Count > 0)
+        {
+            foreach (var domain in domains)
+            {
+                await ExecAsync(conn, tx, """
+                    INSERT INTO site_catalog (id, domain, display_name, curated)
+                    VALUES (@id, @d, @d, false) ON CONFLICT (domain) DO NOTHING
+                    """, [("id", Uuid7.NewUuid7()), ("d", domain)], ct);
+            }
+            await using var command = new NpgsqlCommand(
+                "SELECT domain, id FROM site_catalog WHERE domain = ANY(@domains)", conn, tx);
+            command.Parameters.AddWithValue("domains", domains);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct)) siteIds[reader.GetString(0)] = reader.GetGuid(1);
+        }
+
         // device_user por (device_id, windows_sid)
         var userIds = new Dictionary<string, Guid>(StringComparer.Ordinal);
         await using (var command = new NpgsqlCommand(
@@ -278,7 +308,9 @@ public sealed class IntervalizationService(NpgsqlDataSource dataSource, ILogger<
                 interval.WindowsSid is not null && userIds.TryGetValue(interval.WindowsSid, out var uid) ? uid : null,
                 start, end, interval.State,
                 interval.ProcessName is not null && appIds.TryGetValue(interval.ProcessName, out var aid) ? aid : null,
-                interval.WindowTitle, interval.DataIncomplete, day));
+                interval.WindowTitle, interval.DataIncomplete, day,
+                interval.SiteDomain is not null && siteIds.TryGetValue(interval.SiteDomain, out var sid) ? sid : null,
+                interval.DocumentName));
         }
 
         foreach (var chunk in rows.Chunk(200))
@@ -288,7 +320,7 @@ public sealed class IntervalizationService(NpgsqlDataSource dataSource, ILogger<
             var i = 0;
             foreach (var r in chunk)
             {
-                values.Add($"(@id{i}, @t, @d, @u{i}, @s{i}, @e{i}, @st{i}, @a{i}, @w{i}, @inc{i}, @day{i})");
+                values.Add($"(@id{i}, @t, @d, @u{i}, @s{i}, @e{i}, @st{i}, @a{i}, @w{i}, @inc{i}, @day{i}, @site{i}, @doc{i})");
                 command.Parameters.AddWithValue($"id{i}", r.Id);
                 command.Parameters.AddWithValue($"u{i}", (object?)r.DeviceUserId ?? DBNull.Value);
                 command.Parameters.AddWithValue($"s{i}", r.StartedAt);
@@ -298,12 +330,14 @@ public sealed class IntervalizationService(NpgsqlDataSource dataSource, ILogger<
                 command.Parameters.AddWithValue($"w{i}", (object?)r.WindowTitle ?? DBNull.Value);
                 command.Parameters.AddWithValue($"inc{i}", r.DataIncomplete);
                 command.Parameters.AddWithValue($"day{i}", r.SourceDay);
+                command.Parameters.AddWithValue($"site{i}", (object?)r.SiteId ?? DBNull.Value);
+                command.Parameters.AddWithValue($"doc{i}", (object?)r.DocumentName ?? DBNull.Value);
                 i++;
             }
             command.Parameters.AddWithValue("t", tenantId);
             command.Parameters.AddWithValue("d", deviceId);
             command.CommandText =
-                "INSERT INTO activity_intervals (id, tenant_id, device_id, device_user_id, started_at, ended_at, state, app_id, window_title, data_incomplete, source_day) VALUES "
+                "INSERT INTO activity_intervals (id, tenant_id, device_id, device_user_id, started_at, ended_at, state, app_id, window_title, data_incomplete, source_day, site_id, document_name) VALUES "
                 + string.Join(", ", values);
             await command.ExecuteNonQueryAsync(ct);
         }

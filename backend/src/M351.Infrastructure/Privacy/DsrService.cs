@@ -153,6 +153,11 @@ public sealed class DsrService
             + await ExecCountAsync(connection, tx,
                 "SELECT count(*)::int FROM daily_app_usage WHERE tenant_id = @t AND device_user_id = ANY(@ids)",
                 tenantId, deviceUserIds, ct, scalar: true)
+            // daily_site_usage segue a mesma regra das outras: agregado de equipe chaveado por
+            // device_user_id, preservado pela Seção 9.3 e portanto CONTADO no recibo.
+            + await ExecCountAsync(connection, tx,
+                "SELECT count(*)::int FROM daily_site_usage WHERE tenant_id = @t AND device_user_id = ANY(@ids)",
+                tenantId, deviceUserIds, ct, scalar: true)
             // F9: monthly_summaries é chaveada por device_user_id como as duas acima e sobrevive
             // à exclusão pela MESMA regra da Seção 9.3. Ficar fora da conta faria o recibo
             // subestimar o que foi preservado — e um recibo que subconta o que ficou é pior que

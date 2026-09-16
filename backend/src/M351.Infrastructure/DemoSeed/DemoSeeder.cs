@@ -144,6 +144,32 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
         ("vlc.exe", "VLC Media Player", "Vídeo/Streaming"),
     ];
 
+    /// <summary>
+    /// Sites da demo, com peso: é o que faz a tela de Sites e a classificação por domínio
+    /// terem o que mostrar no primeiro login. A mistura é proposital — a maior parte do tempo
+    /// em sistema interno e ferramentas de trabalho, uma fatia menor em compras e rede social,
+    /// que é como a navegação real de um escritório se parece.
+    /// </summary>
+    private static readonly (string Domain, string Display, string Category, int Weight)[] DemoSites =
+    [
+        ("portal.empresademo.com.br", "Portal interno", "ERP/Sistemas internos", 22),
+        ("docs.google.com", "Google Docs", "Escritório/Documentos", 14),
+        ("mail.google.com", "Gmail", "Comunicação", 12),
+        ("github.com", "GitHub", "Desenvolvimento", 10),
+        ("gov.br", "Portal Gov.br", "Governo/Fisco", 8),
+        ("fazenda.gov.br", "Receita Federal", "Governo/Fisco", 6),
+        ("bb.com.br", "Banco do Brasil", "Bancos/Financeiro", 5),
+        ("google.com", "Google", "Busca e portais", 8),
+        ("g1.globo.com", "G1", "Notícias", 5),
+        ("mercadolivre.com.br", "Mercado Livre", "Compras", 5),
+        ("instagram.com", "Instagram", "Redes sociais", 3),
+        ("youtube.com", "YouTube", "Vídeo/Streaming", 2),
+    ];
+
+    /// <summary>Extensões reconhecidas como documento na demo (espelho da lista do agente).</summary>
+    private static readonly string[] DemoDocumentExtensions =
+        ["pdf", "docx", "xlsx", "pptx", "csv", "txt", "odt", "ods"];
+
     private static readonly Dictionary<string, string[]> Titles = new(StringComparer.Ordinal)
     {
         ["chrome.exe"] =
@@ -230,6 +256,8 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
         public string? WindowsUser;
         public string? ProcessName;
         public string? WindowTitle;
+        public string? SiteDomain;
+        public string? DocumentName;
         public string PayloadJson = "{}";
         public int Order; // desempate estável na ordenação por occurred_at
     }
@@ -315,6 +343,7 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
         await CreateOrgUsersAndCategoriesAsync(
             conn, tenantId, options, ownerEmail, ownerPassword, viewerEmail, viewerPassword, ct);
         await SeedAppCatalogAsync(conn, tenantId, ct);
+        await SeedSiteCatalogAsync(conn, tenantId, ct);
 
         // ----- devices + eventos -----
         var plans = BuildDevicePlans(options, today);
@@ -466,6 +495,57 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
             VALUES (@id, @t, @e, @h, @n, 'viewer', false, 0, 'active')
             """,
             [("id", Uuid7.NewUuid7()), ("t", tenantId), ("e", viewerEmail), ("h", passwordHasher.Hash(viewerPassword)), ("n", "Demonstração")], ct);
+    }
+
+    /// <summary>Sorteio ponderado de um domínio da demo (mesma mecânica do sorteio de apps).</summary>
+    private static string PickSite(Random rng)
+    {
+        var total = DemoSites.Sum(s => s.Weight);
+        var draw = rng.Next(total);
+        foreach (var site in DemoSites)
+        {
+            draw -= site.Weight;
+            if (draw < 0) return site.Domain;
+        }
+        return DemoSites[0].Domain;
+    }
+
+    /// <summary>
+    /// Nome de arquivo a partir do título da demo — versão mínima da regra do agente
+    /// (Privacy.DocumentName): primeiro trecho antes de " - " que termina em extensão conhecida.
+    /// Vive aqui porque agente e backend são soluções separadas, sem referência entre si.
+    /// </summary>
+    private static string? ExtractDemoDocument(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return null;
+        var candidate = title.Split(" - ")[0].Trim();
+        var dot = candidate.LastIndexOf('.');
+        if (dot <= 0 || dot == candidate.Length - 1) return null;
+        var ext = candidate[(dot + 1)..].ToLowerInvariant();
+        return Array.IndexOf(DemoDocumentExtensions, ext) >= 0 ? candidate : null;
+    }
+
+    /// <summary>site_catalog (global, ON CONFLICT DO NOTHING) + tenant_site_categories do tenant demo.</summary>
+    private async Task SeedSiteCatalogAsync(NpgsqlConnection conn, Guid tenantId, CancellationToken ct)
+    {
+        foreach (var (domain, display, _, _) in DemoSites)
+        {
+            await ExecAsync(conn, """
+                INSERT INTO site_catalog (id, domain, display_name, curated)
+                VALUES (@id, @d, @n, true) ON CONFLICT (domain) DO NOTHING
+                """, [("id", Uuid7.NewUuid7()), ("d", domain), ("n", display)], ct);
+        }
+
+        foreach (var (domain, _, category, _) in DemoSites)
+        {
+            await ExecAsync(conn, """
+                INSERT INTO tenant_site_categories (tenant_id, site_id, category_id)
+                SELECT @t, s.id, c.id
+                FROM site_catalog s, categories c
+                WHERE s.domain = @d AND c.tenant_id = @t AND c.name = @cat
+                ON CONFLICT (tenant_id, site_id) DO NOTHING
+                """, [("t", tenantId), ("d", domain), ("cat", category)], ct);
+        }
     }
 
     /// <summary>app_catalog (global, ON CONFLICT DO NOTHING) + tenant_app_categories do tenant demo.</summary>
@@ -662,8 +742,16 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
             var (proc, title, masked) = PickApp(rng, p, lastProc, lastTitle);
             lastProc = proc;
             lastTitle = title;
+
+            // Navegador ganha domínio; qualquer app pode ter arquivo no título. Mesmo shape que
+            // o agente produz — site só em navegador, documento só em extensão conhecida.
+            var site = proc == "chrome.exe" ? PickSite(rng) : null;
+            var document = ExtractDemoDocument(title);
+
             var row = new RawRow
             {
+                SiteDomain = site,
+                DocumentName = document,
                 EventId = Uuid7.NewUuid7(at),
                 OccurredAt = at,
                 EventType = "ACTIVE_WINDOW_CHANGED",
@@ -679,6 +767,8 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
                     ["process_name"] = proc,
                     ["window_title"] = title,
                     ["title_masked"] = masked,
+                    ["site_domain"] = site,
+                    ["document_name"] = document,
                 }),
                 Order = order++,
             };
@@ -921,7 +1011,8 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
             var sql = new StringBuilder("""
                 INSERT INTO raw_events
                   (tenant_id, device_id, event_id, seq, occurred_at, event_type, tz_offset_min, mono_ms, boot_id,
-                   session_id, windows_sid, windows_username, process_name, window_title, payload, received_at)
+                   session_id, windows_sid, windows_username, process_name, window_title, site_domain,
+                   document_name, payload, received_at)
                 VALUES
                 """);
             cmd.Parameters.AddWithValue("t", tenantId);
@@ -932,7 +1023,7 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
             {
                 sql.Append(i == 0 ? "\n" : ",\n");
                 sql.Append(CultureInfo.InvariantCulture,
-                    $"(@t, @d, @id{i}, @sq{i}, @at{i}, @ty{i}, {TzOffsetMin}, @mo{i}, @bo{i}, @se{i}, @si{i}, @us{i}, @pr{i}, @wt{i}, @pl{i}, @rc{i})");
+                    $"(@t, @d, @id{i}, @sq{i}, @at{i}, @ty{i}, {TzOffsetMin}, @mo{i}, @bo{i}, @se{i}, @si{i}, @us{i}, @pr{i}, @wt{i}, @sd{i}, @dn{i}, @pl{i}, @rc{i})");
                 var received = e.OccurredAt.AddSeconds(75);
                 if (received > now) received = now;
                 cmd.Parameters.AddWithValue($"id{i}", e.EventId);
@@ -947,6 +1038,8 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
                 cmd.Parameters.AddWithValue($"us{i}", (object?)e.WindowsUser ?? DBNull.Value);
                 cmd.Parameters.AddWithValue($"pr{i}", (object?)e.ProcessName ?? DBNull.Value);
                 cmd.Parameters.AddWithValue($"wt{i}", (object?)e.WindowTitle ?? DBNull.Value);
+                cmd.Parameters.AddWithValue($"sd{i}", (object?)e.SiteDomain ?? DBNull.Value);
+                cmd.Parameters.AddWithValue($"dn{i}", (object?)e.DocumentName ?? DBNull.Value);
                 cmd.Parameters.Add(new NpgsqlParameter($"pl{i}", NpgsqlDbType.Jsonb) { Value = e.PayloadJson });
                 cmd.Parameters.AddWithValue($"rc{i}", received.ToUniversalTime());
                 i++;
@@ -1089,6 +1182,7 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
             "DELETE FROM dirty_days WHERE tenant_id = @t",
             "DELETE FROM ingest_cursors WHERE tenant_id = @t",
             "DELETE FROM daily_app_usage WHERE tenant_id = @t",
+            "DELETE FROM daily_site_usage WHERE tenant_id = @t",
             "DELETE FROM daily_device_summaries WHERE tenant_id = @t",
             // F6/F9: agregados sem FK para organizations — órfãos silenciosos se ficarem fora
             "DELETE FROM hourly_activity WHERE tenant_id = @t",
@@ -1106,6 +1200,8 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
             "DELETE FROM devices WHERE tenant_id = @t",
             "DELETE FROM enrollment_keys WHERE tenant_id = @t",
             // F5: referencia categories E teams — precisa cair antes das duas
+            "DELETE FROM tenant_site_team_categories WHERE tenant_id = @t",
+            "DELETE FROM tenant_site_categories WHERE tenant_id = @t",
             "DELETE FROM tenant_app_team_categories WHERE tenant_id = @t",
             "DELETE FROM tenant_app_categories WHERE tenant_id = @t",
             "DELETE FROM categories WHERE tenant_id = @t",

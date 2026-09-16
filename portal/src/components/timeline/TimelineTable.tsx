@@ -33,6 +33,7 @@ function IntervalHeadCells() {
       <th scope="col" className="px-3 py-2 text-right">Duração</th>
       <th scope="col" className="px-3 py-2">Estado</th>
       <th scope="col" className="px-3 py-2">App</th>
+      <th scope="col" className="px-3 py-2">Site / arquivo</th>
       <th scope="col" className="px-3 py-2">Título</th>
       <th scope="col" className="px-3 py-2">Observação</th>
     </>
@@ -60,6 +61,17 @@ function IntervalCells({ iv, timezone }: { iv: TimelineInterval; timezone: strin
       </td>
       <td className="max-w-[14rem] truncate px-3 py-1.5">
         {iv.app !== null ? iv.app.display_name : <span className="text-muted-foreground">-</span>}
+      </td>
+      {/* Site e arquivo na MESMA coluna: um trecho tem um ou outro (site só em
+          navegador, arquivo só em documento aberto), quase nunca os dois. */}
+      <td className="max-w-[16rem] truncate px-3 py-1.5">
+        {iv.site_domain != null && iv.site_domain.length > 0 ? (
+          iv.site_domain
+        ) : iv.document_name != null && iv.document_name.length > 0 ? (
+          iv.document_name
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        )}
       </td>
       <td className="max-w-[22rem] truncate px-3 py-1.5 text-muted-foreground">
         {iv.window_title ?? "-"}
@@ -96,7 +108,7 @@ export function TimelineTable({ intervals, timezone }: TimelineTableProps) {
         <tbody>
           {intervals.length === 0 ? (
             <tr>
-              <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
+              <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">
                 Sem intervalos neste dia.
               </td>
             </tr>
@@ -137,7 +149,7 @@ export function TeamTimelineTable({ lanes, timezone }: TeamTimelineTableProps) {
         <tbody>
           {lanes.length === 0 ? (
             <tr>
-              <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">
+              <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
                 Nenhum dispositivo para mostrar.
               </td>
             </tr>
@@ -147,7 +159,7 @@ export function TeamTimelineTable({ lanes, timezone }: TeamTimelineTableProps) {
                 {lane.intervals.length === 0 ? (
                   <tr className="border-b last:border-b-0">
                     <DeviceCell lane={lane} rowSpan={1} />
-                    <td colSpan={7} className="px-3 py-1.5 text-muted-foreground">
+                    <td colSpan={8} className="px-3 py-1.5 text-muted-foreground">
                       Sem intervalos neste dia.
                     </td>
                   </tr>

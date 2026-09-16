@@ -60,14 +60,19 @@ namespace M351.Infrastructure.Aggregation;
 ///    só o que o cliente classificou como neutro de propósito).
 ///
 ///    ORDEM DE PRECEDÊNCIA DA REGRA (F5, spec seção 2.4 — o mesmo app pode ser produtivo no
-///    Marketing e improdutivo no Financeiro):
-///      1. regra da EQUIPE da lane   (tenant_app_team_categories, escopo específico)
-///      2. regra da ORGANIZAÇÃO      (tenant_app_categories, escopo geral)
-///      3. nenhuma das duas          → seconds_unclassified
-///    Um COALESCE(regra_da_equipe, regra_da_organizacao) expressa as três linhas: ausência de
-///    regra de equipe é HERANÇA da geral, jamais "sem classificação". Esta é a consulta mais
-///    quente do produto, então o custo novo é só um LEFT JOIN por (tenant, app, team) numa
-///    tabela pequena e indexada, resolvido com o MESMO teste de saída de antes (c.id IS NULL);
+///    Marketing e improdutivo no Financeiro; mais o degrau de SITE, que veio com a coleta de
+///    navegação):
+///      1. regra de SITE da EQUIPE      (tenant_site_team_categories)
+///      2. regra de SITE da ORGANIZAÇÃO (tenant_site_categories)
+///      3. regra de APP da EQUIPE       (tenant_app_team_categories, escopo específico)
+///      4. regra de APP da ORGANIZAÇÃO  (tenant_app_categories, escopo geral)
+///      5. nenhuma das quatro           → seconds_unclassified
+///    Um COALESCE das quatro expressa as cinco linhas: ausência de regra mais específica é
+///    HERANÇA da mais geral, jamais "sem classificação". SITE VENCE APP porque é a regra mais
+///    específica — o navegador é um só, os sites é que dizem o que estava sendo feito nele.
+///    Esta é a consulta mais quente do produto, e o custo novo são dois LEFT JOIN por
+///    (tenant, site[, team]) em tabelas pequenas e indexadas, resolvidos com o MESMO teste de
+///    saída de antes (c.id IS NULL);
 ///
 ///  - EQUIPE DA LANE (F7, spec seção 2.3): resolvida na CTE lane_team, por lane e por
 ///    dispositivo do dia que está sendo recomputado, também com precedência declarada:
@@ -89,7 +94,10 @@ namespace M351.Infrastructure.Aggregation;
 ///  - computed_at = now();
 ///  - daily_app_usage: por (lane, app_id) dos intervalos active com app_id; seconds_active =
 ///    soma; focus_count = COUNT(*) de intervalos (após o merge N20 do pipeline, cada
-///    intervalo ≈ um foco).
+///    intervalo ≈ um foco);
+///  - daily_site_usage: o mesmo por (lane, site_id) dos intervalos active com site_id. Só
+///    navegação tem site, então esta tabela é um RECORTE do tempo que já está em
+///    daily_app_usage sob o navegador — as duas nunca se somam, cada uma responde uma pergunta.
 /// </summary>
 public sealed class DailyAggregationService(NpgsqlDataSource dataSource, ILogger<DailyAggregationService>? logger = null)
 {
@@ -189,6 +197,9 @@ public sealed class DailyAggregationService(NpgsqlDataSource dataSource, ILogger
             "DELETE FROM daily_app_usage WHERE tenant_id = @t AND device_id = @d AND summary_date = @day",
             [("t", tenantId), ("d", deviceId), ("day", day)], ct);
         await ExecAsync(conn, tx,
+            "DELETE FROM daily_site_usage WHERE tenant_id = @t AND device_id = @d AND summary_date = @day",
+            [("t", tenantId), ("d", deviceId), ("day", day)], ct);
+        await ExecAsync(conn, tx,
             "DELETE FROM hourly_activity WHERE tenant_id = @t AND device_id = @d AND summary_date = @day",
             [("t", tenantId), ("d", deviceId), ("day", day)], ct);
 
@@ -253,16 +264,27 @@ public sealed class DailyAggregationService(NpgsqlDataSource dataSource, ILogger
                        bool_or(i.data_incomplete) AS incomplete
                 FROM activity_intervals i
                 LEFT JOIN lane_team lt ON lt.device_user_id = i.device_user_id
-                -- PRECEDÊNCIA DA CLASSIFICAÇÃO (F5): 1) regra da EQUIPE da lane, 2) regra da
-                -- ORGANIZAÇÃO, 3) nenhuma → sem classificação. O COALESCE abaixo é a regra
-                -- inteira; lt.team_id NULL nunca casa em tatc e cai sozinho na regra geral.
+                -- PRECEDÊNCIA DA CLASSIFICAÇÃO, quatro degraus: 1) regra de SITE da EQUIPE,
+                -- 2) regra de SITE da ORGANIZAÇÃO, 3) regra de APP da EQUIPE, 4) regra de APP da
+                -- ORGANIZAÇÃO, 5) nenhuma → sem classificação. O COALESCE abaixo é a regra
+                -- inteira; lt.team_id NULL nunca casa nas tabelas de equipe e cai sozinho nas
+                -- gerais, e i.site_id NULL (tudo que não é navegação) cai sozinho nas de app.
+                --
+                -- SITE VENCE APP porque é a regra MAIS ESPECÍFICA: sem isso, marcar
+                -- "mercadolivre.com.br" como improdutivo não mudaria nada enquanto "chrome.exe"
+                -- estivesse classificado como Navegação — o tempo do navegador inteiro cairia
+                -- num balde só, que é o buraco que a coleta de sites veio fechar.
+                LEFT JOIN tenant_site_team_categories tstc
+                       ON tstc.tenant_id = i.tenant_id AND tstc.site_id = i.site_id
+                      AND tstc.team_id = lt.team_id
+                LEFT JOIN tenant_site_categories tsc ON tsc.tenant_id = i.tenant_id AND tsc.site_id = i.site_id
                 LEFT JOIN tenant_app_team_categories tatc
                        ON tatc.tenant_id = i.tenant_id AND tatc.app_id = i.app_id
                       AND tatc.team_id = lt.team_id
                 LEFT JOIN tenant_app_categories tac ON tac.tenant_id = i.tenant_id AND tac.app_id = i.app_id
                 LEFT JOIN categories c
                        ON c.tenant_id = i.tenant_id
-                      AND c.id = COALESCE(tatc.category_id, tac.category_id)
+                      AND c.id = COALESCE(tstc.category_id, tsc.category_id, tatc.category_id, tac.category_id)
                 WHERE i.tenant_id = @t AND i.device_id = @d AND i.source_day = @day
                 GROUP BY 1
             ) lanes
@@ -280,6 +302,25 @@ public sealed class DailyAggregationService(NpgsqlDataSource dataSource, ILogger
             WHERE i.tenant_id = @t AND i.device_id = @d AND i.source_day = @day
               AND i.state = 'active' AND i.app_id IS NOT NULL
             GROUP BY COALESCE(i.device_user_id, '00000000-0000-0000-0000-000000000000'::uuid), i.app_id
+            """, [("t", tenantId), ("d", deviceId), ("day", day)], ct);
+
+        // Uso por SITE: espelho do daily_app_usage, no MESMO snapshot (invariante 11.3 entre as
+        // duas). visit_count = intervalos, que depois da fusão N20 é ~"quantas vezes voltou
+        // àquele site"; não é contagem de páginas, e o relatório diz isso com todas as letras.
+        // Um mesmo intervalo aparece nas DUAS tabelas (no app chrome.exe e no site): não há
+        // dupla contagem porque ninguém soma as duas — cada uma responde uma pergunta.
+        await ExecAsync(conn, tx, """
+            INSERT INTO daily_site_usage (
+                tenant_id, summary_date, device_id, device_user_id, site_id, seconds_active, visit_count)
+            SELECT @t, @day, @d,
+                   COALESCE(i.device_user_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                   i.site_id,
+                   floor(sum(extract(epoch FROM i.ended_at - i.started_at)))::int,
+                   count(*)::int
+            FROM activity_intervals i
+            WHERE i.tenant_id = @t AND i.device_id = @d AND i.source_day = @day
+              AND i.state = 'active' AND i.site_id IS NOT NULL
+            GROUP BY COALESCE(i.device_user_id, '00000000-0000-0000-0000-000000000000'::uuid), i.site_id
             """, [("t", tenantId), ("d", deviceId), ("day", day)], ct);
 
         // Distribuição horária (F6): recorta cada intervalo active/idle nas fronteiras de hora

@@ -370,6 +370,12 @@ export function TimelineCanvas({
           </p>
           <p className="text-muted-foreground">{stateLabels[tooltip.iv.state]}</p>
           {tooltip.iv.app !== null && <p className="truncate font-medium">{tooltip.iv.app.display_name}</p>}
+          {tooltip.iv.site_domain != null && tooltip.iv.site_domain.length > 0 && (
+            <p className="truncate">{tooltip.iv.site_domain}</p>
+          )}
+          {tooltip.iv.document_name != null && tooltip.iv.document_name.length > 0 && (
+            <p className="truncate">{tooltip.iv.document_name}</p>
+          )}
           {tooltip.iv.window_title !== null && (
             <p className="truncate text-muted-foreground">{tooltip.iv.window_title}</p>
           )}

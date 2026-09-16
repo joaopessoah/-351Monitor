@@ -1,0 +1,266 @@
+# Dicionário de SITES do mercado brasileiro (+351 Monitor), VERSIONADO NO REPO.
+#
+# Formato: domain;display_name;default_category  (separador ';', UTF-8, comentários com '#')
+#
+# REGRAS INEGOCIÁVEIS desta lista (as mesmas de apps-br.csv, adaptadas):
+#  - domain é o DOMÍNIO REGISTRÁVEL, sempre minúsculo e sem "www.": é exatamente o que o agente
+#    envia (Privacy.SiteDomain reduz a barra de endereço a isto) e a chave de site_catalog.
+#    "lista.mercadolivre.com.br" NUNCA aparece aqui — vira "mercadolivre.com.br" antes de sair
+#    da máquina. A ÚNICA exceção são os domínios de serviços compartilhados declarados em
+#    SiteDomain.ServiceSubdomainDomains (google.com, amazon.com, microsoft.com, globo.com,
+#    uol.com.br, atlassian.net…), onde o agente preserva UM rótulo a mais e aqui aparecem
+#    linhas como "docs.google.com" e "aws.amazon.com";
+#  - default_category usa EXATAMENTE um dos nomes canônicos semeados por tenant em
+#    CreateOrgCommand.SeedCategoriesAsync. Nome fora da lista é sugestão órfã e o seeder
+#    descarta a linha com log de erro;
+#  - a sugestão é SEMPRE apenas sugestão: quem decide é o tenant (tenant_site_categories).
+#    O seeder nunca escreve mapeamento de tenant nem custom_display_name;
+#  - na dúvida, o site NÃO recebe categoria de classificação negativa. Rede profissional,
+#    buscador, portal de notícias e banco são de uso ambíguo e ficam em categoria neutra ou
+#    relacionada ao trabalho: o produto não acusa ninguém, apenas organiza o catálogo;
+#  - esta lista não inclui — e não deve incluir — domínios de conteúdo adulto. Catalogar isso
+#    seria o produto emitindo um juízo sobre a pessoa, que é a linha que não cruzamos. Se
+#    aparecer no uso real, o cliente classifica.
+#
+# LIMITE CONHECIDO: fora da lista de serviços compartilhados, tudo colapsa no domínio registrável
+# (uma intranet em "erp.empresa.com.br" e o site institucional em "empresa.com.br" viram a mesma
+# linha). O domínio-raiz desses serviços fica em categoria NEUTRA — "google.com" sozinho é busca,
+# e seria errado contar busca como produtivo tanto quanto o contrário.
+#
+# Categorias canônicas válidas:
+#   Desenvolvimento | Escritório/Documentos | Comunicação | Reuniões | Navegação | Design |
+#   ERP/Sistemas internos | Sistema/Utilitários | Música/Streaming de áudio | Não categorizado |
+#   Jogos | Redes sociais | Vídeo/Streaming | Governo/Fisco | Bancos/Financeiro |
+#   Busca e portais | Notícias | Compras
+
+# ----- Governo e fisco -----
+gov.br;Portal Gov.br;Governo/Fisco
+fazenda.gov.br;Receita Federal / SPED / NF-e;Governo/Fisco
+esocial.gov.br;eSocial;Governo/Fisco
+inss.gov.br;INSS;Governo/Fisco
+bcb.gov.br;Banco Central do Brasil;Governo/Fisco
+caixa.gov.br;Caixa Econômica Federal;Governo/Fisco
+sp.gov.br;Governo de São Paulo;Governo/Fisco
+mg.gov.br;Governo de Minas Gerais;Governo/Fisco
+rj.gov.br;Governo do Rio de Janeiro;Governo/Fisco
+rs.gov.br;Governo do Rio Grande do Sul;Governo/Fisco
+pr.gov.br;Governo do Paraná;Governo/Fisco
+sc.gov.br;Governo de Santa Catarina;Governo/Fisco
+ba.gov.br;Governo da Bahia;Governo/Fisco
+go.gov.br;Governo de Goiás;Governo/Fisco
+pe.gov.br;Governo de Pernambuco;Governo/Fisco
+ce.gov.br;Governo do Ceará;Governo/Fisco
+df.gov.br;Governo do Distrito Federal;Governo/Fisco
+tst.jus.br;Tribunal Superior do Trabalho;Governo/Fisco
+trf1.jus.br;Justiça Federal (TRF1);Governo/Fisco
+tjsp.jus.br;Tribunal de Justiça de São Paulo;Governo/Fisco
+pje.jus.br;PJe — Processo Judicial Eletrônico;Governo/Fisco
+sebrae.com.br;Sebrae;Governo/Fisco
+
+# ----- Bancos, meios de pagamento e crédito -----
+bb.com.br;Banco do Brasil;Bancos/Financeiro
+itau.com.br;Itaú;Bancos/Financeiro
+bradesco.com.br;Bradesco;Bancos/Financeiro
+santander.com.br;Santander;Bancos/Financeiro
+nubank.com.br;Nubank;Bancos/Financeiro
+sicredi.com.br;Sicredi;Bancos/Financeiro
+sicoob.com.br;Sicoob;Bancos/Financeiro
+banrisul.com.br;Banrisul;Bancos/Financeiro
+safra.com.br;Banco Safra;Bancos/Financeiro
+bancointer.com.br;Banco Inter;Bancos/Financeiro
+btgpactual.com;BTG Pactual;Bancos/Financeiro
+xpi.com.br;XP Investimentos;Bancos/Financeiro
+mercadopago.com.br;Mercado Pago;Bancos/Financeiro
+pagbank.com.br;PagBank;Bancos/Financeiro
+stone.com.br;Stone;Bancos/Financeiro
+cielo.com.br;Cielo;Bancos/Financeiro
+getnet.com.br;Getnet;Bancos/Financeiro
+serasaexperian.com.br;Serasa Experian;Bancos/Financeiro
+serasa.com.br;Serasa;Bancos/Financeiro
+spcbrasil.org.br;SPC Brasil;Bancos/Financeiro
+
+# ----- Trabalho: escritório, documentos e armazenamento -----
+office.com;Microsoft 365;Escritório/Documentos
+sharepoint.com;SharePoint;Escritório/Documentos
+onedrive.com;OneDrive;Escritório/Documentos
+dropbox.com;Dropbox;Escritório/Documentos
+box.com;Box;Escritório/Documentos
+docusign.com;DocuSign;Escritório/Documentos
+clicksign.com;Clicksign;Escritório/Documentos
+notion.so;Notion;Escritório/Documentos
+trello.com;Trello;Escritório/Documentos
+asana.com;Asana;Escritório/Documentos
+monday.com;monday.com;Escritório/Documentos
+smartsheet.com;Smartsheet;Escritório/Documentos
+evernote.com;Evernote;Escritório/Documentos
+adobe.com;Adobe;Escritório/Documentos
+
+# ----- Trabalho: comunicação e reuniões -----
+outlook.com;Outlook;Comunicação
+live.com;Conta Microsoft / Outlook;Comunicação
+slack.com;Slack;Comunicação
+whatsapp.com;WhatsApp Web;Comunicação
+telegram.org;Telegram;Comunicação
+discord.com;Discord;Comunicação
+linkedin.com;LinkedIn;Comunicação
+zendesk.com;Zendesk;Comunicação
+freshdesk.com;Freshdesk;Comunicação
+intercom.com;Intercom;Comunicação
+zoom.us;Zoom;Reuniões
+webex.com;Cisco Webex;Reuniões
+gotomeeting.com;GoToMeeting;Reuniões
+whereby.com;Whereby;Reuniões
+
+# ----- Trabalho: desenvolvimento -----
+github.com;GitHub;Desenvolvimento
+gitlab.com;GitLab;Desenvolvimento
+bitbucket.org;Bitbucket;Desenvolvimento
+atlassian.net;Jira / Confluence;Desenvolvimento
+atlassian.com;Atlassian;Desenvolvimento
+stackoverflow.com;Stack Overflow;Desenvolvimento
+npmjs.com;npm;Desenvolvimento
+nuget.org;NuGet;Desenvolvimento
+docker.com;Docker;Desenvolvimento
+jetbrains.com;JetBrains;Desenvolvimento
+visualstudio.com;Visual Studio / Azure DevOps;Desenvolvimento
+microsoft.com;Microsoft;Sistema/Utilitários
+digitalocean.com;DigitalOcean;Desenvolvimento
+cloudflare.com;Cloudflare;Desenvolvimento
+postman.com;Postman;Desenvolvimento
+vercel.com;Vercel;Desenvolvimento
+netlify.com;Netlify;Desenvolvimento
+hostinger.com.br;Hostinger;Sistema/Utilitários
+registro.br;Registro.br;Sistema/Utilitários
+
+# ----- Trabalho: design -----
+figma.com;Figma;Design
+canva.com;Canva;Design
+behance.net;Behance;Design
+dribbble.com;Dribbble;Design
+freepik.com;Freepik;Design
+unsplash.com;Unsplash;Design
+
+# ----- Trabalho: ERP, gestão e RH -----
+totvs.com.br;TOTVS;ERP/Sistemas internos
+senior.com.br;Senior Sistemas;ERP/Sistemas internos
+sankhya.com.br;Sankhya;ERP/Sistemas internos
+benner.com.br;Benner;ERP/Sistemas internos
+omie.com.br;Omie;ERP/Sistemas internos
+contaazul.com.br;ContaAzul;ERP/Sistemas internos
+bling.com.br;Bling;ERP/Sistemas internos
+tiny.com.br;Tiny ERP;ERP/Sistemas internos
+salesforce.com;Salesforce;ERP/Sistemas internos
+hubspot.com;HubSpot;ERP/Sistemas internos
+rdstation.com.br;RD Station;ERP/Sistemas internos
+pipedrive.com;Pipedrive;ERP/Sistemas internos
+gupy.io;Gupy;ERP/Sistemas internos
+catho.com.br;Catho;ERP/Sistemas internos
+vagas.com.br;Vagas.com;ERP/Sistemas internos
+
+# ----- Serviços compartilhados (um rótulo a mais, ver cabeçalho) -----
+docs.google.com;Google Docs;Escritório/Documentos
+drive.google.com;Google Drive;Escritório/Documentos
+sheets.google.com;Google Planilhas;Escritório/Documentos
+slides.google.com;Google Apresentações;Escritório/Documentos
+calendar.google.com;Google Agenda;Escritório/Documentos
+mail.google.com;Gmail;Comunicação
+meet.google.com;Google Meet;Reuniões
+chat.google.com;Google Chat;Comunicação
+teams.microsoft.com;Microsoft Teams;Reuniões
+outlook.office.com;Outlook Web;Comunicação
+portal.azure.com;Portal Azure;Desenvolvimento
+dev.azure.com;Azure DevOps;Desenvolvimento
+aws.amazon.com;Amazon Web Services;Desenvolvimento
+console.aws.amazon.com;Console AWS;Desenvolvimento
+g1.globo.com;G1;Notícias
+ge.globo.com;ge (esportes);Notícias
+globoplay.globo.com;Globoplay;Vídeo/Streaming
+valor.globo.com;Valor Econômico;Notícias
+folha.uol.com.br;Folha de S.Paulo;Notícias
+economia.uol.com.br;UOL Economia;Notícias
+pagseguro.uol.com.br;PagSeguro;Bancos/Financeiro
+
+# ----- Busca, portais e assistentes -----
+google.com;Google;Busca e portais
+google.com.br;Google Brasil;Busca e portais
+bing.com;Bing;Busca e portais
+duckduckgo.com;DuckDuckGo;Busca e portais
+yahoo.com;Yahoo;Busca e portais
+chatgpt.com;ChatGPT;Busca e portais
+openai.com;OpenAI;Busca e portais
+claude.ai;Claude;Busca e portais
+perplexity.ai;Perplexity;Busca e portais
+wikipedia.org;Wikipédia;Busca e portais
+
+# ----- Notícias -----
+globo.com;Globo / G1;Notícias
+uol.com.br;UOL / Folha;Notícias
+terra.com.br;Terra;Notícias
+r7.com;R7;Notícias
+estadao.com.br;Estadão;Notícias
+ig.com.br;iG;Notícias
+band.com.br;Band;Notícias
+cnnbrasil.com.br;CNN Brasil;Notícias
+metropoles.com;Metrópoles;Notícias
+infomoney.com.br;InfoMoney;Notícias
+exame.com;Exame;Notícias
+veja.com;Veja;Notícias
+gazetadopovo.com.br;Gazeta do Povo;Notícias
+poder360.com.br;Poder360;Notícias
+
+# ----- Compras e delivery -----
+mercadolivre.com.br;Mercado Livre;Compras
+amazon.com.br;Amazon Brasil;Compras
+amazon.com;Amazon;Compras
+magazineluiza.com.br;Magazine Luiza;Compras
+americanas.com.br;Americanas;Compras
+casasbahia.com.br;Casas Bahia;Compras
+pontofrio.com.br;Ponto;Compras
+extra.com.br;Extra;Compras
+submarino.com.br;Submarino;Compras
+shopee.com.br;Shopee;Compras
+aliexpress.com;AliExpress;Compras
+shein.com;Shein;Compras
+olx.com.br;OLX;Compras
+kabum.com.br;KaBuM!;Compras
+netshoes.com.br;Netshoes;Compras
+centauro.com.br;Centauro;Compras
+ifood.com.br;iFood;Compras
+rappi.com.br;Rappi;Compras
+
+# ----- Redes sociais -----
+instagram.com;Instagram;Redes sociais
+facebook.com;Facebook;Redes sociais
+tiktok.com;TikTok;Redes sociais
+x.com;X (Twitter);Redes sociais
+twitter.com;Twitter;Redes sociais
+threads.net;Threads;Redes sociais
+pinterest.com;Pinterest;Redes sociais
+reddit.com;Reddit;Redes sociais
+kwai.com;Kwai;Redes sociais
+snapchat.com;Snapchat;Redes sociais
+
+# ----- Vídeo e áudio -----
+youtube.com;YouTube;Vídeo/Streaming
+netflix.com;Netflix;Vídeo/Streaming
+primevideo.com;Prime Video;Vídeo/Streaming
+disneyplus.com;Disney+;Vídeo/Streaming
+max.com;Max;Vídeo/Streaming
+twitch.tv;Twitch;Vídeo/Streaming
+crunchyroll.com;Crunchyroll;Vídeo/Streaming
+vimeo.com;Vimeo;Vídeo/Streaming
+spotify.com;Spotify;Música/Streaming de áudio
+deezer.com;Deezer;Música/Streaming de áudio
+
+# ----- Jogos e apostas -----
+steampowered.com;Steam;Jogos
+epicgames.com;Epic Games;Jogos
+roblox.com;Roblox;Jogos
+riotgames.com;Riot Games;Jogos
+blizzard.com;Blizzard;Jogos
+xbox.com;Xbox;Jogos
+playstation.com;PlayStation;Jogos
+ea.com;Electronic Arts;Jogos
+bet365.com;bet365;Jogos
+betano.com.br;Betano;Jogos
+blaze.com;Blaze;Jogos

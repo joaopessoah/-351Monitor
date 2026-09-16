@@ -41,7 +41,7 @@ public class ReportsController(
     public const int MaxPageSize = 100;
 
     /// <summary>Compartilhado com a validação de params do POST /exports (F3.5).</summary>
-    internal static readonly string[] ValidGroupBys = ["app", "category", "device", "device_user"];
+    internal static readonly string[] ValidGroupBys = ["app", "site", "category", "device", "device_user"];
 
     /// <summary>UUID zero = lane-máquina (spec linha 652): intervalos sem sessão de usuário.</summary>
     private static readonly Guid MachineLane = Guid.Empty;
@@ -102,6 +102,7 @@ public class ReportsController(
         object response = groupBy switch
         {
             "app" => await UsageByAppAsync(connection, args, page, pageSize, ct),
+            "site" => await UsageBySiteAsync(connection, args, page, pageSize, ct),
             "category" => await UsageByCategoryAsync(connection, args, page, pageSize, ct),
             "device" => await UsageByDeviceAsync(connection, args, page, pageSize, ct),
             _ => await UsageByDeviceUserAsync(connection, args, page, pageSize, ct),
@@ -129,6 +130,147 @@ public class ReportsController(
         }
 
         return Ok(response);
+    }
+
+    /// <summary>
+    /// GET /api/v1/reports/documents?from&amp;to&amp;q&amp;device_ids&amp;tag (Viewer): quais ARQUIVOS
+    /// foram abertos no período, com o aplicativo que os abriu, tempo ativo, número de aberturas
+    /// e em quantas máquinas apareceram.
+    ///
+    /// FONTE activity_intervals (não há agregado por arquivo — ver DocumentsReportResponse).
+    /// Mesma régua de datas dos demais relatórios (fuso do tenant, máx. 92 dias) e mesmo
+    /// tratamento de devices archived (fora) e do filtro de equipe.
+    ///
+    /// AUDITORIA: view_report SEMPRE. Nome de arquivo é dado pessoal — "Rescisão Fulano.docx"
+    /// diz muito mais do que "winword.exe" —, então esta leitura fica registrada como qualquer
+    /// outra leitura de dado identificável, sem depender de filtro.
+    /// </summary>
+    [HttpGet("documents")]
+    [AuditRead] // DoD 11.3 / spec linha 1004: nome de arquivo é dado pessoal — view_report incondicional
+    public async Task<IActionResult> Documents(
+        [FromQuery(Name = "from")] string? from,
+        [FromQuery(Name = "to")] string? to,
+        [FromQuery(Name = "q")] string? q,
+        [FromQuery(Name = "device_ids")] string? deviceIdsRaw,
+        [FromQuery(Name = "tag")] string? tag,
+        [FromQuery(Name = "page")] int page = 1,
+        [FromQuery(Name = "page_size")] int pageSize = DefaultPageSize,
+        CancellationToken ct = default)
+    {
+        var invalid = ValidateRange(from, to, out _, out _);
+        if (invalid is not null) return invalid;
+
+        var malformed = ParseDeviceIds(deviceIdsRaw, out var deviceIds);
+        if (malformed is not null) return malformed;
+
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+
+        var tenantId = Auth.CurrentUser.TenantId(User);
+
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+
+        if (deviceIds is { Length: > 0 })
+        {
+            var found = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                "SELECT count(*)::int FROM devices WHERE tenant_id = @TenantId AND id = ANY(@DeviceIds)",
+                new { TenantId = tenantId, DeviceIds = deviceIds }, cancellationToken: ct));
+            if (found != deviceIds.Length) return NotFoundProblem();
+        }
+
+        var args = new
+        {
+            TenantId = tenantId,
+            From = from,
+            To = to,
+            FilterDevices = deviceIds is { Length: > 0 },
+            DeviceIds = deviceIds ?? [],
+            Tag = NormalizeTeamTag(tag),
+            Pattern = string.IsNullOrWhiteSpace(q) ? null : $"%{q.Trim()}%",
+            Limit = pageSize,
+            Offset = (page - 1) * pageSize,
+        };
+
+        // Recorte compartilhado pela página e pelos totais: as duas contas SEMPRE sobre as
+        // mesmas linhas (o total do rodapé é o denominador dos percentuais da tela).
+        const string filtro = """
+            FROM activity_intervals i
+            JOIN devices d ON d.id = i.device_id AND d.tenant_id = i.tenant_id
+            LEFT JOIN app_catalog a ON a.id = i.app_id
+            LEFT JOIN tenant_app_categories tac ON tac.tenant_id = i.tenant_id AND tac.app_id = i.app_id
+            WHERE i.tenant_id = @TenantId
+              AND d.status <> 'archived'
+              AND i.source_day BETWEEN @From::date AND @To::date
+              AND i.state = 'active'
+              AND i.document_name IS NOT NULL
+              AND (@FilterDevices = false OR i.device_id = ANY(@DeviceIds))
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
+              AND (@Pattern::text IS NULL OR i.document_name ILIKE @Pattern)
+            """;
+
+        var rows = (await connection.QueryAsync<DocumentRow>(new CommandDefinition(
+            $"""
+            SELECT i.document_name,
+                   i.app_id,
+                   COALESCE(tac.custom_display_name, a.display_name) AS app_display_name,
+                   floor(sum(extract(epoch FROM i.ended_at - i.started_at)))::bigint AS seconds_active,
+                   count(*)::int AS open_count,
+                   count(DISTINCT i.device_id)::int AS device_count,
+                   max(i.ended_at) AS last_seen_at
+            {filtro}
+            GROUP BY i.document_name, i.app_id, COALESCE(tac.custom_display_name, a.display_name)
+            ORDER BY seconds_active DESC, i.document_name
+            LIMIT @Limit OFFSET @Offset
+            """,
+            args, cancellationToken: ct))).ToList();
+
+        var totals = await connection.QuerySingleAsync<TotalsRow>(new CommandDefinition(
+            $"""
+            SELECT count(*)::int AS total,
+                   COALESCE(sum(g.seconds_active), 0)::bigint AS total_seconds_active
+            FROM (
+                SELECT floor(sum(extract(epoch FROM i.ended_at - i.started_at)))::bigint AS seconds_active
+                {filtro}
+                GROUP BY i.document_name, i.app_id
+            ) g
+            """,
+            args, cancellationToken: ct));
+
+        readAudit.Record(tenantId, AuditActions.ViewReport,
+            Auth.CurrentUser.UserId(User),
+            targetType: deviceIds is { Length: 1 } ? "device" : "team",
+            targetId: deviceIds is { Length: 1 } ? deviceIds[0] : null,
+            detailJson: JsonSerializer.Serialize(new
+            {
+                from,
+                to,
+                report = "documents",
+                device_ids = deviceIds,
+                tag = NormalizeTeamTag(tag),
+            }));
+
+        var items = rows.Select(r => new DocumentItemResponse(
+                r.DocumentName,
+                ExtensionOf(r.DocumentName),
+                r.AppId,
+                r.AppDisplayName,
+                r.SecondsActive,
+                r.OpenCount,
+                r.DeviceCount,
+                r.LastSeenAt))
+            .ToList();
+
+        return Ok(new DocumentsReportResponse(
+            items, totals.Total, page, pageSize, totals.TotalSecondsActive));
+    }
+
+    /// <summary>Extensão em minúsculas do nome do arquivo (sem ponto); null quando não há.</summary>
+    private static string? ExtensionOf(string documentName)
+    {
+        var dot = documentName.LastIndexOf('.');
+        if (dot < 0 || dot == documentName.Length - 1) return null;
+        var ext = documentName[(dot + 1)..].ToLowerInvariant();
+        return ext.Length is > 0 and <= 8 ? ext : null;
     }
 
     /// <summary>
@@ -463,6 +605,66 @@ public class ReportsController(
             items, totals.Total, page, pageSize, totals.TotalSecondsActive);
     }
 
+    // ------------------------------------------------------------ group_by=site
+    /// <summary>
+    /// Uso por SITE no período. Espelho de UsageByAppAsync sobre daily_site_usage, com a
+    /// categoria resolvida pela regra de SITE da organização (o escopo de equipe é da tela de
+    /// curadoria; aqui, como no group_by=app, vale a regra geral).
+    /// </summary>
+    private static async Task<UsageReportResponse<UsageBySiteItemResponse>> UsageBySiteAsync(
+        NpgsqlConnection connection, object args, int page, int pageSize, CancellationToken ct)
+    {
+        var rows = (await connection.QueryAsync<SiteGroupRow>(new CommandDefinition(
+            """
+            SELECT u.site_id, s.domain, s.display_name, tsc.custom_display_name,
+                   c.id AS category_id, c.name AS category_name,
+                   c.classification AS category_classification, c.color AS category_color,
+                   sum(u.seconds_active)::bigint AS seconds_active,
+                   count(DISTINCT u.device_id)::int AS device_count,
+                   sum(u.visit_count)::int AS visit_count
+            FROM daily_site_usage u
+            JOIN devices d ON d.id = u.device_id AND d.tenant_id = u.tenant_id
+            JOIN site_catalog s ON s.id = u.site_id
+            LEFT JOIN tenant_site_categories tsc ON tsc.tenant_id = u.tenant_id AND tsc.site_id = u.site_id
+            LEFT JOIN categories c ON c.tenant_id = u.tenant_id AND c.id = tsc.category_id
+            WHERE u.tenant_id = @TenantId
+              AND d.status <> 'archived'
+              AND u.summary_date BETWEEN @From::date AND @To::date
+              AND (@FilterDevices = false OR u.device_id = ANY(@DeviceIds))
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
+            GROUP BY u.site_id, s.domain, s.display_name, tsc.custom_display_name,
+                     c.id, c.name, c.classification, c.color
+            ORDER BY seconds_active DESC, s.domain
+            LIMIT @Limit OFFSET @Offset
+            """,
+            args, cancellationToken: ct))).ToList();
+
+        var totals = await connection.QuerySingleAsync<TotalsRow>(new CommandDefinition(
+            """
+            SELECT count(DISTINCT u.site_id)::int AS total,
+                   COALESCE(sum(u.seconds_active), 0)::bigint AS total_seconds_active
+            FROM daily_site_usage u
+            JOIN devices d ON d.id = u.device_id AND d.tenant_id = u.tenant_id
+            WHERE u.tenant_id = @TenantId
+              AND d.status <> 'archived'
+              AND u.summary_date BETWEEN @From::date AND @To::date
+              AND (@FilterDevices = false OR u.device_id = ANY(@DeviceIds))
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
+            """,
+            args, cancellationToken: ct));
+
+        var items = rows.Select(r => new UsageBySiteItemResponse(
+                r.SiteId, r.Domain, r.DisplayName, r.CustomDisplayName,
+                r.CategoryId is { } categoryId
+                    ? new AppCategoryResponse(categoryId, r.CategoryName!, r.CategoryClassification!.Value, r.CategoryColor)
+                    : null,
+                r.SecondsActive, r.DeviceCount, r.VisitCount))
+            .ToList();
+
+        return new UsageReportResponse<UsageBySiteItemResponse>(
+            items, totals.Total, page, pageSize, totals.TotalSecondsActive);
+    }
+
     // ------------------------------------------------------------ group_by=category
     private static async Task<UsageReportResponse<UsageByCategoryItemResponse>> UsageByCategoryAsync(
         NpgsqlConnection connection, object args, int page, int pageSize, CancellationToken ct)
@@ -613,6 +815,28 @@ public class ReportsController(
         string? CategoryColor,
         long SecondsActive,
         int DeviceCount);
+
+    private sealed record SiteGroupRow(
+        Guid SiteId,
+        string Domain,
+        string DisplayName,
+        string? CustomDisplayName,
+        Guid? CategoryId,
+        string? CategoryName,
+        short? CategoryClassification,
+        string? CategoryColor,
+        long SecondsActive,
+        int DeviceCount,
+        int VisitCount);
+
+    private sealed record DocumentRow(
+        string DocumentName,
+        Guid? AppId,
+        string? AppDisplayName,
+        long SecondsActive,
+        int OpenCount,
+        int DeviceCount,
+        DateTimeOffset LastSeenAt);
 
     private sealed record CategoryGroupRow(
         Guid? CategoryId,

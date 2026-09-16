@@ -179,6 +179,15 @@ public static class CreateOrgCommand
             ("Jogos", -1, "#dc2626"),
             ("Redes sociais", -1, "#ea580c"),
             ("Vídeo/Streaming", -1, "#e11d48"),
+            // Categorias que vieram com a classificação de SITES: app e site dividem o MESMO
+            // vocabulário (a tabela `categories` é uma só), mas o mundo dos sites tem baldes que
+            // o mundo dos executáveis não tinha. Seguem a regra de sempre — na dúvida, nunca
+            // negativa — e continuam sendo só SUGESTÃO até o cliente aplicar.
+            ("Governo/Fisco", 1, "#0284c7"),
+            ("Bancos/Financeiro", 0, "#16a34a"),
+            ("Busca e portais", 0, "#94a3b8"),
+            ("Notícias", 0, "#0ea5e9"),
+            ("Compras", -1, "#f59e0b"),
         ];
 
         foreach (var (categoryName, classification, color) in seed)

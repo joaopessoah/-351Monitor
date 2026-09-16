@@ -12,6 +12,8 @@
     <!-- F1.1, dicionário de apps BR embutido no assembly (AppDictionarySeeder): viaja com o
          código para API, worker e testes, sem depender do working directory de cada host. -->
     <EmbeddedResource Include="Data\AppDictionary\apps-br.csv" />
+    <!-- Mesma coisa para o dicionário de SITES (SiteDictionarySeeder). -->
+    <EmbeddedResource Include="Data\AppDictionary\sites-br.csv" />
   </ItemGroup>
 
   <ItemGroup>

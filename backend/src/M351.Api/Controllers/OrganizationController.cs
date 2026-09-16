@@ -416,10 +416,20 @@ public class OrganizationController(M351DbContext db, AuditWriter audit, NpgsqlD
             }
         }
 
-        if (!hasIdle && !hasPolicy && !hasPatterns && !hasIgnored && !hasWindow && !hasNotice)
+        // ----- site_capture / document_capture: chaves de COLETA, booleanas -----
+        var siteCapture = ReadBool(body, "site_capture", out var siteInvalid);
+        var documentCapture = ReadBool(body, "document_capture", out var documentInvalid);
+        if (siteInvalid || documentInvalid)
         {
             return ProblemResponse(StatusCodes.Status400BadRequest,
-                "Nenhum campo editável informado (idle_threshold_sec, window_title_policy, masked_patterns, ignored_processes, collection_window, notice_text).");
+                "site_capture e document_capture devem ser true ou false.");
+        }
+
+        if (!hasIdle && !hasPolicy && !hasPatterns && !hasIgnored && !hasWindow && !hasNotice
+            && siteCapture is null && documentCapture is null)
+        {
+            return ProblemResponse(StatusCodes.Status400BadRequest,
+                "Nenhum campo editável informado (idle_threshold_sec, window_title_policy, masked_patterns, ignored_processes, collection_window, notice_text, site_capture, document_capture).");
         }
 
         var tenantId = CurrentUser.TenantId(User);
@@ -464,14 +474,39 @@ public class OrganizationController(M351DbContext db, AuditWriter audit, NpgsqlD
             windowChanged = true;
         }
 
+        // Ligar uma coleta AUMENTA o escopo do que é observado, e aí o funcionário precisa ser
+        // avisado de novo. Desligar NÃO reavisa: menos coleta não precisa de novo aviso, e forçar
+        // todo mundo a reconfirmar porque a empresa passou a coletar MENOS seria ruído sem
+        // informação. A mesma bandeira serve ao texto do aviso reescrito, logo abaixo.
+        var precisaReavisar = false;
+        if (siteCapture is { } site && config.SiteCapture != site)
+        {
+            changes["site_capture"] = new { from = config.SiteCapture, to = site };
+            config.SiteCapture = site;
+            precisaReavisar |= site;
+        }
+
+        if (documentCapture is { } document && config.DocumentCapture != document)
+        {
+            changes["document_capture"] = new { from = config.DocumentCapture, to = document };
+            config.DocumentCapture = document;
+            precisaReavisar |= document;
+        }
+
         if (hasNotice && config.NoticeText != notice)
         {
             changes["notice_text"] = new { from = config.NoticeText, to = notice };
             config.NoticeText = notice;
 
-            // sobe também a versão do aviso: é o bump de notice_version que faz o NoticeForm
-            // reaparecer na frota e gerar um NOTICE_ACK novo. Um aviso reescrito que ninguém
-            // volta a ver não informa ninguém, e ficaria só como texto no banco.
+            // Um aviso reescrito que ninguém volta a ver não informa ninguém, e ficaria só como
+            // texto no banco.
+            precisaReavisar = true;
+        }
+
+        if (precisaReavisar)
+        {
+            // UM bump só, mesmo que a chamada tenha mudado texto E ligado coleta: é o bump de
+            // notice_version que faz o NoticeForm reaparecer na frota e gerar NOTICE_ACK novo.
             changes["notice_version"] = new { from = config.NoticeVersion, to = config.NoticeVersion + 1 };
             config.NoticeVersion++;
         }
@@ -515,7 +550,23 @@ public class OrganizationController(M351DbContext db, AuditWriter audit, NpgsqlD
         NoticeTextPolicy.DefaultBody,
         NoticeTextPolicy.FixedFraming,
         NoticeTextPolicy.MaxBodyLength,
-        config.UpdatedAt);
+        config.UpdatedAt,
+        config.SiteCapture,
+        config.DocumentCapture);
+
+    /// <summary>
+    /// Booleano OPCIONAL do corpo cru: ausente = null (não muda), true/false = valor, qualquer
+    /// outra coisa marca <paramref name="invalid"/>. Mesma disciplina de "ausente ≠ null" usada
+    /// no resto do PATCH.
+    /// </summary>
+    private static bool? ReadBool(JsonElement body, string name, out bool invalid)
+    {
+        invalid = false;
+        if (!body.TryGetProperty(name, out var el)) return null;
+        if (el.ValueKind is JsonValueKind.True or JsonValueKind.False) return el.GetBoolean();
+        invalid = true;
+        return null;
+    }
 
     private ObjectResult? ParseCollectionWindow(JsonElement el, out string? canonicalJson)
     {

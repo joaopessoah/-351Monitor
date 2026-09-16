@@ -294,6 +294,68 @@ public class TenantIsolationTests(ApiTestFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task PutSiteCatalogComCategoriaDeOutroTenant_Retorna404_ESemMapeamento()
+    {
+        // site_catalog é GLOBAL (o domínio é público) — o gate é a categoria, que é do tenant
+        var siteId = Uuid7.NewUuid7();
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString, """
+            INSERT INTO site_catalog (id, domain, display_name)
+            VALUES (@s, 'iso-put-site.com.br', 'iso-put-site.com.br')
+            """, ("s", siteId));
+        var categoriaB = await SeedCategoriaTenantBAsync("iso-site-put");
+
+        var response = await SendAsync(HttpMethod.Put,
+            $"/api/v1/site-catalog/{siteId}/category", new { category_id = categoriaB });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+
+        var mapeado = await TestDb.ScalarAsync<long>(fixture.Database.ConnectionString,
+            "SELECT count(*) FROM tenant_site_categories WHERE site_id = @s", ("s", siteId));
+        Assert.Equal(0L, mapeado);
+    }
+
+    [Fact]
+    public async Task SiteUsadoSoPorOutroTenant_NaoVazaNoCatalogoNemNoRelatorio()
+    {
+        var siteId = Uuid7.NewUuid7();
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString, """
+            INSERT INTO site_catalog (id, domain, display_name)
+            VALUES (@s, 'iso-site-leak.com.br', 'iso-site-leak.com.br')
+            """, ("s", siteId));
+        await TestDb.ExecuteAsync(fixture.Database.ConnectionString, """
+            INSERT INTO daily_site_usage (
+                tenant_id, summary_date, device_id, device_user_id, site_id, seconds_active, visit_count)
+            VALUES (@t, '2026-06-01', @d, '00000000-0000-0000-0000-000000000000', @s, 1800, 3)
+            """, ("t", _deviceB.TenantId), ("d", _deviceB.Id), ("s", siteId));
+
+        var relatorio = await SendAsync(HttpMethod.Get,
+            "/api/v1/reports/usage?from=2026-06-01&to=2026-06-07&group_by=site");
+        Assert.Equal(HttpStatusCode.OK, relatorio.StatusCode);
+        using (var body = JsonDocument.Parse(await relatorio.Content.ReadAsStringAsync()))
+        {
+            Assert.Empty(body.RootElement.GetProperty("items").EnumerateArray());
+            Assert.Equal(0, body.RootElement.GetProperty("total_seconds_active").GetInt64());
+        }
+
+        var catalogo = await SendAsync(HttpMethod.Get, "/api/v1/site-catalog");
+        Assert.Equal(HttpStatusCode.OK, catalogo.StatusCode);
+        using (var body = JsonDocument.Parse(await catalogo.Content.ReadAsStringAsync()))
+        {
+            var dominios = body.RootElement.GetProperty("items").EnumerateArray()
+                .Select(i => i.GetProperty("domain").GetString())
+                .ToList();
+            Assert.DoesNotContain("iso-site-leak.com.br", dominios);
+        }
+    }
+
+    [Fact]
+    public async Task ReportsDocumentsComDeviceIdsDeOutroTenant_Retorna404()
+    {
+        var response = await SendAsync(HttpMethod.Get,
+            $"/api/v1/reports/documents?from=2026-06-01&to=2026-06-07&device_ids={_deviceB.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task ReportsUsageComDeviceIdsDeOutroTenant_Retorna404_ESemAuditoria()
     {
         // mesmo gate do dashboard/summary com device_id de B: 404, nunca 403

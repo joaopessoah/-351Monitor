@@ -41,6 +41,7 @@ import type {
   UsageDeviceItem,
   UsageDeviceUserItem,
   UsageReportResponse,
+  UsageSiteItem,
 } from "@/lib/types";
 import { useUrlState } from "@/lib/useUrlState";
 import type { UrlStateCodec } from "@/lib/useUrlState";
@@ -77,16 +78,17 @@ const TAB_OPTIONS: { value: UsoTab; label: string }[] = [
   { value: "fora-do-horario", label: "Fora do horário de trabalho" },
 ];
 
-type GroupBy = "app" | "category" | "device" | "device_user";
+type GroupBy = "app" | "site" | "category" | "device" | "device_user";
 
 const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
   { value: "app", label: "Aplicativo" },
+  { value: "site", label: "Site" },
   { value: "category", label: "Categoria" },
   { value: "device", label: "Dispositivo" },
   { value: "device_user", label: "Pessoa" },
 ];
 
-type UsageRow = UsageAppItem | UsageCategoryItem | UsageDeviceItem | UsageDeviceUserItem;
+type UsageRow = UsageAppItem | UsageSiteItem | UsageCategoryItem | UsageDeviceItem | UsageDeviceUserItem;
 
 interface NumericColumn {
   key: string;
@@ -107,6 +109,11 @@ const NUMERIC_COLUMNS: Record<GroupBy, NumericColumn[]> = {
   app: [
     { key: "seconds_active", label: "Tempo ativo" },
     { key: "device_count", label: "Dispositivos" },
+  ],
+  site: [
+    { key: "seconds_active", label: "Tempo ativo" },
+    { key: "device_count", label: "Dispositivos" },
+    { key: "visit_count", label: "Acessos" },
   ],
   category: [
     { key: "seconds_active", label: "Tempo ativo" },
@@ -218,6 +225,7 @@ function SortableTh({
  */
 function comparisonKeyOf(groupBy: GroupBy, row: UsageRow): string {
   if (groupBy === "app") return (row as UsageAppItem).app_id;
+  if (groupBy === "site") return (row as UsageSiteItem).site_id;
   if (groupBy === "category") return (row as UsageCategoryItem).category_id ?? "uncategorized";
   return (row as UsageDeviceItem).device_id;
 }
@@ -416,11 +424,13 @@ export function UsoPage() {
   const textHeaders: string[] =
     groupBy === "app"
       ? ["App", "Categoria"]
-      : groupBy === "category"
-        ? ["Categoria", "Classificação"]
-        : groupBy === "device"
-          ? ["Dispositivo"]
-          : ["Dispositivo", "Usuário"];
+      : groupBy === "site"
+        ? ["Site", "Categoria"]
+        : groupBy === "category"
+          ? ["Categoria", "Classificação"]
+          : groupBy === "device"
+            ? ["Dispositivo"]
+            : ["Dispositivo", "Usuário"];
   const colCount = textHeaders.length + numericCols.length + (compareActive ? 1 : 0);
 
   // MESMA queryKey do ForaDoHorarioPanel: o TanStack resolve do cache, sem
@@ -705,6 +715,45 @@ export function UsoPage() {
                             </td>
                             <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
                               {item.device_count}
+                            </td>
+                            {compareActive && (
+                              <ComparisonCell
+                                seconds={item.seconds_active}
+                                rowKey={comparisonKeyOf(groupBy, item)}
+                                prevSecondsByKey={prevSecondsByKey}
+                                prevRange={prevRange}
+                              />
+                            )}
+                          </tr>
+                        );
+                      }
+                      if (groupBy === "site") {
+                        const item = row as UsageSiteItem;
+                        return (
+                          <tr key={item.site_id} className="border-b transition-colors last:border-b-0 hover:bg-accent/50">
+                            <td className="px-6 py-2">
+                              <span className="block max-w-[20rem] truncate font-medium">
+                                {item.custom_display_name ?? item.display_name}
+                              </span>
+                              <span className="block max-w-[20rem] truncate text-xs text-muted-foreground">
+                                {item.domain}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2">
+                              <CategoryDot
+                                name={item.category?.name ?? null}
+                                color={item.category?.color ?? null}
+                                classification={item.category?.classification ?? null}
+                              />
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                              {formatDuration(item.seconds_active)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                              {item.device_count}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                              {item.visit_count}
                             </td>
                             {compareActive && (
                               <ComparisonCell

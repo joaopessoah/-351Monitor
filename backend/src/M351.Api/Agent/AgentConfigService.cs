@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 namespace M351.Api.Agent;
 
 /// <summary>
-/// Monta o objeto canônico de config do agente (Seção 5.5 — sempre os 11 campos).
+/// Monta o objeto canônico de config do agente (Seção 5.5 — sempre os 13 campos).
 /// `transparency_url` é derivada de Portal:BaseUrl + slug da org (página pública
 /// /transparencia/:slug — Seção 8.8).
 ///
@@ -34,7 +34,9 @@ public class AgentConfigService(IOptions<PortalOptions> portalOptions)
         TransparencyUrl(orgSlug),
         string.IsNullOrWhiteSpace(config.NoticeText) ? null : config.NoticeText,
         config.NoticeVersion,
-        transparencyToken is { } token ? DeviceTransparencyUrl(token) : null);
+        transparencyToken is { } token ? DeviceTransparencyUrl(token) : null,
+        config.SiteCapture,
+        config.DocumentCapture);
 
     public string TransparencyUrl(string orgSlug) =>
         $"{portalOptions.Value.BaseUrl.TrimEnd('/')}/transparencia/{orgSlug}";

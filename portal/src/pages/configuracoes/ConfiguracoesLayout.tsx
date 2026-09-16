@@ -13,6 +13,11 @@ const baseTabs = [
   // recálculo de histórico, não só o CRUD de categorias. A ROTA continua
   // /configuracoes/categorias de propósito (link salvo/compartilhado não quebra).
   { to: "/configuracoes/categorias", label: "Classificação" },
+  // Sites: a MESMA curadoria da aba acima, para os domínios da navegação. A rota
+  // fica fora de /configuracoes (é /sites) porque a tela também é consulta — mas
+  // o caminho até ela é este, ao lado de Classificação, que é onde quem vai
+  // classificar procura.
+  { to: "/sites", label: "Sites" },
   // F7: equipes de verdade (vínculo por PESSOA), jornada por equipe e feriados.
   // Fica ao lado de Classificação de propósito: é lá que o escopo de equipe da
   // regra é escolhido, e as duas telas se referenciam.

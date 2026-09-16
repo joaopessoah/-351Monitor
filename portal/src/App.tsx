@@ -10,12 +10,14 @@ import { VisaoGeralPage } from "@/pages/VisaoGeralPage";
 import { LinhaDoTempoPage } from "@/pages/LinhaDoTempoPage";
 import { ColaboradoresPage } from "@/pages/ColaboradoresPage";
 import { AppsPage } from "@/pages/AppsPage";
+import { SitesPage } from "@/pages/SitesPage";
 import { DispositivosPage } from "@/pages/DispositivosPage";
 import { PessoaPage } from "@/pages/PessoaPage";
 import { CobrancaPage } from "@/pages/CobrancaPage";
 import { RelatoriosHubPage } from "@/pages/relatorios/RelatoriosHubPage";
 import { JornadaPage } from "@/pages/relatorios/JornadaPage";
 import { UsoPage } from "@/pages/relatorios/UsoPage";
+import { DocumentosPage } from "@/pages/relatorios/DocumentosPage";
 import { ExportacoesPage } from "@/pages/relatorios/ExportacoesPage";
 import { ConfiguracoesLayout } from "@/pages/configuracoes/ConfiguracoesLayout";
 import { UsuariosPage } from "@/pages/configuracoes/UsuariosPage";
@@ -52,10 +54,13 @@ export function App() {
           {/* F6 — a lista de colaboradores que o site promete desde sempre. */}
           <Route path="/colaboradores" element={<ColaboradoresPage />} />
           <Route path="/apps" element={<AppsPage />} />
+          {/* Sites: mesma curadoria dos apps, para os dominios da navegacao. */}
+          <Route path="/sites" element={<SitesPage />} />
           <Route path="/relatorios">
             <Route index element={<RelatoriosHubPage />} />
             <Route path="jornada" element={<JornadaPage />} />
             <Route path="uso" element={<UsoPage />} />
+            <Route path="documentos" element={<DocumentosPage />} />
             <Route path="exportacoes" element={<ExportacoesPage />} />
           </Route>
           <Route path="/dispositivos" element={<DispositivosPage />} />

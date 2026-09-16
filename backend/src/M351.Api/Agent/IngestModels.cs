@@ -99,4 +99,8 @@ public sealed record ParsedEvent(
     int? AppliedConfigVersion,
     string? TamperReason,
     string? UpdateFailureReason,
-    string? UpdateTargetVersion);
+    string? UpdateTargetVersion,
+    /// <summary>ACTIVE_WINDOW_CHANGED: domínio do site em foco, já saneado (null se ausente/inválido).</summary>
+    string? SiteDomain = null,
+    /// <summary>ACTIVE_WINDOW_CHANGED: nome do arquivo aberto, já saneado (null se ausente/inválido).</summary>
+    string? DocumentName = null);

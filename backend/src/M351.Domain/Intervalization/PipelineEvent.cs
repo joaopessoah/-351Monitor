@@ -16,6 +16,12 @@ public sealed record PipelineEvent
     public string? ProcessName { get; init; }
     public string? WindowTitle { get; init; }
 
+    /// <summary>ACTIVE_WINDOW_CHANGED: domínio do site em foco (só domínio, nunca URL).</summary>
+    public string? SiteDomain { get; init; }
+
+    /// <summary>ACTIVE_WINDOW_CHANGED: nome do arquivo aberto.</summary>
+    public string? DocumentName { get; init; }
+
     /// <summary>IDLE_START: o fechamento retroativo (N5) usa este campo, NUNCA o occurred_at.</summary>
     public DateTimeOffset? LastInputAt { get; init; }
 
@@ -64,6 +70,13 @@ public sealed record BuiltInterval
     public required string State { get; init; }
     public string? ProcessName { get; init; }
     public string? WindowTitle { get; init; }
+
+    /// <summary>Domínio do site em foco durante o intervalo (só em intervalos active).</summary>
+    public string? SiteDomain { get; init; }
+
+    /// <summary>Nome do arquivo aberto durante o intervalo (só em intervalos active).</summary>
+    public string? DocumentName { get; init; }
+
     public bool DataIncomplete { get; init; }
 
     public TimeSpan Duration => EndedAt - StartedAt;
@@ -78,4 +91,6 @@ public sealed record LaneSeed(
     string State,
     DateTimeOffset Since,
     string? ProcessName,
-    string? WindowTitle);
+    string? WindowTitle,
+    string? SiteDomain = null,
+    string? DocumentName = null);

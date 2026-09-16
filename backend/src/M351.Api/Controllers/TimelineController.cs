@@ -80,9 +80,11 @@ public class TimelineController(
         var rows = (await connection.QueryAsync<IntervalRow>(new CommandDefinition(
             """
             SELECT i.started_at, i.ended_at, i.state, i.window_title, i.data_incomplete,
-                   i.device_user_id, a.id AS app_id, a.process_name, a.display_name
+                   i.device_user_id, a.id AS app_id, a.process_name, a.display_name,
+                   sc.domain AS site_domain, i.document_name
             FROM activity_intervals i
             LEFT JOIN app_catalog a ON a.id = i.app_id
+            LEFT JOIN site_catalog sc ON sc.id = i.site_id
             WHERE i.tenant_id = @TenantId AND i.device_id = @DeviceId
               AND i.started_at >= @StartFloor AND i.started_at < @End AND i.ended_at > @Start
             ORDER BY i.started_at
@@ -222,9 +224,11 @@ public class TimelineController(
         var rowsByDevice = (await connection.QueryAsync<IntervalRow>(new CommandDefinition(
             """
             SELECT i.device_id, i.started_at, i.ended_at, i.state, i.window_title, i.data_incomplete,
-                   i.device_user_id, a.id AS app_id, a.process_name, a.display_name
+                   i.device_user_id, a.id AS app_id, a.process_name, a.display_name,
+                   sc.domain AS site_domain, i.document_name
             FROM activity_intervals i
             LEFT JOIN app_catalog a ON a.id = i.app_id
+            LEFT JOIN site_catalog sc ON sc.id = i.site_id
             WHERE i.tenant_id = @TenantId AND i.device_id = ANY(@DeviceIds)
               AND i.started_at >= @StartFloor AND i.started_at < @End AND i.ended_at > @Start
             ORDER BY i.started_at
@@ -357,6 +361,10 @@ public class TimelineController(
                 ProcessName = dominant.ProcessName,
                 DisplayName = dominant.DisplayName,
                 WindowTitle = dominant.WindowTitle,
+                // site e arquivo acompanham o trecho DOMINANTE, como app e título: o bloco de
+                // 1 min da timeline representa o que mais ocupou aquele minuto
+                SiteDomain = dominant.SiteDomain,
+                DocumentName = dominant.DocumentName,
                 DataIncomplete = run.Any(r => r.DataIncomplete),
             });
             run.Clear();
@@ -420,7 +428,9 @@ public class TimelineController(
             ? new TimelineAppResponse(appId, r.ProcessName!, r.DisplayName ?? r.ProcessName!, null)
             : null,
         r.State == "active" ? r.WindowTitle : null,
-        r.DataIncomplete);
+        r.DataIncomplete,
+        r.State == "active" ? r.SiteDomain : null,
+        r.State == "active" ? r.DocumentName : null);
 
     private static string ComputeETag(TimelineResponse response)
     {
@@ -479,5 +489,11 @@ public class TimelineController(
         public Guid? AppId { get; set; }
         public string? ProcessName { get; set; }
         public string? DisplayName { get; set; }
+
+        /// <summary>Domínio do site em foco no trecho (só navegação; null no resto).</summary>
+        public string? SiteDomain { get; set; }
+
+        /// <summary>Nome do arquivo aberto no trecho.</summary>
+        public string? DocumentName { get; set; }
     }
 }

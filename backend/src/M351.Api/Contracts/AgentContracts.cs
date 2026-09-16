@@ -18,7 +18,7 @@ public record EnrollResponse(
     int ConfigVersion,
     AgentConfigDto Config);
 
-// ----- Config canônica (Seção 5.5 — objeto completo, sempre os 11 campos) -----
+// ----- Config canônica (Seção 5.5 — objeto completo, sempre os 13 campos) -----
 
 /// <param name="TransparencyUrl">
 /// Página pública da ORGANIZAÇÃO (/transparencia/{slug}) — link divulgável, sem segredo.
@@ -38,6 +38,14 @@ public record EnrollResponse(
 /// transparency_url por slug). A url carrega um SEGREDO de baixo valor: nunca vai para log,
 /// query string de telemetria nem para o payload que o Viewer lê no portal.
 /// </param>
+/// <param name="SiteCapture">
+/// Coleta do DOMÍNIO do site em foco no navegador (nunca a URL completa). Desligado, o agente
+/// sequer lê a barra de endereço — o tempo de navegador continua contando, só sem domínio.
+/// </param>
+/// <param name="DocumentCapture">
+/// Coleta do NOME do arquivo aberto (nunca o caminho, nunca o conteúdo). Desligado, o nome não é
+/// extraído nem enviado, mesmo que continue visível no título da janela.
+/// </param>
 public record AgentConfigDto(
     int HeartbeatSec,
     int ActiveWindowPollSec,
@@ -49,7 +57,9 @@ public record AgentConfigDto(
     string TransparencyUrl,
     string? NoticeText,
     int NoticeVersion,
-    string? DeviceTransparencyUrl);
+    string? DeviceTransparencyUrl,
+    bool SiteCapture = true,
+    bool DocumentCapture = true);
 
 public record CollectionWindowDto(string Mode, int[]? Days, string? Start, string? End);
 

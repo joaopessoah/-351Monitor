@@ -26,6 +26,15 @@ public sealed class IngestService(
 {
     private const int WindowTitleMaxLength = 256; // revalidação servidor (Seção 5.6)
 
+    /// <summary>Teto do domínio (espelho de Privacy.SiteDomain.MaxLength no agente).</summary>
+    private const int SiteDomainMaxLength = 128;
+
+    /// <summary>Teto do nome de arquivo (espelho de Privacy.DocumentName.MaxLength no agente).</summary>
+    private const int DocumentNameMaxLength = 160;
+
+    /// <summary>Caracteres que não existem em nome de arquivo do Windows (barra inclusa: é caminho).</summary>
+    private static readonly char[] InvalidDocumentNameChars = ['\\', '/', ':', '*', '?', '"', '<', '>', '|'];
+
     /// <summary>Teto defensivo para a versão alvo do UPDATE_FAILED (semver cabe folgado).</summary>
     private const int AgentVersionMaxLength = 64;
 
@@ -232,6 +241,8 @@ public sealed class IngestService(
 
         string? processName = null;
         string? windowTitle = null;
+        string? siteDomain = null;
+        string? documentName = null;
         DateTimeOffset? lastInputAt = null;
         string? heartbeatState = null;
         int? appliedConfigVersion = null;
@@ -248,6 +259,13 @@ public sealed class IngestService(
             {
                 windowTitle = windowTitle[..WindowTitleMaxLength];
             }
+
+            // Site e documento (ACTIVE_WINDOW_CHANGED): revalidação de SERVIDOR sobre o que o
+            // agente já filtrou (Seção 5.6). O agente é a autoridade de privacidade, mas não é
+            // fonte confiável de formato — agente adulterado, versão futura ou bug mandariam
+            // lixo direto para o catálogo global de sites, que é compartilhado entre tenants.
+            siteDomain = NormalizeSiteDomain(GetString(data, "site_domain"));
+            documentName = NormalizeDocumentName(GetString(data, "document_name"));
 
             if (type == EventTypes.IdleStart && TryGetTimestamp(data, "last_input_at", out var lia))
             {
@@ -304,9 +322,51 @@ public sealed class IngestService(
             AppliedConfigVersion: appliedConfigVersion,
             TamperReason: tamperReason,
             UpdateFailureReason: updateFailureReason,
-            UpdateTargetVersion: updateTargetVersion);
+            UpdateTargetVersion: updateTargetVersion,
+            SiteDomain: siteDomain,
+            DocumentName: documentName);
 
         return ParseOutcome.Valid;
+    }
+
+    /// <summary>
+    /// Sanitização do domínio recebido: minúsculo, sem espaço, dentro do teto e com a forma de
+    /// host (ponto obrigatório, rótulos com caracteres de domínio). Qualquer outra coisa vira
+    /// null — o evento continua valendo, só não tem site. NUNCA rejeita o lote: um campo torto
+    /// não pode custar ao cliente o resto da telemetria daquela máquina.
+    ///
+    /// Isto NÃO refaz a redução a domínio registrável (que mora no agente, em Privacy.SiteDomain):
+    /// aqui é forma, não política. Um agente que mandasse host completo ("docs.google.com") teria
+    /// a linha aceita como um site próprio no catálogo, e não silenciosamente reescrita.
+    /// </summary>
+    internal static string? NormalizeSiteDomain(string? raw)
+    {
+        if (raw is null) return null;
+        var value = raw.Trim().ToLowerInvariant();
+        if (value.Length is 0 or > SiteDomainMaxLength) return null;
+        if (!value.Contains('.')) return null;
+
+        foreach (var c in value)
+        {
+            if (!char.IsLetterOrDigit(c) && c != '.' && c != '-' && c != ':') return null;
+        }
+
+        return value;
+    }
+
+    /// <summary>
+    /// Sanitização do nome do arquivo: corta no teto e recusa caminho ou caractere proibido em
+    /// nome de arquivo do Windows. O agente já manda só o último segmento; esta é a rede para
+    /// agente adulterado ou antigo — caminho carregaria a pasta do usuário (muitas vezes o nome
+    /// civil), que é justamente o que o agente tira antes de enviar.
+    /// </summary>
+    internal static string? NormalizeDocumentName(string? raw)
+    {
+        if (raw is null) return null;
+        var value = raw.Trim();
+        if (value.Length == 0) return null;
+        if (value.Length > DocumentNameMaxLength) value = value[..DocumentNameMaxLength];
+        return value.IndexOfAny(InvalidDocumentNameChars) >= 0 ? null : value;
     }
 
     private static string? GetString(JsonElement element, string name) =>
@@ -347,7 +407,8 @@ public sealed class IngestService(
             """
             INSERT INTO raw_events
               (tenant_id, device_id, event_id, seq, occurred_at, event_type, tz_offset_min, mono_ms, boot_id,
-               session_id, windows_sid, windows_username, process_name, window_title, payload, received_at)
+               session_id, windows_sid, windows_username, process_name, window_title, site_domain, document_name,
+               payload, received_at)
             VALUES
             """);
 
@@ -361,7 +422,7 @@ public sealed class IngestService(
             var e = events[i];
             sql.Append(i == 0 ? "\n" : ",\n");
             sql.Append(CultureInfo.InvariantCulture,
-                $"(@TenantId, @DeviceId, @e{i}_id, @e{i}_seq, @e{i}_at, @e{i}_type, @e{i}_tz, @e{i}_mono, @e{i}_boot, @e{i}_sess, @e{i}_sid, @e{i}_user, @e{i}_proc, @e{i}_title, CAST(@e{i}_payload AS jsonb), @Now)");
+                $"(@TenantId, @DeviceId, @e{i}_id, @e{i}_seq, @e{i}_at, @e{i}_type, @e{i}_tz, @e{i}_mono, @e{i}_boot, @e{i}_sess, @e{i}_sid, @e{i}_user, @e{i}_proc, @e{i}_title, @e{i}_site, @e{i}_doc, CAST(@e{i}_payload AS jsonb), @Now)");
 
             parameters.Add($"e{i}_id", e.EventId, DbType.Guid);
             parameters.Add($"e{i}_seq", e.Seq, DbType.Int64);
@@ -375,6 +436,8 @@ public sealed class IngestService(
             parameters.Add($"e{i}_user", e.WindowsUser, DbType.String);
             parameters.Add($"e{i}_proc", e.ProcessName, DbType.String);
             parameters.Add($"e{i}_title", e.WindowTitle, DbType.String);
+            parameters.Add($"e{i}_site", e.SiteDomain, DbType.String);
+            parameters.Add($"e{i}_doc", e.DocumentName, DbType.String);
             parameters.Add($"e{i}_payload", e.PayloadJson, DbType.String);
         }
 
@@ -591,7 +654,7 @@ public sealed class IngestService(
             """
             SELECT tenant_id, config_version, heartbeat_sec, active_window_poll_sec, idle_threshold_sec,
                    window_title_policy, masked_patterns, ignored_processes, collection_window,
-                   notice_text, notice_version
+                   notice_text, notice_version, site_capture, document_capture
             FROM tenant_agent_configs
             WHERE tenant_id = @TenantId
             """,

@@ -61,9 +61,13 @@ public sealed class IntervalizationEngine
         public DateTimeOffset OpenSince;
         public string? OpenProcess;
         public string? OpenTitle;
+        public string? OpenSite;
+        public string? OpenDocument;
         public DateTimeOffset? LastEnd;          // invariante de não-sobreposição
         public string? LastKnownProcess;         // p/ IDLE_END/UNLOCK reabrirem active
         public string? LastKnownTitle;
+        public string? LastKnownSite;
+        public string? LastKnownDocument;
     }
 
     private readonly TimeSpan _gap;
@@ -97,8 +101,12 @@ public sealed class IntervalizationEngine
             lane.OpenSince = s.Since;
             lane.OpenProcess = s.ProcessName;
             lane.OpenTitle = s.WindowTitle;
+            lane.OpenSite = s.SiteDomain;
+            lane.OpenDocument = s.DocumentName;
             lane.LastKnownProcess = s.ProcessName;
             lane.LastKnownTitle = s.WindowTitle;
+            lane.LastKnownSite = s.SiteDomain;
+            lane.LastKnownDocument = s.DocumentName;
         }
         // _lastEventAt NÃO é semeado: o gap N7 na borda da janela é detectado pelos
         // próprios eventos relidos (R recua 1 h+); semear com o início do intervalo
@@ -130,9 +138,12 @@ public sealed class IntervalizationEngine
                 EndMachineOff(e.OccurredAt); // defensivo: atividade de usuário implica máquina ligada
                 var lane = GetLane(e.WindowsSid);
                 CloseLane(e.WindowsSid, lane, e.OccurredAt);
-                OpenLane(lane, IntervalStates.Active, e.OccurredAt, e.ProcessName, e.WindowTitle);
+                OpenLane(lane, IntervalStates.Active, e.OccurredAt, e.ProcessName, e.WindowTitle,
+                    e.SiteDomain, e.DocumentName);
                 lane.LastKnownProcess = e.ProcessName;
                 lane.LastKnownTitle = e.WindowTitle;
+                lane.LastKnownSite = e.SiteDomain;
+                lane.LastKnownDocument = e.DocumentName;
                 break;
             }
 
@@ -158,7 +169,8 @@ public sealed class IntervalizationEngine
                 var lane = GetLane(e.WindowsSid);
                 if (lane.OpenState == IntervalStates.Locked) break; // unlock é quem destranca
                 CloseLane(e.WindowsSid, lane, e.OccurredAt);
-                OpenLane(lane, IntervalStates.Active, e.OccurredAt, lane.LastKnownProcess, lane.LastKnownTitle);
+                OpenLane(lane, IntervalStates.Active, e.OccurredAt, lane.LastKnownProcess, lane.LastKnownTitle,
+                    lane.LastKnownSite, lane.LastKnownDocument);
                 break;
             }
 
@@ -175,7 +187,8 @@ public sealed class IntervalizationEngine
                 EndMachineOff(e.OccurredAt); // UNLOCK é evento de retomada (§7.3)
                 var lane = GetLane(e.WindowsSid);
                 CloseLane(e.WindowsSid, lane, e.OccurredAt);
-                OpenLane(lane, IntervalStates.Active, e.OccurredAt, lane.LastKnownProcess, lane.LastKnownTitle);
+                OpenLane(lane, IntervalStates.Active, e.OccurredAt, lane.LastKnownProcess, lane.LastKnownTitle,
+                    lane.LastKnownSite, lane.LastKnownDocument);
                 break;
             }
 
@@ -219,8 +232,10 @@ public sealed class IntervalizationEngine
                         "locked" => IntervalStates.Locked,
                         _ => IntervalStates.Active
                     };
-                    var proc = state == IntervalStates.Active ? (e.ProcessName ?? lane.LastKnownProcess) : null;
-                    OpenLane(lane, state, e.OccurredAt, proc, state == IntervalStates.Active ? lane.LastKnownTitle : null);
+                    var ativo = state == IntervalStates.Active;
+                    var proc = ativo ? (e.ProcessName ?? lane.LastKnownProcess) : null;
+                    OpenLane(lane, state, e.OccurredAt, proc, ativo ? lane.LastKnownTitle : null,
+                        ativo ? lane.LastKnownSite : null, ativo ? lane.LastKnownDocument : null);
                 }
                 break;
             }
@@ -252,7 +267,8 @@ public sealed class IntervalizationEngine
         foreach (var (sid, lane) in _lanes)
         {
             if (lane.OpenState is null) continue;
-            tails.Add(new LaneSeed(sid, lane.OpenState, lane.OpenSince, lane.OpenProcess, lane.OpenTitle));
+            tails.Add(new LaneSeed(sid, lane.OpenState, lane.OpenSince, lane.OpenProcess, lane.OpenTitle,
+                lane.OpenSite, lane.OpenDocument));
             CloseLane(sid, lane, last); // fecha no último evento; próximo rebuild re-estende
         }
         if (_machineOff)
@@ -268,12 +284,15 @@ public sealed class IntervalizationEngine
     private static DateTimeOffset Clamp(DateTimeOffset value, DateTimeOffset min, DateTimeOffset max)
         => value < min ? min : value > max ? max : value;
 
-    private void OpenLane(Lane lane, string state, DateTimeOffset since, string? process, string? title)
+    private void OpenLane(Lane lane, string state, DateTimeOffset since, string? process, string? title,
+        string? site = null, string? document = null)
     {
         lane.OpenState = state;
         lane.OpenSince = lane.LastEnd is { } end && since < end ? end : since;
         lane.OpenProcess = process;
         lane.OpenTitle = title;
+        lane.OpenSite = site;
+        lane.OpenDocument = document;
     }
 
     private void CloseLane(string sid, Lane lane, DateTimeOffset at)
@@ -288,7 +307,11 @@ public sealed class IntervalizationEngine
                 EndedAt = at,
                 State = lane.OpenState,
                 ProcessName = lane.OpenState == IntervalStates.Active ? lane.OpenProcess : null,
-                WindowTitle = lane.OpenState == IntervalStates.Active ? lane.OpenTitle : null
+                WindowTitle = lane.OpenState == IntervalStates.Active ? lane.OpenTitle : null,
+                // site e documento descrevem o que estava em FOCO: ocioso, bloqueado e desligado
+                // não têm site nem arquivo, pela mesma regra que já vale para app e título
+                SiteDomain = lane.OpenState == IntervalStates.Active ? lane.OpenSite : null,
+                DocumentName = lane.OpenState == IntervalStates.Active ? lane.OpenDocument : null
             });
             lane.LastEnd = at;
         }
@@ -299,6 +322,8 @@ public sealed class IntervalizationEngine
         lane.OpenState = null;
         lane.OpenProcess = null;
         lane.OpenTitle = null;
+        lane.OpenSite = null;
+        lane.OpenDocument = null;
     }
 
     private void CloseAllUserLanes(DateTimeOffset at)
@@ -377,7 +402,12 @@ public sealed class IntervalizationEngine
                     pending.EndedAt == iv.StartedAt &&
                     pending.State == iv.State &&
                     pending.ProcessName == iv.ProcessName &&
-                    pending.WindowTitle == iv.WindowTitle)
+                    pending.WindowTitle == iv.WindowTitle &&
+                    // site e documento entram na fusão N20 pelo mesmo motivo que entram no
+                    // dedupe do agente: dois trechos com sites diferentes não são "o mesmo
+                    // intervalo", e fundi-los faria um dos dois sumir do relatório
+                    pending.SiteDomain == iv.SiteDomain &&
+                    pending.DocumentName == iv.DocumentName)
                 {
                     pending = pending with
                     {

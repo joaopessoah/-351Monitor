@@ -99,6 +99,8 @@ function ColetaForm({ config, canEdit }: { config: AgentConfigResponse; canEdit:
   const [saved, setSaved] = useState(false);
   const [sample, setSample] = useState("Consulta senha do banco - Maria Silva.pdf");
   const [noticeText, setNoticeText] = useState(config.notice_text ?? "");
+  const [siteCapture, setSiteCapture] = useState(config.site_capture);
+  const [documentCapture, setDocumentCapture] = useState(config.document_capture);
 
   // Re-sincroniza quando o cache muda (ex.: após salvar).
   useEffect(() => {
@@ -111,6 +113,8 @@ function ColetaForm({ config, canEdit }: { config: AgentConfigResponse; canEdit:
     setStart(config.collection_window.start ?? "08:00");
     setEnd(config.collection_window.end ?? "18:00");
     setNoticeText(config.notice_text ?? "");
+    setSiteCapture(config.site_capture);
+    setDocumentCapture(config.document_capture);
   }, [config]);
 
   const patterns = useMemo(
@@ -154,10 +158,12 @@ function ColetaForm({ config, canEdit }: { config: AgentConfigResponse; canEdit:
           : { mode: "ALWAYS" },
       // texto vazio = null = volta ao corpo padrão do agente
       notice_text: noticeBody.length > 0 ? noticeBody : null,
+      site_capture: siteCapture,
+      document_capture: documentCapture,
     }),
     [
       policy, patterns, ignored, idleValid, idleSec, config.idle_threshold_sec,
-      windowMode, days, start, end, noticeBody,
+      windowMode, days, start, end, noticeBody, siteCapture, documentCapture,
     ],
   );
 
@@ -171,7 +177,9 @@ function ColetaForm({ config, canEdit }: { config: AgentConfigResponse; canEdit:
       ([...days].sort((a, b) => a - b).join(",") !== (config.collection_window.days ?? []).join(",") ||
         start !== (config.collection_window.start ?? "") ||
         end !== (config.collection_window.end ?? ""))) ||
-    noticeBody !== (config.notice_text ?? "");
+    noticeBody !== (config.notice_text ?? "") ||
+    siteCapture !== config.site_capture ||
+    documentCapture !== config.document_capture;
 
   const windowValid = windowMode === "ALWAYS" || (days.length > 0 && start.length === 5 && end.length === 5);
   const canSubmit = canEdit && dirty && idleValid && windowValid && noticeValid && !mutation.isPending;
@@ -333,6 +341,63 @@ function ColetaForm({ config, canEdit }: { config: AgentConfigResponse; canEdit:
               e nenhum título deles é coletado. Gerenciadores de senha já são ignorados de fábrica.
             </p>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Sites e arquivos</CardTitle>
+          <CardDescription>
+            Duas coletas que a controladora liga e desliga de forma independente. Ligar qualquer uma
+            delas AUMENTA o que é observado, então o aviso de ciência reaparece na frota no próximo
+            contato de cada agente — desligar não reexibe nada. Sob a política "somente o
+            aplicativo" nenhuma das duas acontece, mesmo ligadas.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <label className="flex items-start gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={siteCapture}
+              disabled={!canEdit}
+              onChange={(e) => setSiteCapture(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-input"
+            />
+            <span>
+              <span className="font-medium">Domínio dos sites acessados</span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                Somente o domínio (ex.: <code>mercadolivre.com.br</code>) — nunca o endereço
+                completo, nunca a página, nunca janela anônima ou privativa. Desligado, o agente não
+                lê a barra de endereço: o tempo de navegador continua contando, só sem o site.
+              </span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={documentCapture}
+              disabled={!canEdit}
+              onChange={(e) => setDocumentCapture(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-input"
+            />
+            <span>
+              <span className="font-medium">Nome dos arquivos abertos</span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                Somente o nome (ex.: <code>Contrato 2026.docx</code>) — nunca a pasta, nunca o
+                caminho, nunca o conteúdo. O nome é extraído do título da janela JÁ mascarado pelos
+                padrões acima.
+              </span>
+            </span>
+          </label>
+
+          {policy === "APP_ONLY" && (siteCapture || documentCapture) && (
+            <p className="rounded-md border border-dashed bg-accent/30 p-3 text-xs text-muted-foreground">
+              A política de títulos está em "somente o aplicativo": enquanto ela valer, nem o
+              domínio nem o nome do arquivo são coletados, e a página pública de transparência não
+              os anuncia.
+            </p>
+          )}
         </CardContent>
       </Card>
 

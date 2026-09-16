@@ -23,6 +23,21 @@ public sealed record UsageByAppItemResponse(
     long SecondsActive,
     int DeviceCount);
 
+/// <summary>
+/// group_by=site (fonte daily_site_usage; categoria de SITE resolvida na leitura). É o
+/// "quais sites a equipe usou" — recorte do tempo que, em group_by=app, aparece somado dentro
+/// do navegador. As duas visões NUNCA se somam: cada uma responde uma pergunta.
+/// </summary>
+public sealed record UsageBySiteItemResponse(
+    Guid SiteId,
+    string Domain,
+    string DisplayName,
+    string? CustomDisplayName,
+    AppCategoryResponse? Category,
+    long SecondsActive,
+    int DeviceCount,
+    [property: System.Text.Json.Serialization.JsonPropertyName("visit_count")] int VisitCount);
+
 /// <summary>group_by=category; campos null = balde "Não categorizado" (apps sem mapeamento).</summary>
 public sealed record UsageByCategoryItemResponse(
     Guid? CategoryId,
@@ -172,3 +187,35 @@ public sealed record ForaDoHorarioResponse(
     int Total,
     int Page,
     int PageSize);
+
+// ----- GET /api/v1/reports/documents -----
+
+/// <summary>
+/// Relatório de ARQUIVOS abertos no período: uma linha por (aplicativo, nome do arquivo), com
+/// tempo ativo, número de aberturas e em quantos dispositivos apareceu.
+///
+/// FONTE: activity_intervals direto (retenção de 12 meses), e não um agregado próprio. Decisão
+/// documentada: um agregado diário por arquivo teria cardinalidade parecida com a de títulos de
+/// janela — alta, esparsa e sem reuso fora desta tela. O período máximo é o mesmo 92 dias dos
+/// demais relatórios, e a varredura usa o índice parcial ix_intervals_document.
+///
+/// O nome do arquivo é dado pessoal (pode conter nome de cliente, de processo, de pessoa), então
+/// este relatório SEMPRE audita view_report — mesma régua do drill-down de títulos.
+/// </summary>
+public sealed record DocumentsReportResponse(
+    IReadOnlyList<DocumentItemResponse> Items,
+    int Total,
+    int Page,
+    int PageSize,
+    long TotalSecondsActive);
+
+/// <summary>Uma linha do relatório de arquivos. <c>Extension</c> sai do próprio nome, minúscula.</summary>
+public sealed record DocumentItemResponse(
+    string DocumentName,
+    string? Extension,
+    Guid? AppId,
+    string? AppDisplayName,
+    long SecondsActive,
+    [property: System.Text.Json.Serialization.JsonPropertyName("open_count")] int OpenCount,
+    [property: System.Text.Json.Serialization.JsonPropertyName("device_count")] int DeviceCount,
+    DateTimeOffset LastSeenAt);

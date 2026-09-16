@@ -198,6 +198,10 @@ export interface TimelineInterval {
   app: { app_id: string; process_name: string; display_name: string; category: string | null } | null;
   window_title: string | null;
   data_incomplete: boolean;
+  /** Domínio do site em foco no trecho - só navegação, e nunca a URL completa. */
+  site_domain?: string | null;
+  /** Nome do arquivo aberto no trecho. */
+  document_name?: string | null;
 }
 
 export interface TimelineSummary {
@@ -813,7 +817,7 @@ export interface ExportParams {
   /** Etiqueta de equipe do recorte (F5) - ausente quando o CSV é da org inteira. */
   tag?: string;
   /** Apenas usage_csv. */
-  group_by?: "app" | "category" | "device" | "device_user";
+  group_by?: "app" | "site" | "category" | "device" | "device_user";
   /** dsr_subject: titular alvo do pacote. */
   device_user_id?: string;
   /** dsr_device: dispositivo alvo do pacote. */
@@ -1285,6 +1289,13 @@ export interface AgentConfigResponse {
   notice_text: string | null;
   /** Sobe a cada mudança do aviso: é o que reexibe o aviso em toda a frota. */
   notice_version: number;
+  /**
+   * Coleta do DOMÍNIO do site em foco no navegador (nunca a URL completa).
+   * Desligada, o agente nem lê a barra de endereço.
+   */
+  site_capture: boolean;
+  /** Coleta do NOME do arquivo aberto (nunca o caminho, nunca o conteúdo). */
+  document_capture: boolean;
   /** Read-only: corpo padrão exibido quando notice_text é null. */
   notice_default_body: string;
   /** Read-only: enquadramento fixo concatenado PELO AGENTE, não editável pelo tenant. */
@@ -1303,6 +1314,10 @@ export interface AgentConfigPatchRequest {
   collection_window?: CollectionWindow;
   /** null volta ao corpo padrão do agente; o enquadramento fixo nunca é afetado. */
   notice_text?: string | null;
+  /** Liga/desliga a coleta do DOMÍNIO do site em foco no navegador. */
+  site_capture?: boolean;
+  /** Liga/desliga a coleta do NOME do arquivo aberto. */
+  document_capture?: boolean;
 }
 
 // =============================================================================
@@ -1985,4 +2000,96 @@ export interface CapacityResponse {
   from: string;
   to: string;
   scopes: CapacityScope[];
+}
+
+// =============================================================================
+// SITES E DOCUMENTOS
+//
+// Catálogo de sites: espelho do de apps (mesmo shape, mesma cobertura, mesmas
+// categorias - a tabela `categories` é uma só para app e site). `domain` é o
+// DOMÍNIO REGISTRÁVEL que o agente envia; nunca URL, nunca caminho.
+// =============================================================================
+
+export interface SiteCatalogItem {
+  site_id: string;
+  /** Domínio registrável (ex.: "mercadolivre.com.br"). Chave do catálogo global. */
+  domain: string;
+  display_name: string;
+  custom_display_name: string | null;
+  category: TopAppCategory | null;
+  /** SUGESTÃO do dicionário brasileiro de sites (sites-br.csv), nome canônico de categoria. */
+  default_category: string | null;
+  seconds_active_30d: number;
+  device_count_30d: number;
+}
+
+export interface SiteCatalogResponse {
+  items: SiteCatalogItem[];
+  uncategorized_count: number;
+  uncategorized_seconds_active: number;
+  total_seconds_active: number;
+}
+
+/** Body de `PUT /site-catalog/{siteId}/category` - category_id null desmapeia. */
+export interface SiteCategoryPutRequest {
+  category_id: string | null;
+  custom_display_name?: string | null;
+}
+
+export interface SiteCategoryBatchItem {
+  site_id: string;
+  category_id: string | null;
+}
+
+export interface SiteCategoryBatchRequest {
+  items: SiteCategoryBatchItem[];
+}
+
+export interface SiteCategoryBatchResponse {
+  applied: number;
+  items: {
+    site_id: string;
+    domain: string;
+    display_name: string;
+    custom_display_name: string | null;
+    category: TopAppCategory | null;
+  }[];
+  reaggregation_days: number;
+}
+
+/** Teto de itens por chamada do lote de sites (espelha SiteCatalogController.MaxBatchItems). */
+export const SITE_CATEGORY_BATCH_MAX = 500;
+
+/** Item de `GET /reports/usage?group_by=site`. */
+export interface UsageSiteItem {
+  site_id: string;
+  domain: string;
+  display_name: string;
+  custom_display_name: string | null;
+  category: TopAppCategory | null;
+  seconds_active: number;
+  device_count: number;
+  /** Aberturas do site no período (intervalos), não páginas visitadas. */
+  visit_count: number;
+}
+
+/** Item de `GET /reports/documents?from&to` - uma linha por (arquivo, aplicativo). */
+export interface DocumentItem {
+  document_name: string;
+  /** Extensão minúscula sem ponto ("pdf", "docx"); null quando não reconhecida. */
+  extension: string | null;
+  app_id: string | null;
+  app_display_name: string | null;
+  seconds_active: number;
+  open_count: number;
+  device_count: number;
+  last_seen_at: string;
+}
+
+export interface DocumentsReportResponse {
+  items: DocumentItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_seconds_active: number;
 }

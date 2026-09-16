@@ -265,6 +265,9 @@ public class M351DbContext(DbContextOptions<M351DbContext> options, TenantContex
             // F5 — aviso de ciência gerenciado pelo tenant (viaja na config do ack)
             e.Property(x => x.NoticeText).HasColumnName("notice_text").HasColumnType("text");
             e.Property(x => x.NoticeVersion).HasColumnName("notice_version");
+            // Coleta de sites e de nomes de arquivo (chaves da controladora)
+            e.Property(x => x.SiteCapture).HasColumnName("site_capture").HasDefaultValue(true);
+            e.Property(x => x.DocumentCapture).HasColumnName("document_capture").HasDefaultValue(true);
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
 
             e.HasQueryFilter(x => _tenant.TenantId != null && x.TenantId == _tenant.TenantId.Value);

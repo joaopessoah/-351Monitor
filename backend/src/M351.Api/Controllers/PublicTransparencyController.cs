@@ -57,6 +57,11 @@ public class PublicTransparencyController(NpgsqlDataSource dataSource) : Control
     {
         public string Name { get; init; } = string.Empty;
         public string? WindowTitlePolicy { get; init; }
+
+        /// <summary>Tenant sem config ainda (LEFT JOIN) cai no default de fábrica: ligadas.</summary>
+        public bool SiteCapture { get; init; } = true;
+
+        public bool DocumentCapture { get; init; } = true;
         public string? CollectionWindow { get; init; }
         public string? FinalidadeDeclarada { get; init; }
         public string? ContatoDpo { get; init; }
@@ -148,6 +153,8 @@ public class PublicTransparencyController(NpgsqlDataSource dataSource) : Control
     private const string OrgConfigSelect = """
         SELECT o.name                  AS Name,
                c.window_title_policy    AS WindowTitlePolicy,
+               COALESCE(c.site_capture, true)     AS SiteCapture,
+               COALESCE(c.document_capture, true) AS DocumentCapture,
                c.collection_window::text AS CollectionWindow,
                o.finalidade_declarada   AS FinalidadeDeclarada,
                o.contato_dpo            AS ContatoDpo,
@@ -187,7 +194,7 @@ public class PublicTransparencyController(NpgsqlDataSource dataSource) : Control
             ContatoDpo: row.ContatoDpo,
             Vigencia: row.DataVigencia,
             UltimaPurga: ultimaPurga,
-            Coletado: BuildColetado(policyMode),
+            Coletado: BuildColetado(policyMode, row.SiteCapture, row.DocumentCapture),
             NuncaColetado: NuncaColetado,
             Device: device is null
                 ? null
@@ -240,7 +247,7 @@ public class PublicTransparencyController(NpgsqlDataSource dataSource) : Control
     /// "O que é coletado" derivado da política (Seção 9.1, lista FECHADA). O item de título em foco
     /// reflete a window_title_policy vigente. JAMAIS expõe títulos crus.
     /// </summary>
-    private static IReadOnlyList<string> BuildColetado(string policyMode)
+    private static IReadOnlyList<string> BuildColetado(string policyMode, bool siteCapture, bool documentCapture)
     {
         var foco = policyMode switch
         {
@@ -249,15 +256,33 @@ public class PublicTransparencyController(NpgsqlDataSource dataSource) : Control
             _ => "Aplicativo em foco e o titulo da janela com mascaramento de termos sensiveis",
         };
 
-        return
-        [
+        var lista = new List<string>
+        {
             foco,
             "Identificacao da maquina e do usuario do Windows",
             "Eventos de sessao (logon, logoff, bloqueio e desbloqueio)",
             "Eventos de energia (ligar, desligar, suspender e retomar)",
             "O fato da ociosidade (jamais o que foi digitado ou clicado)",
             "Saude do agente (versao, ultimo contato, integridade)",
-        ];
+        };
+
+        // Site e arquivo só aparecem na lista quando a controladora os LIGOU e a política de
+        // títulos admite conteúdo de janela: sob APP_ONLY o agente não coleta nenhum dos dois,
+        // e anunciar coleta que não acontece seria tão errado quanto omitir a que acontece.
+        var admiteConteudo = !string.Equals(policyMode, "APP_ONLY", StringComparison.OrdinalIgnoreCase);
+        if (siteCapture && admiteConteudo)
+        {
+            lista.Add("Dominio do site aberto no navegador (ex.: exemplo.com.br) — nunca o endereco "
+                      + "completo, nunca o conteudo da pagina e nunca em janela anonima/privada");
+        }
+
+        if (documentCapture && admiteConteudo)
+        {
+            lista.Add("Nome do arquivo aberto (ex.: Relatorio.pdf) — nunca a pasta, nunca o caminho "
+                      + "e nunca o conteudo do arquivo");
+        }
+
+        return lista;
     }
 
     /// <summary>"O que NUNCA é coletado" — lista FIXA da Seção 9.7 (linhas vermelhas inegociáveis).</summary>

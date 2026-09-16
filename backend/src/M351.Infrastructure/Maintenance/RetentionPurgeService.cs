@@ -63,6 +63,9 @@ public sealed class RetentionPurgeService(NpgsqlDataSource dataSource, ILogger<R
 
             var summariesDeleted = await DeleteAsync(conn, tx, "daily_device_summaries", cutoff, ct);
             var appUsageDeleted = await DeleteAsync(conn, tx, "daily_app_usage", cutoff, ct);
+            // daily_site_usage e um agregado diario como daily_app_usage: mesma retencao N12, e
+            // a mesma promessa publica de "Agregados: 24 meses" vale para o uso por site.
+            var siteUsageDeleted = await DeleteAsync(conn, tx, "daily_site_usage", cutoff, ct);
             // F6: hourly_activity e um agregado diario como os outros dois (mesma retencao N12)
             var hourlyDeleted = await DeleteAsync(conn, tx, "hourly_activity", cutoff, ct);
             // F9: o agregado MENSAL segue a MESMA retencao dos diarios, e nao uma mais longa. A
@@ -76,6 +79,7 @@ public sealed class RetentionPurgeService(NpgsqlDataSource dataSource, ILogger<R
             var alertsDeleted = await DeleteResolvedAlertsAsync(conn, tx, cutoff, ct);
             detail["daily_device_summaries_deleted"] = summariesDeleted;
             detail["daily_app_usage_deleted"] = appUsageDeleted;
+            detail["daily_site_usage_deleted"] = siteUsageDeleted;
             detail["hourly_activity_deleted"] = hourlyDeleted;
             detail["monthly_summaries_deleted"] = monthlyDeleted;
             detail["management_alerts_deleted"] = alertsDeleted;

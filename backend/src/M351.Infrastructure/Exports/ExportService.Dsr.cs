@@ -158,19 +158,20 @@ public sealed partial class ExportService
     private async Task<(int Rows, bool Truncated)> WriteRawEventsEntryAsync(
         ZipArchive archive, ExportJobRow job, DsrScope scope, string timezone, CancellationToken ct)
     {
-        const string header = "Data/hora;Tipo de evento;Sessão;Aplicativo;Título da janela";
+        const string header = "Data/hora;Tipo de evento;Sessão;Aplicativo;Título da janela;Site;Arquivo aberto";
         var tz = TimeZoneInfo.FindSystemTimeZoneById(timezone);
 
         var (sql, bind) = scope.Kind == "tenant"
             ? ("""
-               SELECT occurred_at, event_type, session_id, process_name, window_title
+               SELECT occurred_at, event_type, session_id, process_name, window_title, site_domain, document_name
                FROM raw_events WHERE tenant_id = @t
                ORDER BY device_id, occurred_at
                LIMIT @RowLimit
                """,
                (Action<NpgsqlCommand>)(cmd => cmd.Parameters.AddWithValue("t", job.TenantId)))
             : ("""
-               SELECT r.occurred_at, r.event_type, r.session_id, r.process_name, r.window_title
+               SELECT r.occurred_at, r.event_type, r.session_id, r.process_name, r.window_title,
+                      r.site_domain, r.document_name
                FROM raw_events r
                JOIN device_users du
                  ON du.tenant_id = r.tenant_id AND du.device_id = r.device_id AND du.windows_sid = r.windows_sid
@@ -190,7 +191,11 @@ public sealed partial class ExportService
                 Csv(reader.IsDBNull(1) ? null : reader.GetString(1)),
                 reader.IsDBNull(2) ? "" : reader.GetInt32(2).ToString(CultureInfo.InvariantCulture),
                 Csv(reader.IsDBNull(3) ? null : reader.GetString(3)),
-                Csv(reader.IsDBNull(4) ? null : reader.GetString(4))),
+                Csv(reader.IsDBNull(4) ? null : reader.GetString(4)),
+                // site e arquivo são dado do PRÓPRIO titular e por isso entram no pacote dele:
+                // um export que esconde parte do que foi coletado não cumpre o direito de acesso
+                Csv(reader.IsDBNull(5) ? null : reader.GetString(5)),
+                Csv(reader.IsDBNull(6) ? null : reader.GetString(6))),
             ct);
     }
 
@@ -198,21 +203,27 @@ public sealed partial class ExportService
     private async Task<(int Rows, bool Truncated)> WriteIntervalsEntryAsync(
         ZipArchive archive, ExportJobRow job, DsrScope scope, string timezone, CancellationToken ct)
     {
-        const string header = "Início;Fim;Estado;Título da janela;Dados incompletos";
+        const string header = "Início;Fim;Estado;Título da janela;Site;Arquivo aberto;Dados incompletos";
         var tz = TimeZoneInfo.FindSystemTimeZoneById(timezone);
 
         var (sql, bind) = scope.Kind == "tenant"
             ? ("""
-               SELECT started_at, ended_at, state, window_title, data_incomplete
-               FROM activity_intervals WHERE tenant_id = @t
-               ORDER BY device_user_id, started_at
+               SELECT i.started_at, i.ended_at, i.state, i.window_title, sc.domain, i.document_name,
+                      i.data_incomplete
+               FROM activity_intervals i
+               LEFT JOIN site_catalog sc ON sc.id = i.site_id
+               WHERE i.tenant_id = @t
+               ORDER BY i.device_user_id, i.started_at
                LIMIT @RowLimit
                """,
                (Action<NpgsqlCommand>)(cmd => cmd.Parameters.AddWithValue("t", job.TenantId)))
             : ("""
-               SELECT started_at, ended_at, state, window_title, data_incomplete
-               FROM activity_intervals WHERE tenant_id = @t AND device_user_id = ANY(@ids)
-               ORDER BY device_user_id, started_at
+               SELECT i.started_at, i.ended_at, i.state, i.window_title, sc.domain, i.document_name,
+                      i.data_incomplete
+               FROM activity_intervals i
+               LEFT JOIN site_catalog sc ON sc.id = i.site_id
+               WHERE i.tenant_id = @t AND i.device_user_id = ANY(@ids)
+               ORDER BY i.device_user_id, i.started_at
                LIMIT @RowLimit
                """,
                cmd =>
@@ -227,7 +238,9 @@ public sealed partial class ExportService
                 FormatTimestamp(reader, 1, tz),
                 Csv(reader.GetString(2)),
                 Csv(reader.IsDBNull(3) ? null : reader.GetString(3)),
-                reader.GetBoolean(4) ? "sim" : "não"),
+                Csv(reader.IsDBNull(4) ? null : reader.GetString(4)),
+                Csv(reader.IsDBNull(5) ? null : reader.GetString(5)),
+                reader.GetBoolean(6) ? "sim" : "não"),
             ct);
     }
 

@@ -234,6 +234,12 @@ if (app.Configuration.GetValue<bool>("Database:AutoMigrate"))
     await new AppDictionarySeeder(
         scope.ServiceProvider.GetRequiredService<NpgsqlDataSource>(),
         scope.ServiceProvider.GetRequiredService<ILogger<AppDictionarySeeder>>()).RunOnceAsync();
+
+    // Dicionário de SITES BR: mesmo papel, mesma idempotência, mesma garantia de nunca tocar a
+    // decisão do tenant — só o catálogo global (site_catalog).
+    await new SiteDictionarySeeder(
+        scope.ServiceProvider.GetRequiredService<NpgsqlDataSource>(),
+        scope.ServiceProvider.GetRequiredService<ILogger<SiteDictionarySeeder>>()).RunOnceAsync();
 }
 
 // antes de QUALQUER middleware que use o IP da conexão (rate limit por IP, logs)

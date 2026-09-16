@@ -19,7 +19,11 @@ public sealed record TimelineIntervalResponse(
     string State,
     TimelineAppResponse? App,
     string? WindowTitle,
-    bool DataIncomplete);
+    bool DataIncomplete,
+    /// <summary>Domínio do site em foco no trecho — só navegação, e nunca URL completa.</summary>
+    string? SiteDomain = null,
+    /// <summary>Nome do arquivo aberto no trecho.</summary>
+    string? DocumentName = null);
 
 /// <summary>Category é null na F2 (categorias/catálogo curado chegam na F3).</summary>
 public sealed record TimelineAppResponse(Guid AppId, string ProcessName, string DisplayName, string? Category);

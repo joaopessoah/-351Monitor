@@ -44,6 +44,20 @@ public class TenantAgentConfig : ITenantEntity
     /// </summary>
     public int NoticeVersion { get; set; } = 1;
 
+    /// <summary>
+    /// Coleta do DOMÍNIO do site em foco no navegador — nunca a URL completa (Seção 6.3).
+    /// Desligada, o agente não lê a barra de endereço: o tempo de navegador continua contando,
+    /// só sem domínio. É decisão da CONTROLADORA, editável em Configurações › Coleta, e o estado
+    /// dela aparece na página pública de transparência e na janela "o que está sendo coletado".
+    /// </summary>
+    public bool SiteCapture { get; set; } = true;
+
+    /// <summary>
+    /// Coleta do NOME do arquivo aberto — nunca o caminho, nunca o conteúdo (Seção 6.3). Mesma
+    /// disciplina do <see cref="SiteCapture"/>: decisão da controladora, visível na transparência.
+    /// </summary>
+    public bool DocumentCapture { get; set; } = true;
+
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     /// <summary>Defaults de fábrica (Seções 5.5, 6.3 e 9.2).</summary>

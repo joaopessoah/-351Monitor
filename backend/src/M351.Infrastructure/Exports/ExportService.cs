@@ -439,6 +439,44 @@ public sealed partial class ExportService(
                     reader.GetInt32(5).ToString(CultureInfo.InvariantCulture));
             }),
 
+        // Espelho do "app" sobre daily_site_usage: a tela de Uso ganhou o recorte por SITE, e o
+        // CSV tem de sair da MESMA query (gate 11.3 — arquivo e tela nunca divergem).
+        "site" => (
+            "Site;Nome de exibição;Categoria;Classificação;Tempo ativo;Horas decimais (ativo);Dispositivos;Acessos",
+            """
+            SELECT s.domain,
+                   COALESCE(tsc.custom_display_name, s.display_name) AS display_name,
+                   c.name AS category_name, c.classification,
+                   sum(u.seconds_active)::bigint AS seconds_active,
+                   count(DISTINCT u.device_id)::int AS device_count,
+                   sum(u.visit_count)::int AS visit_count
+            FROM daily_site_usage u
+            JOIN devices d ON d.id = u.device_id AND d.tenant_id = u.tenant_id
+            JOIN site_catalog s ON s.id = u.site_id
+            LEFT JOIN tenant_site_categories tsc ON tsc.tenant_id = u.tenant_id AND tsc.site_id = u.site_id
+            LEFT JOIN categories c ON c.tenant_id = u.tenant_id AND c.id = tsc.category_id
+            WHERE u.tenant_id = @TenantId
+              AND d.status <> 'archived'
+              AND u.summary_date BETWEEN @From::date AND @To::date
+              AND (@FilterDevices = false OR u.device_id = ANY(@DeviceIds))
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
+            GROUP BY s.domain, COALESCE(tsc.custom_display_name, s.display_name), c.name, c.classification
+            ORDER BY seconds_active DESC, s.domain
+            """,
+            reader =>
+            {
+                var secondsActive = reader.GetInt64(4);
+                return string.Join(';',
+                    Csv(reader.GetString(0)),
+                    Csv(reader.GetString(1)),
+                    Csv(reader.IsDBNull(2) ? "Não categorizado" : reader.GetString(2)),
+                    ClassificationLabel(reader.IsDBNull(3) ? null : reader.GetInt16(3)),
+                    FormatDuration(secondsActive),
+                    DecimalHours(secondsActive),
+                    reader.GetInt32(5).ToString(CultureInfo.InvariantCulture),
+                    reader.GetInt32(6).ToString(CultureInfo.InvariantCulture));
+            }),
+
         "category" => (
             "Categoria;Classificação;Tempo ativo;Horas decimais (ativo);Apps",
             """

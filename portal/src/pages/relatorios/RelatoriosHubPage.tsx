@@ -16,6 +16,12 @@ const reports = [
       "Relatório tabular de uso por aplicativo, categoria, dispositivo ou usuário, com a aba de atividade fora do horário de trabalho.",
   },
   {
+    to: "/relatorios/documentos",
+    title: "Documentos",
+    description:
+      "Arquivos abertos no período, com o aplicativo, o tempo ativo e quantas vezes cada um foi aberto. Nome do arquivo, nunca o conteúdo.",
+  },
+  {
     to: "/relatorios/exportacoes",
     title: "Exportações",
     description: "Histórico das exportações CSV dos últimos 30 dias: quem gerou, quando e com quais filtros.",
@@ -66,6 +72,13 @@ export function RelatoriosHubPage() {
             className="font-medium text-primary underline-offset-2 hover:underline"
           >
             Quanta atividade ficou fora do horário de trabalho?
+          </Link>
+          <span aria-hidden className="text-muted-foreground">·</span>
+          <Link
+            to="/relatorios/uso?group_by=site"
+            className="font-medium text-primary underline-offset-2 hover:underline"
+          >
+            Em quais sites a equipe passou mais tempo?
           </Link>
         </div>
       </Card>
