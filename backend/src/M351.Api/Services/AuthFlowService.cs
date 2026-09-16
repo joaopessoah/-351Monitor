@@ -5,6 +5,7 @@ using M351.Domain.Entities;
 using M351.Infrastructure.Data;
 using M351.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace M351.Api.Services;
 
@@ -53,7 +54,8 @@ public class AuthFlowService(
     IMfaService mfaService,
     JwtTokenService jwtTokenService,
     AuditWriter audit,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IOptions<MfaOptions> mfaOptions)
 {
     public const int MaxFailedAttempts = 10;
     public static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
@@ -110,13 +112,13 @@ public class AuthFlowService(
             return new LoginFlowResult(LoginOutcome.Locked, LockedUntil: lockedUntil);
         }
 
-        if (matched.MfaEnabled)
+        if (mfaOptions.Value.Enforced && matched.MfaEnabled)
         {
             await db.SaveChangesAsync(ct);
             return new LoginFlowResult(LoginOutcome.MfaRequired, MfaToken: jwtTokenService.CreateMfaToken(matched));
         }
 
-        if (matched.Role.RequiresMfa())
+        if (mfaOptions.Value.Enforced && matched.Role.RequiresMfa())
         {
             // Owner/Admin sem MFA configurada: não emite tokens plenos — força o setup
             await db.SaveChangesAsync(ct);
@@ -422,7 +424,7 @@ public class AuthFlowService(
             targetType: "invitation", targetId: invitation.Id,
             detailJson: $$"""{"role":"{{user.Role.ToDbValue()}}"}""");
 
-        if (user.Role.RequiresMfa())
+        if (mfaOptions.Value.Enforced && user.Role.RequiresMfa())
         {
             // papel exige MFA: salvar estado e devolver token temporário para o setup
             await db.SaveChangesAsync(ct);

@@ -31,7 +31,7 @@ Legenda: **[SISTEMA]** o produto faz; **[VOCÊ]** ação manual do comercial/ope
 No container da API (staging: `docker exec m351-staging-api-1 dotnet M351.Api.dll ...`):
 
 ```bash
-# organização + Owner + convite (imprime o link; vale 7 dias; Owner ativa MFA no 1º acesso)
+# organização + Owner + convite (imprime o link; vale 7 dias; sem MFA no acesso desde 16/09/2026, salvo MFA_ENFORCED=true)
 create-org --name "Empresa X" --owner-email dono@empresax.com.br --slug empresa-x
 #   -> nasce com plan=trial e 10 licenças. Piloto negociado fora do padrão: --device-limit 3
 

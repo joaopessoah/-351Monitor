@@ -23,6 +23,7 @@ public class AuthController(
     IMfaService mfaService,
     IEmailSender emailSender,
     IOptions<PortalOptions> portalOptions,
+    IOptions<MfaOptions> mfaOptions,
     TimeProvider timeProvider) : ApiControllerBase
 {
     private IPAddress? ClientIp => HttpContext.Connection.RemoteIpAddress;
@@ -245,7 +246,7 @@ public class AuthController(
             invitation.Email,
             invitation.Role.ToDbValue(),
             org.Name,
-            invitation.Role.RequiresMfa()));
+            mfaOptions.Value.Enforced && invitation.Role.RequiresMfa()));
     }
 
     [HttpPost("invite/accept")]

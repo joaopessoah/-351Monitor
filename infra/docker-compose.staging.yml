@@ -71,6 +71,8 @@ services:
       Jwt__SigningKey: ${JWT_SIGNING_KEY:?defina JWT_SIGNING_KEY em infra/.env}
       # Chave AES-GCM (32 bytes em base64) que cifra os segredos TOTP (mfa_secret_enc)
       Mfa__EncryptionKey: ${MFA_ENCRYPTION_KEY:?defina MFA_ENCRYPTION_KEY em infra/.env}
+      # MFA desligada por padrão em todo acesso (16/09/2026); "true" volta a exigir TOTP de Owner/Admin
+      Mfa__Enforced: ${MFA_ENFORCED:-false}
       # URL base usada nos links de convite por e-mail
       Portal__BaseUrl: https://${STAGING_DOMAIN:?defina STAGING_DOMAIN em infra/.env}
       # Provider de e-mail: Smtp (padrão do appsettings) ou Dev (grava .txt no

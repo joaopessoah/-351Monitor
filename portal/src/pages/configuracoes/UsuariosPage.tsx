@@ -4,8 +4,8 @@
 // AuditoriaPage) com convite por e-mail (POST /users/invitations, válido por
 // 7 dias), troca de papel (PATCH /users/{id}), desativação (DELETE - vira
 // status disabled e revoga as sessões), reenvio de convite (POST
-// /users/{id}/invitations/resend, só para convidados) e recuperação assistida
-// de MFA (POST /users/{id}/mfa/reset). Gates de papel: mexer em Owner exige
+// /users/{id}/invitations/resend, só para convidados). A recuperação de MFA saiu da tela em 16/09/2026 (MFA fora do
+// fluxo de acesso; o reset continua só na API). Gates de papel: mexer em Owner exige
 // ator Owner (a UI nem oferece a ação); o backend garante sempre >= 1 Owner
 // ativo e a UI exibe a mensagem do ProblemDetails (lib/messages).
 // =============================================================================
@@ -18,7 +18,6 @@ import {
   Ellipsis,
   Eye,
   MailPlus,
-  ShieldCheck,
   UserCog,
   UserPlus,
   UserX,
@@ -134,7 +133,7 @@ function ViewerNotice() {
 // Tabela + ações (admin/owner)
 // -----------------------------------------------------------------------------
 
-type UserActionKind = "role" | "deactivate" | "mfa";
+type UserActionKind = "role" | "deactivate";
 
 interface UserAction {
   kind: UserActionKind;
@@ -235,7 +234,6 @@ function UsersCard({ me }: { me: MeResponse }) {
                   <th scope="col" className="px-3 py-2">E-mail</th>
                   <th scope="col" className="px-3 py-2">Papel</th>
                   <th scope="col" className="px-3 py-2">Status</th>
-                  <th scope="col" className="px-3 py-2">MFA</th>
                   <th scope="col" className="px-3 py-2">Último acesso</th>
                   <th scope="col" className="px-6 py-2 text-right">Ações</th>
                 </tr>
@@ -251,7 +249,7 @@ function UsersCard({ me }: { me: MeResponse }) {
                   ))
                 ) : (
                   data.items.map((user) => {
-                    // Mexer em Owner (papel, desativação, MFA) exige ator Owner:
+                    // Mexer em Owner (papel, desativação) exige ator Owner:
                     // a UI nem oferece o menu - espelho dos gates do backend.
                     const canAct = owner || user.role !== "owner";
                     const disabled = user.status === "disabled";
@@ -278,19 +276,6 @@ function UsersCard({ me }: { me: MeResponse }) {
                           >
                             {statusLabels[user.status]}
                           </span>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2">
-                          {user.mfa_enabled ? (
-                            <span className="inline-flex items-center gap-1">
-                              <ShieldCheck
-                                className="h-3.5 w-3.5 shrink-0 text-viz-produtivo"
-                                aria-hidden
-                              />
-                              Sim
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">Não</span>
-                          )}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 tabular-nums text-muted-foreground">
                           {user.last_login_at !== null
@@ -341,22 +326,11 @@ function UsersCard({ me }: { me: MeResponse }) {
       {action !== null && action.kind === "deactivate" && (
         <DeactivateUserDialog user={action.user} onClose={() => setAction(null)} />
       )}
-      {action !== null && action.kind === "mfa" && (
-        <ResetMfaDialog
-          user={action.user}
-          onClose={() => setAction(null)}
-          onDone={(message) => {
-            setAction(null);
-            setRowError(null);
-            setFeedback(message);
-          }}
-        />
-      )}
     </>
   );
 }
 
-/** Menu de reticências da linha - só ações válidas para o status/MFA do usuário. */
+/** Menu de reticências da linha - só ações válidas para o status do usuário. */
 function UserRowActions({
   user,
   resendPending,
@@ -389,12 +363,6 @@ function UserRowActions({
           <DropdownMenuItem disabled={resendPending} onSelect={() => onResend(user)}>
             <MailPlus className="h-3.5 w-3.5" aria-hidden />
             Reenviar convite
-          </DropdownMenuItem>
-        )}
-        {user.mfa_enabled && (
-          <DropdownMenuItem onSelect={() => onAction({ kind: "mfa", user })}>
-            <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
-            Redefinir MFA
           </DropdownMenuItem>
         )}
         {user.status !== "disabled" && (
@@ -658,62 +626,6 @@ function DeactivateUserDialog({ user, onClose }: { user: UserListItem; onClose: 
             disabled={mutation.isPending}
           >
             {mutation.isPending ? "Desativando…" : "Desativar"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/** Recuperação assistida de MFA - POST /users/{id}/mfa/reset (204). */
-function ResetMfaDialog({
-  user,
-  onClose,
-  onDone,
-}: {
-  user: UserListItem;
-  onClose: () => void;
-  onDone: (message: string) => void;
-}) {
-  const queryClient = useQueryClient();
-  const mutation = useMutation({
-    mutationFn: () =>
-      api<void>(`/users/${encodeURIComponent(user.id)}/mfa/reset`, { method: "POST" }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["users"] });
-      onDone(`Verificação em duas etapas redefinida para ${user.email}.`);
-    },
-  });
-
-  return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !mutation.isPending) onClose();
-      }}
-    >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Redefinir verificação em duas etapas</DialogTitle>
-          <DialogDescription>
-            Redefinir a MFA de {user.display_name} ({user.email})?
-          </DialogDescription>
-        </DialogHeader>
-        <p className="text-sm text-muted-foreground">
-          A configuração atual do aplicativo autenticador será removida. No próximo login, o
-          usuário fará um novo setup da verificação em duas etapas antes de entrar.
-        </p>
-        {mutation.isError && (
-          <p role="alert" className="text-sm text-destructive">
-            {problemErrorMessage(mutation.error)}
-          </p>
-        )}
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>
-            Cancelar
-          </Button>
-          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
-            {mutation.isPending ? "Redefinindo…" : "Redefinir MFA"}
           </Button>
         </DialogFooter>
       </DialogContent>

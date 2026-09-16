@@ -54,6 +54,8 @@ public class ApiTestFixture : WebApplicationFactory<Program>
         builder.UseSetting("Database:AutoMigrate", "true");
         builder.UseSetting("Jwt:SigningKey", "chave-de-testes-integracao-0123456789abcdef");
         builder.UseSetting("Mfa:EncryptionKey", "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=");
+        // Os testes de MFA cobrem o modo obrigatório; em produção o default é false (ver MfaOptions).
+        builder.UseSetting("Mfa:Enforced", "true");
         builder.UseSetting("Portal:BaseUrl", "http://localhost:5173");
         builder.UseSetting("Email:Provider", "Dev");
         builder.UseSetting("Exports:Directory", ExportsDirectory);

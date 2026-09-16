@@ -5,6 +5,7 @@ using M351.Domain;
 using M351.Domain.Entities;
 using M351.Infrastructure.Data;
 using M351.IntegrationTests.Support;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -159,6 +160,28 @@ public class AuthTests(ApiTestFixture fixture)
             using var listRequest = AuthClient.AuthorizedRequest(HttpMethod.Get, "/api/v1/users", access);
             var list = await client.SendAsync(listRequest);
             Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task Login_MfaDesligada_OwnerEntraDireto_MesmoComMfaConfigurada()
+    {
+        // Default de produção desde 16/09/2026: Mfa:Enforced=false - nenhum acesso pede TOTP,
+        // nem para Owner/Admin sem setup, nem para quem já tem segredo gravado.
+        using var factory = fixture.WithWebHostBuilder(b => b.UseSetting("Mfa:Enforced", "false"));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+        var org = await fixture.CreateOrganizationAsync("Org Sem MFA");
+        var ownerSemSetup = await fixture.CreateUserAsync(org.Id, UserRole.Owner, mfaEnabled: false);
+        var ownerComMfa = await fixture.CreateUserAsync(org.Id, UserRole.Owner, mfaEnabled: true);
+
+        foreach (var owner in new[] { ownerSemSetup, ownerComMfa })
+        {
+            var login = await client.PostAsJsonAsync("/api/v1/auth/login",
+                new { email = owner.Email, password = owner.Password });
+            Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+            using var body = JsonDocument.Parse(await login.Content.ReadAsStringAsync());
+            Assert.Equal("ok", body.RootElement.GetProperty("status").GetString());
+            Assert.Equal(JsonValueKind.String, body.RootElement.GetProperty("access_token").ValueKind);
         }
     }
 
