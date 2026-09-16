@@ -3,7 +3,10 @@ using System.Text.Json.Serialization;
 namespace M351.Agent.Core.Contracts;
 
 /// <summary>
-/// Objeto `config` do ack/enroll — Seção 5.5 do spec. 11 campos, sempre todos presentes.
+/// Objeto `config` do ack/enroll — Seção 5.5 do spec. 13 campos, sempre todos presentes.
+/// (Os dois últimos, `site_capture` e `document_capture`, entraram com a coleta de sites e
+/// documentos; agente antigo ignora campo desconhecido e servidor antigo simplesmente não os
+/// manda — e aí valem os defaults abaixo.)
 /// </summary>
 public sealed class AgentConfig
 {
@@ -44,6 +47,21 @@ public sealed class AgentConfig
     /// </summary>
     [JsonPropertyName("device_transparency_url")] public string? DeviceTransparencyUrl { get; set; }
 
+    /// <summary>
+    /// Coleta do DOMÍNIO do site em foco no navegador (nunca a URL completa). Desligado, o
+    /// agente sequer lê a barra de endereço — o tempo de navegador continua contando, só sem
+    /// domínio. É a chave que a controladora tem no portal para dizer "aqui não se coleta
+    /// navegação", e ela some junto com o campo na página pública de transparência.
+    /// </summary>
+    [JsonPropertyName("site_capture")] public bool SiteCapture { get; set; } = true;
+
+    /// <summary>
+    /// Coleta do NOME do arquivo aberto (nunca o caminho, nunca o conteúdo). Desligado, o nome
+    /// não é extraído nem enviado, mesmo que ele continue aparecendo no título da janela sob a
+    /// política de títulos vigente.
+    /// </summary>
+    [JsonPropertyName("document_capture")] public bool DocumentCapture { get; set; } = true;
+
     /// <summary>Config de fábrica usada antes do primeiro enroll (sem config do servidor).</summary>
     public static AgentConfig FactoryDefault() => new()
     {
@@ -65,7 +83,9 @@ public sealed class AgentConfig
         TransparencyUrl = null,
         NoticeText = null, // aviso padrão do agente até o tenant definir o dele
         NoticeVersion = 1,
-        DeviceTransparencyUrl = null // só existe depois do enroll (o token nasce lá)
+        DeviceTransparencyUrl = null, // só existe depois do enroll (o token nasce lá)
+        SiteCapture = true,
+        DocumentCapture = true
     };
 }
 

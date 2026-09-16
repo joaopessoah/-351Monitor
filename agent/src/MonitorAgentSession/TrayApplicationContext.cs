@@ -28,6 +28,16 @@ public sealed class TrayApplicationContext : ApplicationContext
     private readonly CancellationTokenSource _cts = new();
     private readonly SessionIdentity _identity;
 
+    /// <summary>
+    /// Leitura da janela do navegador (UIA). Vive NO HELPER de propósito: UI Automation só
+    /// enxerga a interface de quem está na mesma sessão interativa, e o serviço (SYSTEM,
+    /// sessão 0) não está — nem deve estar.
+    /// </summary>
+    private readonly UiaBrowserUrlQuery _browserUrl;
+
+    /// <summary>Telemetria de falha do helper; só existe depois que a config chega pelo pipe.</summary>
+    private AgentErrorReporter? _errors;
+
     private volatile AgentConfig _config = AgentConfig.FactoryDefault();
     private int _configVersion;
     private string? _deviceId;
@@ -55,6 +65,9 @@ public sealed class TrayApplicationContext : ApplicationContext
             sessionId,
             WindowsIdentity.GetCurrent().User?.Value,
             $"{Environment.UserDomainName}\\{Environment.UserName}");
+
+        // Falha de UIA vira AGENT_ERROR (tipo + hash da pilha, sem conteúdo) em vez de sumir.
+        _browserUrl = new UiaBrowserUrlQuery(onFailure: ex => _errors?.Report(ex, sessionId));
 
         _pipe = new PipeClient(sessionId, _log);
         _sink = new PipeEventSink(_pipe);
@@ -100,7 +113,7 @@ public sealed class TrayApplicationContext : ApplicationContext
             _collectorsStarted = true;
             _factory = new EventFactory(message.BootId);
             // AGENT_ERROR do helper sai pelo pipe (o helper não toca a fila) — máx. 1/hora por tipo
-            var errors = new AgentErrorReporter(_factory, ev => _sink.Emit(ev));
+            _errors = new AgentErrorReporter(_factory, ev => _sink.Emit(ev));
             _engine = new SessionCollectorEngine(
                 new Win32ForegroundWindowQuery(),
                 new Win32IdleTimeQuery(),
@@ -111,7 +124,8 @@ public sealed class TrayApplicationContext : ApplicationContext
                 () => _locked,
                 queueDepth: null, // o serviço injeta a saúde operacional no HEARTBEAT
                 _log,
-                errors);
+                _errors,
+                _browserUrl); // leitura da janela do navegador: só no helper, que roda NA sessão do usuário
             _ = _engine.RunAsync(_cts.Token);
             _log.Info("Coletores de sessão iniciados (janela ativa, ociosidade, heartbeat).");
 
@@ -365,6 +379,7 @@ public sealed class TrayApplicationContext : ApplicationContext
             _cts.Cancel();
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
+            _browserUrl.Dispose();
             _pipe.Dispose();
             _logDisposable.Dispose();
         }

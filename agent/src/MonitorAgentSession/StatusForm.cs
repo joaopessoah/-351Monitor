@@ -14,6 +14,8 @@ public sealed class StatusForm : Form
     private readonly Func<(string? DeviceId, int ConfigVersion, AgentConfig Config, bool PipeConnected)> _getInfo;
     private readonly Label _appLabel = NewValueLabel();
     private readonly Label _titleLabel = NewValueLabel();
+    private readonly Label _siteLabel = NewValueLabel();
+    private readonly Label _documentLabel = NewValueLabel();
     private readonly Label _stateLabel = NewValueLabel();
     private readonly Label _lastSentLabel = NewValueLabel();
     private readonly Label _policyLabel = NewValueLabel();
@@ -37,7 +39,7 @@ public sealed class StatusForm : Form
         MaximizeBox = false;
         MinimizeBox = true;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(520, 344);
+        ClientSize = new Size(520, 400);
 
         var table = new TableLayoutPanel
         {
@@ -51,6 +53,8 @@ public sealed class StatusForm : Form
 
         AddRow(table, "Aplicativo em foco:", _appLabel);
         AddRow(table, "Título capturado:", _titleLabel);
+        AddRow(table, "Site em foco:", _siteLabel);
+        AddRow(table, "Arquivo aberto:", _documentLabel);
         AddRow(table, "Estado:", _stateLabel);
         AddRow(table, "Último envio:", _lastSentLabel);
         AddRow(table, "Política de títulos:", _policyLabel);
@@ -76,8 +80,9 @@ public sealed class StatusForm : Form
             Dock = DockStyle.Bottom,
             Height = 48,
             Padding = new Padding(16, 4, 16, 4),
-            Text = "Coleta limitada a: aplicativo/título em foco, sessão, ociosidade e saúde do agente.\n" +
-                   "Nunca: teclas digitadas, capturas de tela, arquivos, e-mails ou mensagens.",
+            Text = "Coleta limitada a: aplicativo/título em foco, domínio do site (nunca o endereço completo),\n" +
+                   "nome do arquivo aberto, sessão, ociosidade e saúde do agente. Nunca: teclas digitadas,\n" +
+                   "capturas de tela, conteúdo de arquivos, e-mails ou mensagens.",
             ForeColor = SystemColors.GrayText
         };
 
@@ -110,6 +115,15 @@ public sealed class StatusForm : Form
 
         _appLabel.Text = status?.ForegroundProcess ?? "-";
         _titleLabel.Text = status?.ForegroundTitle ?? "(não coletado)";
+
+        // Site e arquivo: a janela distingue "a empresa desligou esta coleta" de "não há o que
+        // mostrar agora" — as duas frases significam coisas diferentes para quem está na máquina.
+        _siteLabel.Text = !config.SiteCapture
+            ? "(coleta de sites desligada pela empresa)"
+            : status?.SiteDomain ?? "(não coletado)";
+        _documentLabel.Text = !config.DocumentCapture
+            ? "(coleta de arquivos desligada pela empresa)"
+            : status?.DocumentName ?? "(não coletado)";
         _stateLabel.Text = status?.State switch
         {
             "active" => "Ativo",
@@ -141,9 +155,14 @@ public sealed class StatusForm : Form
         // (FULL/MASKED_PATTERNS/APP_ONLY e o rebaixamento em navegação anônima).
         var (_, _, config, _) = _getInfo();
         var data = _masker.Apply(new ForegroundSample("exemplo.exe", null, null, _maskTestInput.Text), config);
-        _maskTestResult.Text = data.WindowTitle is null
+        var titulo = data.WindowTitle is null
             ? "(somente o aplicativo, o título não é enviado)"
             : data.TitleMasked ? $"{data.WindowTitle} (trechos mascarados)" : data.WindowTitle;
+
+        // O nome do arquivo sai do título JÁ mascarado: o teste mostra isso acontecendo.
+        _maskTestResult.Text = data.DocumentName is null
+            ? titulo
+            : $"{titulo}\nArquivo reconhecido: {data.DocumentName}";
     }
 
     protected override void Dispose(bool disposing)

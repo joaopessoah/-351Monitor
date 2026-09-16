@@ -39,7 +39,7 @@ public sealed class ActiveWindowTracker
     private readonly Queue<long> _hourWindow = new();
 
     private volatile AgentConfig _config;
-    private (string Process, string? Title)? _lastKey;
+    private (string Process, string? Title, string? Site, string? Document)? _lastKey;
     private AgentEvent? _lastEvent;
     private ActiveWindowData? _lastData;
     private long? _lastEmitMono;
@@ -68,9 +68,15 @@ public sealed class ActiveWindowTracker
         if (sample is null) return null; // GetForegroundWindow NULL em trocas: ignorar sem crash
 
         var data = _masker.Apply(sample, _config);
-        var key = (Process: data.ProcessName, Title: NormalizeTitle(data.WindowTitle));
 
-        // Dedupe N1: só mudança de (process_name, título normalizado)
+        // Site e documento entram na CHAVE do dedupe porque entram no PAYLOAD: dois estados com
+        // o mesmo título e domínios diferentes (abas homônimas, navegação dentro de uma SPA que
+        // não mexe no título) são estados distintos, e sem eles na chave o segundo seria
+        // silenciosamente absorvido pelo primeiro — o intervalo ficaria com o site errado.
+        var key = (Process: data.ProcessName, Title: NormalizeTitle(data.WindowTitle),
+                   Site: data.SiteDomain, Document: data.DocumentName);
+
+        // Dedupe N1: só mudança de (process_name, título normalizado, site, documento)
         if (_lastKey is not null && _lastKey.Value == key) return null;
 
         var nowMono = _monoMs();

@@ -49,6 +49,23 @@ public sealed class ActiveWindowData
     [JsonPropertyName("window_title")] public string? WindowTitle { get; set; }
 
     [JsonPropertyName("title_masked")] public bool TitleMasked { get; set; }
+
+    /// <summary>
+    /// DOMÍNIO REGISTRÁVEL do site em foco no navegador (ex.: "mercadolivre.com.br"), JAMAIS a
+    /// URL completa — sem caminho, sem query string, sem subdomínio (Seção 6.3). null sempre que:
+    /// não é navegador, navegação anônima, política APP_ONLY, processo ignorado, `site_capture`
+    /// desligado, o domínio casou com um masked_pattern do tenant, ou a barra de endereço não
+    /// pôde ser lida. Ver Privacy.SiteDomain.
+    /// </summary>
+    [JsonPropertyName("site_domain")] public string? SiteDomain { get; set; }
+
+    /// <summary>
+    /// Nome do arquivo aberto (ex.: "Contrato 2026.docx"), extraído do título JÁ MASCARADO e
+    /// restrito à lista fechada de extensões de documento — nunca o caminho, nunca o conteúdo
+    /// (Seção 6.3). null quando não há título (APP_ONLY/ignorado), quando `document_capture` está
+    /// desligado ou quando o título não descreve um documento. Ver Privacy.DocumentName.
+    /// </summary>
+    [JsonPropertyName("document_name")] public string? DocumentName { get; set; }
 }
 
 public sealed class IdleStartData

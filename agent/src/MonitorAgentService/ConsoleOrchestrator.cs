@@ -70,6 +70,11 @@ public static class ConsoleOrchestrator
         var sink = new QueueEventSink(runtime.Queue, runtime.Factory, identity,
             () => runtime.Sender.LastSuccessfulSendAt);
 
+        // No modo console o processo roda NA sessão interativa do operador, então a leitura da
+        // barra de endereço funciona igual à do helper (no serviço real ela mora só no helper).
+        using var browserUrl = new UiaBrowserUrlQuery(
+            onFailure: ex => runtime.Errors.Report(ex, identity.SessionId));
+
         var engine = new SessionCollectorEngine(
             new Win32ForegroundWindowQuery(),
             new Win32IdleTimeQuery(),
@@ -80,7 +85,8 @@ public static class ConsoleOrchestrator
             () => systemEvents.IsLocked,
             () => runtime.Queue.UnsentCount,
             log,
-            runtime.Errors); // AGENT_ERROR direto na fila (modo console roda tudo num processo)
+            runtime.Errors, // AGENT_ERROR direto na fila (modo console roda tudo num processo)
+            browserUrl);
 
         runtime.AckProcessor.ConfigApplied += cfg =>
         {

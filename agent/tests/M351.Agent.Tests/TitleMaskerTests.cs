@@ -92,12 +92,19 @@ public class TitleMaskerTests
         Assert.Equal("chrome.exe", data.ProcessName);
     }
 
+    /// <summary>
+    /// A comparação passou a ser por CONTÉM (16/09/2026): o Edge escreve "[InPrivate]" no MEIO
+    /// do título, e o teste por sufixo — que era o que existia aqui — deixava o título da janela
+    /// anônima chegar ao servidor. O preço é este falso positivo: um artigo SOBRE navegação
+    /// anônima perde o título. Errar para menos coleta é a direção certa deste teste.
+    /// </summary>
     [Fact]
-    public void Sufixo_anonimo_no_MEIO_do_titulo_nao_rebaixa()
+    public void Marca_anonima_no_MEIO_do_titulo_rebaixa_e_o_falso_positivo_e_aceito()
     {
         var data = new TitleMasker().Apply(
             Sample("chrome.exe", "Como usar (navegação anônima) no Chrome - artigo"), Config(TitlePolicies.Full));
-        Assert.NotNull(data.WindowTitle); // comparação é no FIM do título
+        Assert.Null(data.WindowTitle);
+        Assert.Equal("chrome.exe", data.ProcessName); // o tempo de uso continua contando
     }
 
     [Theory]

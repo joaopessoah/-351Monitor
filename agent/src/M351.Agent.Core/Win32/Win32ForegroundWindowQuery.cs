@@ -45,7 +45,9 @@ public sealed class Win32ForegroundWindowQuery : IForegroundWindowQuery
                 }
             }
 
-            return new ForegroundSample(processName, exePath, appId, title);
+            // hwnd viaja na amostra (e só nela, nunca no evento): é o que a leitura opcional da
+            // barra de endereço precisa para falar com a janela em foco.
+            return new ForegroundSample(processName, exePath, appId, title, hwnd);
         }
         catch (Exception)
         {

@@ -8,7 +8,8 @@ namespace M351.Agent.Core.Collectors;
 public sealed record SessionIdentity(int? SessionId, string? WindowsSid, string? WindowsUser);
 
 public sealed record CollectorStatus(
-    string? ForegroundProcess, string? ForegroundTitle, string State, long IdleMs, DateTimeOffset? LastSentAt);
+    string? ForegroundProcess, string? ForegroundTitle, string State, long IdleMs, DateTimeOffset? LastSentAt,
+    string? SiteDomain = null, string? DocumentName = null);
 
 /// <summary>
 /// Coletores de sessão (Seção 6.2): janela ativa por polling 5 s com dedupe (N1),
@@ -18,6 +19,13 @@ public sealed record CollectorStatus(
 public sealed class SessionCollectorEngine
 {
     private readonly IForegroundWindowQuery _foreground;
+
+    /// <summary>
+    /// Leitura da barra de endereço (opcional). null = coleta de sites indisponível nesta
+    /// hospedagem (modo console sem UIA, teste): tudo segue funcionando sem domínio.
+    /// </summary>
+    private readonly IBrowserUrlQuery? _browserUrl;
+
     private readonly IIdleTimeQuery _idleQuery;
     private readonly IEventSink _sink;
     private readonly EventFactory _factory;
@@ -48,9 +56,11 @@ public sealed class SessionCollectorEngine
         Func<bool> isLocked,
         Func<long>? queueDepth,
         ILogSink log,
-        Diagnostics.AgentErrorReporter? errors = null)
+        Diagnostics.AgentErrorReporter? errors = null,
+        IBrowserUrlQuery? browserUrl = null)
     {
         _errors = errors;
+        _browserUrl = browserUrl;
         _foreground = foreground;
         _idleQuery = idleQuery;
         _sink = sink;
@@ -70,7 +80,9 @@ public sealed class SessionCollectorEngine
         get
         {
             var data = WindowTracker.LastData;
-            return new CollectorStatus(data?.ProcessName, data?.WindowTitle, CurrentState, IdleTracker.LastIdleMs, _sink.LastSentAt);
+            return new CollectorStatus(
+                data?.ProcessName, data?.WindowTitle, CurrentState, IdleTracker.LastIdleMs, _sink.LastSentAt,
+                data?.SiteDomain, data?.DocumentName);
         }
     }
 
@@ -112,7 +124,7 @@ public sealed class SessionCollectorEngine
             {
                 if (!_isLocked() && CollectionAllowedNow())
                 {
-                    var sample = _foreground.GetForegroundWindowInfo();
+                    var sample = WithBrowserReading(_foreground.GetForegroundWindowInfo());
                     var result = WindowTracker.Sample(sample,
                         data => Create(EventTypes.ActiveWindowChanged, data));
                     if (result is not null)
@@ -134,6 +146,33 @@ public sealed class SessionCollectorEngine
 
             await DelaySeconds(_getConfig().ActiveWindowPollSec, ct);
         }
+    }
+
+    /// <summary>
+    /// Lê a janela do navegador e anexa o resultado à amostra.
+    ///
+    /// A leitura acontece para TODA janela de navegador cuja política admita título — inclusive
+    /// com a coleta de sites DESLIGADA, e aí sem tocar na barra de endereço (readUrl: false). O
+    /// motivo é privacidade, não produto: é dos nomes acessíveis da janela que sai a marca de
+    /// navegação anônima do Chrome, e sem ela o rebaixamento para APP_ONLY não aconteceria.
+    ///
+    /// As saídas antecipadas são de CUSTO (não gastar UIA à toa) — quem decide o que pode virar
+    /// dado é sempre o TitleMasker, que repete cada condição.
+    /// </summary>
+    private ForegroundSample? WithBrowserReading(ForegroundSample? sample)
+    {
+        if (sample is null || _browserUrl is null) return sample;
+        if (!BrowserProcesses.IsBrowser(sample.ProcessName)) return sample;
+
+        var config = _getConfig();
+        if (config.WindowTitlePolicy == TitlePolicies.AppOnly) return sample; // nada a coletar nem a proteger
+        if (TitleMasker.IsIgnoredProcess(sample.ProcessName, config)) return sample;
+        if (TitleMasker.IsPrivateBrowsing(sample.Title)) return sample;       // o título já denunciou
+
+        var reading = _browserUrl.Read(sample.Hwnd, sample.ProcessName, readUrl: config.SiteCapture);
+        return reading is null
+            ? sample
+            : sample with { BrowserUrl = reading.Url, BrowserWindowNames = reading.WindowNames };
     }
 
     private async Task IdleLoopAsync(CancellationToken ct)

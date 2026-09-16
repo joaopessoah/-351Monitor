@@ -32,6 +32,11 @@ public class ActiveWindowTrackerTests
         _tracker.Sample(new ForegroundSample(process, $@"C:\{process}", null, title),
             data => _factory.Create(EventTypes.ActiveWindowChanged, data, 1, "S-1", @"ACME\u"));
 
+    private TrackerResult? SampleNavegador(string title, string url) =>
+        _tracker.Sample(
+            new ForegroundSample("chrome.exe", @"C:\chrome.exe", null, title, new IntPtr(7), url),
+            data => _factory.Create(EventTypes.ActiveWindowChanged, data, 1, "S-1", @"ACME\u"));
+
     [Fact]
     public void Primeira_amostra_emite_evento()
     {
@@ -39,6 +44,32 @@ public class ActiveWindowTrackerTests
         Assert.NotNull(result?.NewEvent);
         Assert.Equal(EventTypes.ActiveWindowChanged, result!.NewEvent!.Type);
         Assert.Equal("chrome.exe", result.NewEvent.Data.GetProperty("process_name").GetString());
+    }
+
+    /// <summary>
+    /// Site entra na chave do dedupe: duas páginas com o MESMO título (aplicação de página única
+    /// que não mexe no título, abas homônimas) em domínios diferentes são estados diferentes.
+    /// Sem isso o segundo seria absorvido pelo primeiro e o intervalo ficaria com o site errado.
+    /// </summary>
+    [Fact]
+    public void Troca_de_dominio_com_o_mesmo_titulo_emite_evento_novo()
+    {
+        var primeiro = SampleNavegador("Painel", "https://app.exemplo.com.br/vendas");
+        Assert.Equal("exemplo.com.br", primeiro!.NewEvent!.Data.GetProperty("site_domain").GetString());
+
+        Advance(11_000); // fora da janela anti-flapping N16
+        var segundo = SampleNavegador("Painel", "https://lista.mercadolivre.com.br/tv");
+
+        Assert.NotNull(segundo?.NewEvent);
+        Assert.Equal("mercadolivre.com.br", segundo!.NewEvent!.Data.GetProperty("site_domain").GetString());
+    }
+
+    [Fact]
+    public void Mesmo_site_e_mesmo_titulo_nao_reemitem()
+    {
+        SampleNavegador("Painel", "https://app.exemplo.com.br/vendas");
+        Advance(11_000);
+        Assert.Null(SampleNavegador("Painel", "https://app.exemplo.com.br/vendas"));
     }
 
     [Fact]

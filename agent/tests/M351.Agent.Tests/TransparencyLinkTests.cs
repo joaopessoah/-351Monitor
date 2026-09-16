@@ -77,7 +77,7 @@ public class TransparencyLinkTests
     }
 
     [Fact]
-    public void Config_do_agente_tem_os_11_campos_da_secao_5_5()
+    public void Config_do_agente_tem_os_13_campos_da_secao_5_5()
     {
         var json = JsonSerializer.Serialize(AgentConfig.FactoryDefault(), AgentJsonContext.Default.AgentConfig);
         using var doc = JsonDocument.Parse(json);
@@ -86,9 +86,9 @@ public class TransparencyLinkTests
         Assert.Equal(
             new[]
             {
-                "active_window_poll_sec", "collection_window", "device_transparency_url", "heartbeat_sec",
-                "idle_threshold_sec", "ignored_processes", "masked_patterns", "notice_text",
-                "notice_version", "transparency_url", "window_title_policy"
+                "active_window_poll_sec", "collection_window", "device_transparency_url", "document_capture",
+                "heartbeat_sec", "idle_threshold_sec", "ignored_processes", "masked_patterns", "notice_text",
+                "notice_version", "site_capture", "transparency_url", "window_title_policy"
             },
             keys);
     }
