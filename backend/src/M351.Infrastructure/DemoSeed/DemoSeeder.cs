@@ -288,6 +288,8 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
         public DateTimeOffset? StateSince;
         public string? ForegroundProcess;
         public string? ForegroundTitle;
+        public string? ForegroundSite;
+        public string? ForegroundDocument;
         public DateTimeOffset? AppSince;
     }
 
@@ -783,6 +785,8 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
             rows.Add(row);
             plan.ForegroundProcess = proc;
             plan.ForegroundTitle = title;
+            plan.ForegroundSite = site;
+            plan.ForegroundDocument = document;
             plan.AppSince = at;
         }
 
@@ -1077,8 +1081,9 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
         await ExecAsync(conn, """
             INSERT INTO device_current_state
               (tenant_id, device_id, state, windows_sid, windows_username, foreground_process,
-               foreground_title, state_since, app_since, last_contact_at, updated_at)
-            VALUES (@t, @d, @st, @sid, @wu, @fp, @ft, @ss, @aps, @lc, @lc)
+               foreground_title, foreground_site, foreground_document, state_since, app_since,
+               last_contact_at, updated_at)
+            VALUES (@t, @d, @st, @sid, @wu, @fp, @ft, @fs, @fd, @ss, @aps, @lc, @lc)
             ON CONFLICT (device_id) DO UPDATE SET
               state = EXCLUDED.state, last_contact_at = EXCLUDED.last_contact_at, updated_at = EXCLUDED.updated_at
             """,
@@ -1088,6 +1093,9 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
                 ("wu", state is "off_clean" ? null : plan.WindowsUser),
                 ("fp", isActive ? plan.ForegroundProcess : null),
                 ("ft", isActive ? plan.ForegroundTitle : null),
+                // mesma regra do projetor real: site e arquivo só existem em máquina ATIVA
+                ("fs", isActive ? plan.ForegroundSite : null),
+                ("fd", isActive ? plan.ForegroundDocument : null),
                 ("ss", plan.StateSince?.ToUniversalTime()),
                 ("aps", isActive ? plan.AppSince?.ToUniversalTime() : null), ("lc", lastContact),
             ], ct);
