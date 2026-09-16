@@ -5,6 +5,27 @@
 > (no staging: volume `releases_data` montado em `/var/lib/m351/releases` do container
 > da api) e marca a versão como `is_current`, tudo numa transação auditada.
 
+## Caminho curto: um clique no Actions (desde 16/09/2026)
+
+**Actions › "Publicar release do agente (staging)" › Run workflow.** O workflow
+(`.github/workflows/publicar-release-agente.yml`) faz exatamente a sequência manual desta
+página, com a chave SSH vindo dos secrets que o deploy já usa:
+
+1. roda os testes do agente e constrói o MSI com o mesmo `build-agent-msi.ps1`, derivando a
+   versão de `AgentVersionInfo.cs` (fonte única) e renomeando para `MonitorAgent-<versao>.msi`;
+2. leva por `scp` à VPS, copia para dentro do container da api e roda `publish-agent-release`;
+3. lista o volume de releases e confere que a rota do manifesto responde.
+
+Entradas: `min_version` (padrão `1.0.0`) e `dry_run` (só constrói o MSI, não toca na VPS —
+use para conferir que o instalador sai antes de publicar de verdade).
+
+**Antes de disparar, suba `AgentVersionInfo.Current`**: o workflow não inventa versão, ele lê a
+constante. Publicar sem bump republica a mesma versão e nenhum agente se move.
+
+O passo a passo abaixo continua valendo — é o caminho quando o Actions está fora, quando a
+publicação é em outra máquina que não a VPS de staging, ou quando se quer acompanhar comando a
+comando.
+
 ## Pré-requisitos
 
 - MSI construído pelo CI (artifact `MonitorAgent-msi` do job `agent-msi`, retenção de

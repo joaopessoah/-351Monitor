@@ -88,7 +88,9 @@ public class BatchSenderTests
 
         var body = JsonSerializer.Deserialize(handler.Bodies[0], AgentJsonContext.Default.BatchRequest)!;
         Assert.Equal(3, body.Events.Count);
-        Assert.Equal("1.0.0", body.AgentVersion);
+        // contra a CONSTANTE, não contra o literal: o que este teste prova é que o lote carrega a
+        // versão do agente, e subir a versão num release não pode quebrar teste de envio
+        Assert.Equal(M351.Agent.Core.AgentVersionInfo.Current, body.AgentVersion);
     }
 
     [Fact]

@@ -1,0 +1,198 @@
+# =============================================================================
+# +351 Monitor — publica um release do AGENTE no canal de auto-update do staging
+#
+# O que faz, em dois jobs:
+#   1. msi (windows): constrói o MonitorAgent.msi com o MESMO script do CI
+#      (agent/installer/build-agent-msi.ps1), derivando a versão de
+#      AgentVersionInfo.cs — fonte única — e renomeando para
+#      MonitorAgent-<versao>.msi, porque o nome do arquivo vira o `file_name`
+#      servido em /api/v1/agent/releases/{file};
+#   2. publicar (ubuntu): leva o MSI por scp à VPS, copia para dentro do
+#      container da api e roda `publish-agent-release`, que calcula o SHA-256,
+#      grava em agent_releases e marca como is_current — tudo numa transação
+#      auditada. Termina conferindo que o arquivo está no volume de releases.
+#
+# Por que existe: o passo a passo manual (docs/runbooks/publicar-release-agente.md)
+# exige chave SSH da VPS na mão de quem publica. Aqui a chave é o secret que o
+# deploy já usa, e publicar vira um clique — com a mesma sequência, auditada e
+# repetível.
+#
+# ATENÇÃO, MSI NÃO ASSINADO: enquanto o certificado de code signing não for
+# comprado (docs/runbooks/comprar-certificado-codesigning.md), o instalador sai
+# SEM assinatura Authenticode. Isso instala e atualiza normalmente, porque
+# verify_authenticode nasce FALSE no install.json, mas aumenta muito a chance de
+# falso positivo de antivírus em máquina de cliente. Para o piloto/VM de aceite
+# está previsto; para frota de cliente real, assine antes.
+#
+# Disparo: workflow_dispatch (Actions › "Publicar release do agente (staging)").
+# =============================================================================
+name: Publicar release do agente (staging)
+
+on:
+  workflow_dispatch:
+    inputs:
+      min_version:
+        description: "Versão mínima que ainda recebe este update (semver)"
+        required: true
+        default: "1.0.0"
+      dry_run:
+        description: "Só construir o MSI e mostrar o que seria publicado (não toca na VPS)"
+        type: boolean
+        default: false
+
+# MESMO grupo do deploy e do reseed: publicar release no meio de um deploy
+# deixaria o container da api sendo recriado durante a escrita no volume.
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  msi:
+    name: MSI do agente (WiX)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.versao.outputs.version }}
+    env:
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      # WiX v5 fixo: o v6/v7 exige aceite da EULA OSMF e trava o build (mesma pinagem do CI).
+      WIX_VERSION: "5.0.2"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Versão do agente (de AgentVersionInfo.cs)
+        id: versao
+        shell: pwsh
+        run: |
+          $file = "agent/src/M351.Agent.Core/AgentVersionInfo.cs"
+          $m = Select-String -Path $file -Pattern 'Current\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"'
+          if (-not $m) { throw "Nao foi possivel extrair a versao de $file" }
+          $v = $m.Matches[0].Groups[1].Value
+          Write-Host "Versao do agente: $v"
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Testes do agente
+        run: dotnet test agent/M351.Agent.sln --configuration Release
+
+      - name: Instalar WiX v5 + extensão Util
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version $env:WIX_VERSION
+          $toolsPath = Join-Path $env:USERPROFILE ".dotnet\tools"
+          echo $toolsPath | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          & "$toolsPath\wix.exe" extension add --global WixToolset.Util.wixext/$env:WIX_VERSION
+
+      - name: Build do MSI
+        shell: pwsh
+        run: agent/installer/build-agent-msi.ps1
+
+      - name: Renomear com a versão (o nome vira o file_name servido)
+        shell: pwsh
+        run: |
+          $v = "${{ steps.versao.outputs.version }}"
+          $src = "agent/installer/bin/MonitorAgent.msi"
+          if (-not (Test-Path $src)) { throw "MSI nao encontrado em $src" }
+          Copy-Item $src "agent/installer/bin/MonitorAgent-$v.msi"
+          Get-Item "agent/installer/bin/MonitorAgent-$v.msi" |
+            ForEach-Object { "MSI: $($_.Name) ($([math]::Round($_.Length/1MB,1)) MB)" }
+
+      - name: Upload do MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: MonitorAgent-msi-release
+          path: agent/installer/bin/MonitorAgent-${{ steps.versao.outputs.version }}.msi
+          if-no-files-found: error
+          # mesma economia de cota do CI: o artifact serve ao job seguinte, não ao arquivo morto
+          retention-days: 1
+
+  publicar:
+    name: Publicar no canal de auto-update (SSH)
+    needs: msi
+    if: ${{ inputs.dry_run == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+      STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      VERSAO: ${{ needs.msi.outputs.version }}
+      MIN_VERSION: ${{ inputs.min_version }}
+    steps:
+      - name: Baixar o MSI
+        uses: actions/download-artifact@v4
+        with:
+          name: MonitorAgent-msi-release
+
+      - name: Publicar release
+        run: |
+          set -euo pipefail
+          for v in STAGING_SSH_HOST STAGING_SSH_KEY; do
+            if [ -z "${!v}" ]; then echo "::error::secret $v ausente"; exit 1; fi
+          done
+          if ! printf '%s' "$MIN_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::min_version inválida: $MIN_VERSION (esperado semver x.y.z)"; exit 1
+          fi
+
+          MSI="MonitorAgent-${VERSAO}.msi"
+          if [ ! -f "$MSI" ]; then echo "::error::MSI não veio do job anterior: $MSI"; exit 1; fi
+          echo "publicando $MSI (min_version=$MIN_VERSION)"
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "${STAGING_SSH_KEY}" > ~/.ssh/staging_key
+          chmod 600 ~/.ssh/staging_key
+          USER="${STAGING_SSH_USER:-deploy}"
+          SSH_OPTS="-i $HOME/.ssh/staging_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
+
+          scp $SSH_OPTS "$MSI" "${USER}@${STAGING_SSH_HOST}:/tmp/${MSI}"
+
+          # Valores viajam como atribuições de ambiente (o ssh não preserva argumentos
+          # posicionais vazios — mesma convenção do deploy-staging.sh e do reseed).
+          ssh $SSH_OPTS "${USER}@${STAGING_SSH_HOST}" \
+            "M351_DIR='/opt/351monitor' M351_MSI='${MSI}' M351_V='${VERSAO}' M351_MIN='${MIN_VERSION}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$M351_DIR"
+          ENV=infra/.env
+          COMPOSE="docker compose -f infra/docker-compose.staging.yml --env-file $ENV"
+          DOMAIN="$(grep -E '^STAGING_DOMAIN=' "$ENV" | cut -d= -f2-)"
+          if [ -z "$DOMAIN" ]; then echo "STAGING_DOMAIN ausente em $ENV"; exit 1; fi
+
+          CID="$($COMPOSE ps -q api)"
+          if [ -z "$CID" ]; then echo "container da api não está de pé"; exit 1; fi
+
+          echo "[release] copiando $M351_MSI para dentro do container da api"
+          docker cp "/tmp/$M351_MSI" "$CID:/tmp/$M351_MSI"
+
+          echo "[release] publish-agent-release (SHA-256 + agent_releases + is_current)"
+          $COMPOSE exec -T api dotnet M351.Api.dll publish-agent-release \
+            --version "$M351_V" \
+            --file "/tmp/$M351_MSI" \
+            --min-version "$M351_MIN" \
+            --server-url "https://${DOMAIN}" < /dev/null
+
+          echo "[release] limpando temporários"
+          docker exec "$CID" rm -f "/tmp/$M351_MSI"
+          rm -f "/tmp/$M351_MSI"
+
+          echo "[release] arquivos no volume de releases:"
+          docker exec "$CID" ls -l /var/lib/m351/releases
+
+          # O manifesto é autenticado por DEVICE TOKEN; sem token aqui, a conferência possível é
+          # que a rota exista e recuse anônimo (401) em vez de 404/502 — que denunciariam api no ar
+          # sem a rota ou proxy quebrado.
+          CODE="$(curl -sS -o /dev/null -w '%{http_code}' -m 20 "https://${DOMAIN}/api/v1/agent/update-manifest" || true)"
+          echo "[release] GET /api/v1/agent/update-manifest (anônimo) => HTTP $CODE"
+          if [ "$CODE" != "401" ]; then
+            echo "[release] AVISO: esperado 401 (rota exige device token). Confira o rollout no portal."
+          fi
+          REMOTE
+
+          echo "::notice::Release $VERSAO publicado. Acompanhe em Dispositivos › Versões do agente na frota."
