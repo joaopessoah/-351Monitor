@@ -460,6 +460,14 @@ public sealed class DemoSeeder(NpgsqlDataSource dataSource, IPasswordHasher pass
             ("Jogos", -1, "#dc2626"),
             ("Redes sociais", -1, "#ea580c"),
             ("Vídeo/Streaming", -1, "#e11d48"),
+            // Baldes que vieram com a classificação de SITES (espelho do
+            // CreateOrgCommand.SeedCategoriesAsync — os dois têm de andar juntos, senão a demo
+            // nasce com sites do dicionário apontando para categoria que não existe aqui).
+            ("Governo/Fisco", 1, "#0284c7"),
+            ("Bancos/Financeiro", 0, "#16a34a"),
+            ("Busca e portais", 0, "#94a3b8"),
+            ("Notícias", 0, "#0ea5e9"),
+            ("Compras", -1, "#f59e0b"),
         ];
         foreach (var (name, classification, color) in categories)
         {
