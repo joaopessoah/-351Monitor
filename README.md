@@ -67,7 +67,11 @@ domínio com a mesma curadoria dos aplicativos e uma precedência nova: **regra 
 de app**, que é o que faz marcar "mercadolivre.com.br" como improdutivo mudar o número mesmo com o
 navegador classificado como Navegação. No portal entraram a tela de Sites, o relatório de
 Documentos, o recorte `group_by=site` no relatório de Uso e dois interruptores em Configurações ›
-Coleta — ligar qualquer um deles reexibe o aviso de ciência na frota.
+Coleta — ligar qualquer um deles reexibe o aviso de ciência na frota. Na Visão Geral, o card de
+aplicativos ganhou uma segunda lente (Aplicativos | **Sites**) em vez de um card novo, porque as
+duas listas não se somam — o tempo de site já está dentro do tempo do navegador —, e a faixa
+"Agora" passou a mostrar os domínios mais em foco entre as máquinas ativas, sempre como contagem
+de máquinas, nunca de pessoas.
 
 No caminho, a mesma leva corrigiu um vazamento que já existia: medidos os navegadores reais, o
 rebaixamento automático para `APP_ONLY` em **navegação anônima** não funcionava em nenhum navegador
