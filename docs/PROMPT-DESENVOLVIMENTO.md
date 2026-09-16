@@ -610,6 +610,8 @@ CREATE TABLE device_current_state (   -- projeção "agora", atualizada NO CAMIN
   state text NOT NULL,                -- active|idle|locked|off_clean|no_data
   windows_sid text, windows_username text,
   foreground_process text, foreground_title text,   -- respeita mascaramento (vem mascarado do agente)
+  foreground_site text,               -- domínio do site em foco AGORA (só navegação)
+  foreground_document text,           -- nome do arquivo em foco AGORA
   state_since timestamptz,            -- "neste app/estado há X min"
   app_since timestamptz,
   last_contact_at timestamptz NOT NULL,
@@ -617,7 +619,7 @@ CREATE TABLE device_current_state (   -- projeção "agora", atualizada NO CAMIN
 );
 ```
 
-Atualização de `device_current_state`: ao processar um batch, a API aplica os eventos relevantes (ordem por `seq`) — `ACTIVE_WINDOW_CHANGED` (estado `active` + app), `IDLE_START`/`IDLE_END`, `LOCK`/`UNLOCK`, `SESSION_END`/`AGENT_STOP`/`SYSTEM_SUSPEND` (→ `off_clean`), `HEARTBEAT` (refresh). `last_contact_at` = recepção do batch. A leitura de presença deriva: estado exibido = `state` se `last_contact_at ≤ 180 s` (N6); senão **"Sem comunicação"** — a menos que o último evento tenha sido um desligamento limpo (`off_clean`), que continua "Desligada".
+Atualização de `device_current_state`: ao processar um batch, a API aplica os eventos relevantes (ordem por `seq`) — `ACTIVE_WINDOW_CHANGED` (estado `active` + app + site + arquivo), `IDLE_START`/`IDLE_END`, `LOCK`/`UNLOCK`, `SESSION_END`/`AGENT_STOP`/`SYSTEM_SUSPEND` (→ `off_clean`, e zera app, título, site e arquivo), `HEARTBEAT` (refresh). Site e arquivo ficam AQUI, e não só nos intervalos, porque a faixa "Agora" responde ao instante: esperar o pipeline de intervalização (60 s) seria chegar tarde para a única pergunta que essa faixa faz. `last_contact_at` = recepção do batch. A leitura de presença deriva: estado exibido = `state` se `last_contact_at ≤ 180 s` (N6); senão **"Sem comunicação"** — a menos que o último evento tenha sido um desligamento limpo (`off_clean`), que continua "Desligada".
 
 #### Telemetria
 
@@ -880,6 +882,7 @@ RBAC MVP: **Owner ⊃ Admin ⊃ Viewer** (3 papéis; enum extensível — Manage
 | `GET /dashboard/presence` | Viewer | cards "agora" + tabela "Equipe agora" — lê `device_current_state` (estado, app em foco, "neste app há X min", último contato); regra N6 |
 | `GET /dashboard/summary?from&to&device_id&device_user_id` | Viewer | KPIs de `daily_device_summaries` |
 | `GET /dashboard/top-apps?from&to&limit=10` | Viewer | de `daily_app_usage` |
+| `GET /dashboard/top-sites?from&to&limit=10` | Viewer | de `daily_site_usage` — a segunda lente do MESMO card da Visão Geral. `total_seconds_active` é o total de NAVEGAÇÃO do período (denominador próprio): somá-lo ao total de apps seria dupla contagem, porque o tempo de site já está lá dentro, sob o navegador |
 | `GET /timeline/device?device_id&date` | Viewer | intervalos do dia (resolução fixa 1 min, cap ~3.000 — N21); inclui `data_incomplete` e fuso do device |
 | `GET /timeline/team?date` | Viewer | **uma lane por device, visão do dia** — mesma agregação; FICA no MVP (F3, demo vendável) |
 | `GET /devices?status&tag&q&page&health` | Viewer | lista paginada + saúde (último contato, versão, `os_type`); `health=alert` filtra a FROTA inteira (F5) |

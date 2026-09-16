@@ -121,14 +121,17 @@ public sealed class IngestService(
                 """
                 INSERT INTO device_current_state
                   (tenant_id, device_id, state, windows_sid, windows_username, foreground_process,
-                   foreground_title, state_since, app_since, last_contact_at, updated_at)
-                VALUES (@TenantId, @DeviceId, 'no_data', NULL, NULL, NULL, NULL, NULL, NULL, @Now, @Now)
+                   foreground_title, foreground_site, foreground_document, state_since, app_since,
+                   last_contact_at, updated_at)
+                VALUES (@TenantId, @DeviceId, 'no_data', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, @Now, @Now)
                 ON CONFLICT (device_id) DO UPDATE SET
                   state = EXCLUDED.state,
                   windows_sid = NULL,
                   windows_username = NULL,
                   foreground_process = NULL,
                   foreground_title = NULL,
+                  foreground_site = NULL,
+                  foreground_document = NULL,
                   state_since = NULL,
                   app_since = NULL,
                   last_contact_at = EXCLUDED.last_contact_at,
@@ -579,7 +582,8 @@ public sealed class IngestService(
 
         var row = await connection.QuerySingleOrDefaultAsync<CurrentStateRow>(new CommandDefinition(
             """
-            SELECT state, windows_sid, windows_username, foreground_process, foreground_title, state_since, app_since
+            SELECT state, windows_sid, windows_username, foreground_process, foreground_title,
+                   foreground_site, foreground_document, state_since, app_since
             FROM device_current_state
             WHERE device_id = @DeviceId AND tenant_id = @TenantId
             """,
@@ -592,8 +596,9 @@ public sealed class IngestService(
                 """
                 INSERT INTO device_current_state
                   (tenant_id, device_id, state, windows_sid, windows_username, foreground_process,
-                   foreground_title, state_since, app_since, last_contact_at, updated_at)
-                VALUES (@TenantId, @DeviceId, 'no_data', NULL, NULL, NULL, NULL, NULL, NULL, @Now, @Now)
+                   foreground_title, foreground_site, foreground_document, state_since, app_since,
+                   last_contact_at, updated_at)
+                VALUES (@TenantId, @DeviceId, 'no_data', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, @Now, @Now)
                 ON CONFLICT (device_id) DO UPDATE SET
                   last_contact_at = EXCLUDED.last_contact_at,
                   updated_at = EXCLUDED.updated_at
@@ -616,6 +621,8 @@ public sealed class IngestService(
         parameters.Add("WindowsUsername", row.WindowsUsername, DbType.String);
         parameters.Add("ForegroundProcess", row.ForegroundProcess, DbType.String);
         parameters.Add("ForegroundTitle", row.ForegroundTitle, DbType.String);
+        parameters.Add("ForegroundSite", row.ForegroundSite, DbType.String);
+        parameters.Add("ForegroundDocument", row.ForegroundDocument, DbType.String);
         parameters.Add("StateSince", row.StateSince, DbType.DateTimeOffset);
         parameters.Add("AppSince", row.AppSince, DbType.DateTimeOffset);
         parameters.Add("Now", now, DbType.DateTimeOffset);
@@ -624,15 +631,19 @@ public sealed class IngestService(
             """
             INSERT INTO device_current_state
               (tenant_id, device_id, state, windows_sid, windows_username, foreground_process,
-               foreground_title, state_since, app_since, last_contact_at, updated_at)
+               foreground_title, foreground_site, foreground_document, state_since, app_since,
+               last_contact_at, updated_at)
             VALUES (@TenantId, @DeviceId, @State, @WindowsSid, @WindowsUsername, @ForegroundProcess,
-                    @ForegroundTitle, @StateSince, @AppSince, @Now, @Now)
+                    @ForegroundTitle, @ForegroundSite, @ForegroundDocument, @StateSince, @AppSince,
+                    @Now, @Now)
             ON CONFLICT (device_id) DO UPDATE SET
               state = EXCLUDED.state,
               windows_sid = EXCLUDED.windows_sid,
               windows_username = EXCLUDED.windows_username,
               foreground_process = EXCLUDED.foreground_process,
               foreground_title = EXCLUDED.foreground_title,
+              foreground_site = EXCLUDED.foreground_site,
+              foreground_document = EXCLUDED.foreground_document,
               state_since = EXCLUDED.state_since,
               app_since = EXCLUDED.app_since,
               last_contact_at = EXCLUDED.last_contact_at,

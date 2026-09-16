@@ -445,6 +445,91 @@ public class SitesEDocumentosTests(ApiTestFixture fixture)
         Assert.DoesNotContain("Ata da reuniao.docx", nomes);
     }
 
+    // ------------------------------------------------------------ Visão Geral: top sites e "agora"
+    [Fact]
+    public async Task DashboardTopSites_RankeiaPorTempoComCategoria()
+    {
+        var (client, _, adminToken, viewerToken, fullKey) = await SetupAsync("TopSites");
+        var device = await AgentClient.EnrollAsync(client, fullKey, hostname: "NB-TOP-SITES");
+        var muito = $"muito-{Guid.NewGuid():N}"[..15] + ".com.br";
+        var pouco = $"pouco-{Guid.NewGuid():N}"[..15] + ".com.br";
+
+        await SeedActiveAsync(client, device, "chrome.exe", T(9, 0), 8, site: muito);
+        await SeedActiveAsync(client, device, "chrome.exe", T(9, 30), 2, site: pouco);
+        await RunIntervalizationAsync();
+        await RunAggregationAsync();
+
+        var categoria = await PostCategoryAsync(client, adminToken, "Trabalho", 1);
+        (await ReadAsync(await SendAsync(client, HttpMethod.Put,
+            $"/api/v1/site-catalog/{await SiteIdAsync(muito)}/category", adminToken,
+            new { category_id = categoria }), HttpStatusCode.OK)).Dispose();
+
+        var dia = LocalDate(T(9, 0));
+        var response = await SendAsync(client, HttpMethod.Get,
+            $"/api/v1/dashboard/top-sites?from={dia}&to={dia}&limit=5", viewerToken);
+        using var doc = await ReadAsync(response, HttpStatusCode.OK);
+
+        var itens = doc.RootElement.GetProperty("items").EnumerateArray().ToList();
+        Assert.Equal(muito, itens[0].GetProperty("domain").GetString());   // ordem por tempo desc
+        Assert.Equal(480, itens[0].GetProperty("seconds_active").GetInt64());
+        Assert.Equal("Trabalho", itens[0].GetProperty("category").GetProperty("name").GetString());
+
+        // total = TODA a navegação do período (denominador do card), não só o top
+        Assert.Equal(600, doc.RootElement.GetProperty("total_seconds_active").GetInt64());
+    }
+
+    /// <summary>
+    /// A faixa "Agora" precisa do site em tempo real — esperar o pipeline de intervalização
+    /// seria chegar tarde para a pergunta que ela responde. A projeção de presença é atualizada
+    /// no caminho da INGESTÃO, então o domínio aparece no mesmo instante do evento.
+    /// </summary>
+    [Fact]
+    public async Task Presenca_TrazSiteEArquivoEmFoco_ELimpaAoEncerrarSessao()
+    {
+        var (client, _, _, viewerToken, fullKey) = await SetupAsync("Presenca");
+        var device = await AgentClient.EnrollAsync(client, fullKey, hostname: "NB-PRESENCA");
+        var dominio = $"agora-{Guid.NewGuid():N}"[..15] + ".com.br";
+
+        var f = new EventFactory();
+        var ack = await AgentClient.SendBatchAsync(client, device.DeviceToken, new[]
+        {
+            f.Event("ACTIVE_WINDOW_CHANGED", DateTimeOffset.UtcNow.AddSeconds(-30),
+                new Dictionary<string, object?>
+                {
+                    ["process_name"] = "chrome.exe",
+                    ["window_title"] = "Painel - Google Chrome",
+                    ["site_domain"] = dominio,
+                    ["document_name"] = "Relatorio.pdf",
+                }),
+        });
+        (await AgentClient.ReadAckAsync(ack)).Dispose();
+
+        var response = await SendAsync(client, HttpMethod.Get, "/api/v1/dashboard/presence", viewerToken);
+        using (var doc = await ReadAsync(response, HttpStatusCode.OK))
+        {
+            var item = doc.RootElement.GetProperty("items").EnumerateArray()
+                .Single(i => i.GetProperty("device_id").GetGuid() == device.DeviceId);
+            Assert.Equal(dominio, item.GetProperty("foreground_site").GetString());
+            Assert.Equal("Relatorio.pdf", item.GetProperty("foreground_document").GetString());
+        }
+
+        // fim de sessão zera o que estava em foco, junto com processo e título
+        var ack2 = await AgentClient.SendBatchAsync(client, device.DeviceToken, new[]
+        {
+            f.Event("SESSION_END", DateTimeOffset.UtcNow.AddSeconds(-5), null),
+        });
+        (await AgentClient.ReadAckAsync(ack2)).Dispose();
+
+        var depois = await SendAsync(client, HttpMethod.Get, "/api/v1/dashboard/presence", viewerToken);
+        using (var doc = await ReadAsync(depois, HttpStatusCode.OK))
+        {
+            var item = doc.RootElement.GetProperty("items").EnumerateArray()
+                .Single(i => i.GetProperty("device_id").GetGuid() == device.DeviceId);
+            Assert.Equal(JsonValueKind.Null, item.GetProperty("foreground_site").ValueKind);
+            Assert.Equal(JsonValueKind.Null, item.GetProperty("foreground_document").ValueKind);
+        }
+    }
+
     // ------------------------------------------------------------ chaves de coleta e transparência
     [Fact]
     public async Task ConfigDeColeta_LigarEDesligar_ViajaNaConfigEReavisaSoAoLigar()

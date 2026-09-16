@@ -162,6 +162,22 @@ Layout persistente: sidebar esquerda colapsável (Visão Geral, Linha do Tempo, 
 
 ---
 
+### 2.4.1 Sites na Visão Geral — implementado em 16/09/2026
+
+- **Card "Aplicativos e sites"** (linha 3): o card de aplicativos ganhou uma segunda LENTE
+  (segmentado Aplicativos | Sites) em vez de um card novo. Motivo: é a mesma pergunta ("onde o
+  tempo foi") e as duas listas **não se somam** — o tempo dos sites já está dentro do tempo do
+  navegador na lista de aplicativos. Dois cards lado a lado convidariam alguém a somar os dois
+  totais; uma lente deixa explícito que é o mesmo tempo visto de outro jeito. O rodapé troca o
+  denominador junto ("todos os aplicativos" × "todos os sites") e diz isso com todas as letras.
+  A consulta de sites só é aberta quando a lente é acionada — a Visão Geral já é a tela com mais
+  consultas do produto.
+- **Faixa "Agora"**: os três domínios mais em foco NAS MÁQUINAS ATIVAS, como contagem agregada
+  ("mercadolivre.com.br · 3"). É contagem de MÁQUINAS, nunca de pessoas, e a faixa é o cabeçalho
+  que todo mundo vê — quem precisa do individual abre a Linha do Tempo, onde a leitura fica
+  registrada na auditoria. Máquina ociosa ou bloqueada fica fora: "em foco" ali é a última janela
+  de quem já saiu.
+
 ### 2.5.1 Sites (`/sites`) — implementado em 16/09/2026
 
 - **Objetivo:** responder "em que sites o tempo de navegação foi gasto" e deixar o cliente

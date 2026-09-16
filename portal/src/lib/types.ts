@@ -180,6 +180,10 @@ export interface PresenceItem {
   windows_username: string | null;
   foreground_process: string | null;
   foreground_title: string | null;
+  /** Domínio do site em foco AGORA (só navegação, nunca URL); null quando não há. */
+  foreground_site?: string | null;
+  /** Nome do arquivo em foco AGORA; null quando não há. */
+  foreground_document?: string | null;
   state_since: string | null;
   app_since: string | null;
   last_contact_at: string;
@@ -2091,5 +2095,25 @@ export interface DocumentsReportResponse {
   total: number;
   page: number;
   page_size: number;
+  total_seconds_active: number;
+}
+
+/** Item de `GET /dashboard/top-sites` (espelho do top-apps, sobre daily_site_usage). */
+export interface TopSiteItem {
+  site_id: string;
+  domain: string;
+  display_name: string;
+  custom_display_name: string | null;
+  category: TopAppCategory | null;
+  seconds_active: number;
+  device_count: number;
+}
+
+export interface TopSitesResponse {
+  items: TopSiteItem[];
+  /**
+   * Soma de TODA a navegação do período - não apenas os sites do top, e NUNCA
+   * somável ao total de apps (o tempo de site já está lá dentro, no navegador).
+   */
   total_seconds_active: number;
 }

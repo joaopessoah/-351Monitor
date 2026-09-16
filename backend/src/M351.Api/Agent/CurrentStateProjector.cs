@@ -8,6 +8,13 @@ public sealed class CurrentStateRow
     public string? WindowsUsername { get; set; }
     public string? ForegroundProcess { get; set; }
     public string? ForegroundTitle { get; set; }
+
+    /// <summary>Domínio do site em foco AGORA (só navegação); null no resto.</summary>
+    public string? ForegroundSite { get; set; }
+
+    /// <summary>Nome do arquivo em foco AGORA; null quando não é documento.</summary>
+    public string? ForegroundDocument { get; set; }
+
     public DateTimeOffset? StateSince { get; set; }
     public DateTimeOffset? AppSince { get; set; }
 }
@@ -49,6 +56,10 @@ public static class CurrentStateProjector
 
                 row.ForegroundProcess = e.ProcessName;
                 row.ForegroundTitle = e.WindowTitle; // já vem mascarado/null do agente (Seção 6.3)
+                // site e documento acompanham o app: o agente já aplicou política, janela
+                // anônima e chaves de coleta, e null aqui significa "não há", nunca "não sei"
+                row.ForegroundSite = e.SiteDomain;
+                row.ForegroundDocument = e.DocumentName;
                 break;
 
             case EventTypes.IdleStart:
@@ -79,6 +90,8 @@ public static class CurrentStateProjector
                 row.WindowsUsername = null;
                 row.ForegroundProcess = null;
                 row.ForegroundTitle = null;
+                row.ForegroundSite = null;
+                row.ForegroundDocument = null;
                 break;
 
             case EventTypes.AgentStop:
@@ -87,6 +100,8 @@ public static class CurrentStateProjector
                 row.StateSince = e.OccurredAt;
                 row.ForegroundProcess = null;
                 row.ForegroundTitle = null;
+                row.ForegroundSite = null;
+                row.ForegroundDocument = null;
                 break;
 
             case EventTypes.Heartbeat:

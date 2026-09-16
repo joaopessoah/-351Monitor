@@ -70,6 +70,27 @@ public sealed record DashboardTopAppResponse(
 /// <summary>Categoria do TENANT (tenant_app_categories → categories); null = não categorizado.</summary>
 public sealed record DashboardAppCategoryResponse(Guid Id, string Name, int Classification, string? Color);
 
+// ----- GET /api/v1/dashboard/top-sites -----
+
+/// <summary>
+/// Ranking de SITES por tempo ativo no período — espelho do top-apps sobre daily_site_usage.
+/// total_seconds_active é o total de NAVEGAÇÃO do período (denominador dos percentuais do card),
+/// e não o tempo ativo total da organização: os dois responderiam perguntas diferentes, e o card
+/// pergunta "de tudo que foi navegação, quanto foi em cada site".
+/// </summary>
+public sealed record DashboardTopSitesResponse(
+    IReadOnlyList<DashboardTopSiteResponse> Items,
+    long TotalSecondsActive);
+
+public sealed record DashboardTopSiteResponse(
+    Guid SiteId,
+    string Domain,
+    string DisplayName,
+    string? CustomDisplayName,
+    DashboardAppCategoryResponse? Category,
+    long SecondsActive,
+    int DeviceCount);
+
 // ----- GET /api/v1/dashboard/activity-by-hour (F6 — de hourly_activity) -----
 
 /// <summary>

@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Info } from "lucide-react";
+import { AlertTriangle, Globe, Info } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatRelative } from "@/lib/format";
 import type { PresenceResponse } from "@/lib/types";
@@ -74,6 +74,28 @@ export function AgoraFaixa({ tag }: { tag: string | null }) {
       }
     }
     return c;
+  }, [data]);
+
+  /**
+   * Sites em foco AGORA, AGREGADOS: "3 máquinas em mercadolivre.com.br", jamais
+   * "fulano está no mercadolivre". A faixa é o cabeçalho que todo mundo vê, e
+   * nela o produto fala de EQUIPE — quem precisa do individual abre a Linha do
+   * Tempo, onde a leitura fica registrada na auditoria.
+   *
+   * Só máquinas ATIVAS entram: "em foco" numa máquina ociosa ou bloqueada é a
+   * última janela de alguém que saiu, e contaria presença que não existe.
+   */
+  const sitesAgora = useMemo(() => {
+    const porDominio = new Map<string, number>();
+    for (const item of data?.items ?? []) {
+      if (item.presence_state !== "active") continue;
+      const site = item.foreground_site;
+      if (site === null || site === undefined || site.length === 0) continue;
+      porDominio.set(site, (porDominio.get(site) ?? 0) + 1);
+    }
+    return [...porDominio.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"))
+      .slice(0, 3);
   }, [data]);
 
   return (
@@ -160,6 +182,24 @@ export function AgoraFaixa({ tag }: { tag: string | null }) {
               }
             />
           </div>
+
+          {sitesAgora.length > 0 && (
+            <span
+              className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
+              title="Domínios em foco nas máquinas ativas agora. Contagem de máquinas, nunca de pessoas."
+            >
+              <Globe className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {sitesAgora.map(([dominio, quantas]) => (
+                <span
+                  key={dominio}
+                  className="inline-flex items-center gap-1 rounded-full border border-input bg-card px-2 py-0.5"
+                >
+                  <span className="max-w-[12rem] truncate text-foreground">{dominio}</span>
+                  <span className="tabular-nums">{quantas}</span>
+                </span>
+              ))}
+            </span>
+          )}
 
           <span className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <span className="tabular-nums">

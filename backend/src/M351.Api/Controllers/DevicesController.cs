@@ -486,6 +486,7 @@ public class DevicesController(M351DbContext db, AuditWriter audit, NpgsqlDataSo
                     UPDATE device_current_state
                     SET state = 'no_data', windows_sid = NULL, windows_username = NULL,
                         foreground_process = NULL, foreground_title = NULL,
+                        foreground_site = NULL, foreground_document = NULL,
                         state_since = NULL, app_since = NULL, updated_at = now()
                     WHERE tenant_id = {Auth.CurrentUser.TenantId(User)} AND device_id = {device.Id}
                     """, ct);

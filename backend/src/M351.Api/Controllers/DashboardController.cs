@@ -65,6 +65,7 @@ public class DashboardController(
                    COALESCE(d.display_name, d.hostname) AS device_name,
                    d.hostname,
                    s.state, s.windows_username, s.foreground_process, s.foreground_title,
+                   s.foreground_site, s.foreground_document,
                    s.state_since, s.app_since, s.last_contact_at
             FROM device_current_state s
             JOIN devices d ON d.id = s.device_id AND d.tenant_id = s.tenant_id
@@ -78,7 +79,8 @@ public class DashboardController(
                 r.DeviceId, r.DeviceName, r.Hostname, r.State,
                 DerivePresenceState(r.State, r.LastContactAt, now),
                 r.WindowsUsername, r.ForegroundProcess, r.ForegroundTitle,
-                r.StateSince, r.AppSince, r.LastContactAt))
+                r.StateSince, r.AppSince, r.LastContactAt,
+                r.ForegroundSite, r.ForegroundDocument))
             .ToList();
 
         return Ok(new PresenceResponse(items, now));
@@ -278,6 +280,78 @@ public class DashboardController(
             .ToList();
 
         return Ok(new DashboardTopAppsResponse(items, totalSecondsActive));
+    }
+
+    /// <summary>
+    /// GET /api/v1/dashboard/top-sites?from&amp;to&amp;limit[&amp;tag]: ranking de SITES por tempo
+    /// ativo, espelho do top-apps sobre daily_site_usage, com a categoria de SITE do tenant.
+    /// Mesmas réguas: devices archived fora, filtro de equipe por etiqueta, agregado de equipe
+    /// (sem auditoria).
+    ///
+    /// total_seconds_active é o total de NAVEGAÇÃO do período — o denominador certo para "de
+    /// tudo que foi navegação, quanto foi em cada site". Somar isto ao total de apps seria
+    /// dupla contagem: o tempo de site já está lá dentro, sob o navegador.
+    /// </summary>
+    [HttpGet("top-sites")]
+    public async Task<IActionResult> TopSites(
+        [FromQuery(Name = "from")] string? from,
+        [FromQuery(Name = "to")] string? to,
+        [FromQuery(Name = "limit")] int? limit,
+        [FromQuery(Name = "tag")] string? tag,
+        CancellationToken ct)
+    {
+        var invalid = ValidateRange(from, to);
+        if (invalid is not null) return invalid;
+
+        var effectiveLimit = Math.Clamp(limit ?? TopAppsDefaultLimit, 1, TopAppsMaxLimit);
+        var tenantId = Auth.CurrentUser.TenantId(User);
+
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        var rows = (await connection.QueryAsync<TopSiteRow>(new CommandDefinition(
+            """
+            SELECT u.site_id, s.domain, s.display_name, tsc.custom_display_name,
+                   c.id AS category_id, c.name AS category_name,
+                   c.classification AS category_classification, c.color AS category_color,
+                   sum(u.seconds_active)::bigint AS seconds_active,
+                   count(DISTINCT u.device_id)::int AS device_count
+            FROM daily_site_usage u
+            JOIN devices d ON d.id = u.device_id AND d.tenant_id = u.tenant_id
+            JOIN site_catalog s ON s.id = u.site_id
+            LEFT JOIN tenant_site_categories tsc ON tsc.tenant_id = u.tenant_id AND tsc.site_id = u.site_id
+            LEFT JOIN categories c ON c.tenant_id = u.tenant_id AND c.id = tsc.category_id
+            WHERE u.tenant_id = @TenantId
+              AND d.status <> 'archived'
+              AND u.summary_date BETWEEN @From::date AND @To::date
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
+            GROUP BY u.site_id, s.domain, s.display_name, tsc.custom_display_name,
+                     c.id, c.name, c.classification, c.color
+            ORDER BY seconds_active DESC, s.domain
+            LIMIT @Limit
+            """,
+            new { TenantId = tenantId, From = from, To = to, Limit = effectiveLimit, Tag = NormalizeTeamTag(tag) },
+            cancellationToken: ct))).ToList();
+
+        var totalSecondsActive = await connection.ExecuteScalarAsync<long>(new CommandDefinition(
+            """
+            SELECT COALESCE(sum(u.seconds_active), 0)::bigint
+            FROM daily_site_usage u
+            JOIN devices d ON d.id = u.device_id AND d.tenant_id = u.tenant_id
+            WHERE u.tenant_id = @TenantId
+              AND d.status <> 'archived'
+              AND u.summary_date BETWEEN @From::date AND @To::date
+              AND (@Tag::text IS NULL OR @Tag = ANY(d.tags))
+            """,
+            new { TenantId = tenantId, From = from, To = to, Tag = NormalizeTeamTag(tag) }, cancellationToken: ct));
+
+        var items = rows.Select(r => new DashboardTopSiteResponse(
+                r.SiteId, r.Domain, r.DisplayName, r.CustomDisplayName,
+                r.CategoryId is { } categoryId
+                    ? new DashboardAppCategoryResponse(categoryId, r.CategoryName!, r.CategoryClassification!.Value, r.CategoryColor)
+                    : null,
+                r.SecondsActive, r.DeviceCount))
+            .ToList();
+
+        return Ok(new DashboardTopSitesResponse(items, totalSecondsActive));
     }
 
     // ------------------------------------------------------------ helpers
@@ -707,6 +781,18 @@ public class DashboardController(
         long SecondsActive,
         int DeviceCount);
 
+    private sealed record TopSiteRow(
+        Guid SiteId,
+        string Domain,
+        string DisplayName,
+        string? CustomDisplayName,
+        Guid? CategoryId,
+        string? CategoryName,
+        short? CategoryClassification,
+        string? CategoryColor,
+        long SecondsActive,
+        int DeviceCount);
+
     private sealed record PresenceRow(
         Guid DeviceId,
         string DeviceName,
@@ -715,6 +801,8 @@ public class DashboardController(
         string? WindowsUsername,
         string? ForegroundProcess,
         string? ForegroundTitle,
+        string? ForegroundSite,
+        string? ForegroundDocument,
         DateTimeOffset? StateSince,
         DateTimeOffset? AppSince,
         DateTimeOffset LastContactAt);

@@ -91,6 +91,10 @@ public record PresenceItemResponse(
     string? ForegroundTitle,
     DateTimeOffset? StateSince,
     DateTimeOffset? AppSince,
-    DateTimeOffset LastContactAt);
+    DateTimeOffset LastContactAt,
+    /// <summary>Domínio do site em foco AGORA (só navegação, nunca URL); null quando não há.</summary>
+    string? ForegroundSite = null,
+    /// <summary>Nome do arquivo em foco AGORA; null quando não há.</summary>
+    string? ForegroundDocument = null);
 
 public record PresenceResponse(IReadOnlyList<PresenceItemResponse> Items, DateTimeOffset ServerTime);

@@ -73,6 +73,8 @@ nada.
 
 | Pergunta | Onde |
 |---|---|
+| Onde o tempo foi, por site? | Visão Geral › card **Aplicativos e sites** › lente "Sites" |
+| Que sites estão abertos AGORA? | Visão Geral › faixa **Agora** (contagem de máquinas ativas por domínio) |
 | Em quais sites a equipe passou mais tempo? | Relatórios › Uso › agrupar por **Site** (CSV incluso) |
 | Quais arquivos foram abertos? | Relatórios › **Documentos** (filtros de período, dispositivo, equipe e busca por nome) |
 | O que essa pessoa estava vendo às 14h? | Linha do Tempo › coluna **Site / arquivo** |
