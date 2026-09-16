@@ -39,8 +39,10 @@ Escopo por equipe/grupo (Gestor vê só sua equipe) fica **pós-MVP** — no MVP
 /                               Visão Geral (dashboard)
 /linha-do-tempo                 Timeline (modo equipe e modo device)
 /apps                           Detalhe de aplicativos
+/sites                          Sites: curadoria dos domínios da navegação
 /relatorios                     Hub de relatórios
 /relatorios/jornada             Relatório de jornada
+/relatorios/documentos          Arquivos abertos no período
 /relatorios/exportacoes         Histórico de exports (jobs assíncronos)
 /configuracoes/organizacao      Nome, fuso, semana de trabalho, feriados
 /configuracoes/dispositivos     Renomear, agrupar, arquivar
@@ -157,6 +159,35 @@ Layout persistente: sidebar esquerda colapsável (Visão Geral, Linha do Tempo, 
   - Ações por app: Recategorizar · Ignorar app (vai para a lista de ignorados — deixa de aparecer em relatórios; coleta futura descartada).
 - Apps "Não categorizados" com badge contador no topo ("12 apps sem categoria — revisar") para puxar o admin à curadoria.
 - **Sugestão do dicionário (F1.1):** `default_category` de `GET /app-catalog` aparece como texto discreto abaixo do select de categoria, SÓ nos apps sem categoria da organização e SÓ quando existe aqui uma categoria com o nome exato sugerido. Um clique aplica àquele app (reversível pelo próprio select). Faixa no topo abre a prévia em lote: quantos apps, quais categorias e a lista completa antes de qualquer escrita; ao confirmar, chama `PUT /app-catalog/categories/batch` em páginas de até 500 com progresso. O endpoint é declarativo, então é a tela que garante nunca enviar app já categorizado a mão. Vocabulário fixo: é "sugestão do dicionário", nunca "categorização automática".
+
+---
+
+### 2.5.1 Sites (`/sites`) — implementado em 16/09/2026
+
+- **Objetivo:** responder "em que sites o tempo de navegação foi gasto" e deixar o cliente
+  classificar cada domínio como classifica cada aplicativo. Sem esta tela, todo o tempo de
+  navegador cai num balde só, o do próprio navegador.
+- **Fonte:** `GET /site-catalog` — recorte do tenant, janela fixa de 30 dias, teto de 500 itens,
+  `sort=impacto` (sem categoria primeiro). Mesmo shape do catálogo de apps.
+- **Componentes:** indicador de cobertura da classificação no topo (a MESMA conta da tela de
+  Aplicativos); tabela Site (nome amigável + domínio) · Categoria (select inline, admin+) · Tempo
+  ativo 30d · Dispositivos; faixa de sugestões do dicionário `sites-br.csv` com prévia obrigatória
+  e aplicação em lote (`PUT /site-catalog/categories/batch`).
+- **Dois avisos fixos, porque são as duas perguntas de quem abre a tela pela primeira vez:** (1) o
+  que entra na lista é só o DOMÍNIO, nunca endereço completo, conteúdo de página ou janela anônima,
+  com link para desligar a coleta; (2) a regra de SITE vence a de APP nos baldes — é por isso que
+  classificar "mercadolivre.com.br" muda o número mesmo com o navegador em "Navegação".
+- Viewer é somente leitura, como na curadoria de apps.
+
+### 2.5.2 Documentos (`/relatorios/documentos`) — implementado em 16/09/2026
+
+- **Objetivo:** "que arquivos foram abertos", com o aplicativo que os abriu, tempo ativo, número de
+  aberturas e em quantas máquinas.
+- **Fonte:** `GET /reports/documents` (direto de `activity_intervals` — não há agregado por
+  arquivo). Filtros de período, dispositivos, equipe e busca por nome.
+- **Auditoria SEMPRE:** nome de arquivo é dado pessoal, então a tela avisa que a consulta fica
+  registrada e o backend grava `view_report` mesmo sem filtro. Aviso fixo repete o limite da
+  coleta: nome do arquivo, nunca a pasta, nunca o conteúdo.
 
 ---
 

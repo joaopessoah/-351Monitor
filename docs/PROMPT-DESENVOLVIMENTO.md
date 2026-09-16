@@ -181,7 +181,7 @@ Os dois acréscimos à tabela original de 17 entraram na F5: o 18º (`AGENT_ERRO
 | `SESSION_END` | Serviço (WTS logoff) | `{}` | Fecha intervalo corrente → `off_clean` |
 | `LOCK` | Serviço (WTS lock) | `{}` | Fecha intervalo → abre `locked` (lock vence idle) |
 | `UNLOCK` | Serviço (WTS unlock) | `{}` | Fecha `locked` → abre `active` |
-| `ACTIVE_WINDOW_CHANGED` | Helper | `process_name` ("chrome.exe", lowercase), `exe_path`, `app_id` (AUMID UWP, opcional), `window_title` (string ou null se política APP_ONLY/processo ignorado), `title_masked: bool` | Fecha intervalo corrente → abre `active(app)` |
+| `ACTIVE_WINDOW_CHANGED` | Helper | `process_name` ("chrome.exe", lowercase), `exe_path`, `app_id` (AUMID UWP, opcional), `window_title` (string ou null se política APP_ONLY/processo ignorado), `title_masked: bool`, `site_domain` (domínio registrável do site em foco no navegador — nunca URL; null fora de navegador, em janela anônima, sob APP_ONLY ou com `site_capture` desligado), `document_name` (nome do arquivo aberto, extraído do título JÁ mascarado; null sem título, fora da lista fechada de extensões ou com `document_capture` desligado) | Fecha intervalo corrente → abre `active(app)` |
 | `IDLE_START` | Helper | **`last_input_at`** (ISO-8601 UTC) — obrigatório | Fecha o intervalo ativo **RETROATIVAMENTE em `last_input_at`** → abre `idle` a partir de `last_input_at` |
 | `IDLE_END` | Helper | `idle_duration_ms` | Fecha `idle` → abre `active` com o último app conhecido |
 | `HEARTBEAT` | Helper (sessão) e Serviço (máquina sem usuário logado) | `state: active\|idle\|locked\|no_session, foreground_process, idle_ms, queue_depth` + saúde operacional injetada pelo SERVIÇO: `dead_letter_count, last_reject_code, working_set_mb, queue_db_bytes` (`no_session`: máquina ligada sem sessão interativa; campos de sessão null no heartbeat de máquina) | Prova de vida; mantém intervalo aberto; alimenta `last_seen_at` |
@@ -321,7 +321,8 @@ Aritmética do exemplo (fórmula da Seção 5.6): 5 recebidos = 3 aceitos + 1 du
 
 Regras do ack:
 - `config` só vem quando o `config_version` enviado pelo agente está desatualizado; caso contrário `config: null`. **A config é entregue EXCLUSIVAMENTE por este canal** (sem endpoint de policy, sem assinatura de config no MVP — TLS + device token bastam). Ao aplicar, o agente emite `POLICY_APPLIED { config_version }`.
-- Objeto `config` completo (11 campos, sempre todos presentes): `heartbeat_sec`, `active_window_poll_sec`, `idle_threshold_sec`, `window_title_policy` (`FULL` | `MASKED_PATTERNS` | `APP_ONLY`), `masked_patterns[]`, `ignored_processes[]`, `collection_window` (`{mode: ALWAYS | BUSINESS_HOURS, days, start, end}`), `transparency_url`, `notice_text`, `notice_version`, `device_transparency_url`.
+- Objeto `config` completo (13 campos, sempre todos presentes): `heartbeat_sec`, `active_window_poll_sec`, `idle_threshold_sec`, `window_title_policy` (`FULL` | `MASKED_PATTERNS` | `APP_ONLY`), `masked_patterns[]`, `ignored_processes[]`, `collection_window` (`{mode: ALWAYS | BUSINESS_HOURS, days, start, end}`), `transparency_url`, `notice_text`, `notice_version`, `device_transparency_url`, `site_capture`, `document_capture`.
+- `site_capture` / `document_capture` (bool, default `true`) ligam a coleta do DOMÍNIO do site em foco e do NOME do arquivo aberto. São decisão da CONTROLADORA (PATCH `/organization/agent-config`, OwnerOnly) e aparecem na página pública de transparência. **Ligar qualquer uma sobe `notice_version` junto**: escopo de coleta que aumenta sem o funcionário ser reavisado contradiz o produto inteiro; desligar não reavisa (coletar menos não precisa de novo aviso).
 - `device_transparency_url` é a página pública DAQUELE dispositivo (`/t/{token}`, de `devices.transparency_token`): a mesma política da organização MAIS o bloco "Este dispositivo". É o **único** caminho pelo qual o token chega ao agente, e é opcional de propósito: `null` para servidor anterior ao campo ou device sem token, e nesse caso o tray abre o `transparency_url` por slug. A url carrega um segredo de baixo valor: nunca vai para log, nem para query string de telemetria.
 - `notice_text` (F5) é o CORPO do aviso de ciência definido pelo tenant; `null` = o agente usa o texto padrão embutido nele. O enquadramento jurídico ("isto registra a sua ciência, não é um pedido de consentimento" + como ver a coleta em tempo real) é **fixo no agente e sempre concatenado** — o tenant não consegue publicar um aviso que transforme o `NOTICE_ACK` em consentimento. `notice_version` versiona o aviso: bump reexibe na frota (o helper compara com a versão confirmada localmente) e gera novo `NOTICE_ACK`.
 - `commands` no MVP contém **apenas `UNENROLL`** (`ROTATE_TOKEN`, `UPDATE_AGENT`, `PAUSE` são v1.1 — não implementar handlers). Ao receber `UNENROLL`: o agente **para a coleta e DESCARTA a fila local** (revogação definitiva). Sem endpoint de ack de comando: o servidor marca a entrega ao incluir no ack; o comando é idempotente se reentregue.
@@ -650,11 +651,16 @@ CREATE TABLE activity_intervals (
   state text NOT NULL CHECK (state IN ('active','idle','locked','off_clean','no_data')),
   app_id uuid,                        -- null quando não-active
   window_title text,                  -- título dominante do intervalo
+  site_id uuid,                       -- site_catalog do domínio em foco (só navegação)
+  document_name text,                 -- nome do arquivo aberto no intervalo
   data_incomplete boolean NOT NULL DEFAULT false,  -- lacuna de seq na janela
   source_day date NOT NULL,           -- dia local (TZ da org)
   PRIMARY KEY (tenant_id, device_id, started_at, id)
 ) PARTITION BY RANGE (started_at);
 CREATE INDEX ix_intervals_user_time ON activity_intervals (tenant_id, device_user_id, started_at);
+-- relatório de arquivos: varre só as linhas que TÊM documento
+CREATE INDEX ix_intervals_document ON activity_intervals (tenant_id, source_day)
+  WHERE document_name IS NOT NULL;
 -- invariante (testada): intervalos de um (device_id, windows_sid) nunca se sobrepõem
 
 -- AGREGADOS DIÁRIOS: sem partição, retenção 24 meses (N12)
@@ -681,6 +687,18 @@ CREATE TABLE daily_app_usage (
   PRIMARY KEY (tenant_id, summary_date, device_id, device_user_id, app_id)
 );
 CREATE INDEX ix_dau_tenant_date_app ON daily_app_usage (tenant_id, summary_date, app_id);
+
+-- Uso por SITE: espelho do daily_app_usage, no MESMO snapshot da agregação.
+-- É um RECORTE do tempo que já está lá sob o navegador — as duas nunca se somam.
+CREATE TABLE daily_site_usage (
+  tenant_id uuid NOT NULL, summary_date date NOT NULL,
+  device_id uuid NOT NULL,
+  device_user_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+  site_id uuid NOT NULL,
+  seconds_active int NOT NULL, visit_count int NOT NULL,
+  PRIMARY KEY (tenant_id, summary_date, device_id, device_user_id, site_id)
+);
+CREATE INDEX ix_dsu_tenant_date_site ON daily_site_usage (tenant_id, summary_date, site_id);
 ```
 
 #### Catálogo de apps e categorias
@@ -705,13 +723,45 @@ CREATE TABLE categories (
 );
 -- seed na criação da org: Desenvolvimento(+1), Escritório/Documentos(+1), Comunicação(+1), Reuniões(+1),
 -- Navegação(+1), Design(+1), ERP/Sistemas internos(+1), Sistema/Utilitários(+1),
--- Música/Streaming de áudio(0), Não categorizado(0), Jogos(-1), Redes sociais(-1), Vídeo/Streaming(-1)
+-- Música/Streaming de áudio(0), Não categorizado(0), Jogos(-1), Redes sociais(-1), Vídeo/Streaming(-1),
+-- Governo/Fisco(+1), Bancos/Financeiro(0), Busca e portais(0), Notícias(0), Compras(-1)
+--   (as cinco últimas vieram com a classificação de SITES: app e site compartilham ESTA tabela,
+--    mas o mundo dos sites tem baldes que o dos executáveis não tinha)
 
 CREATE TABLE tenant_app_categories (
   tenant_id uuid NOT NULL, app_id uuid NOT NULL REFERENCES app_catalog(id),
   category_id uuid NOT NULL REFERENCES categories(id),
   custom_display_name text,
   PRIMARY KEY (tenant_id, app_id)
+);
+```
+
+#### Catálogo de sites (espelho do de apps)
+
+```sql
+CREATE TABLE site_catalog (            -- GLOBAL (sem tenant_id): o domínio é público
+  id uuid PRIMARY KEY,
+  domain text UNIQUE NOT NULL,         -- domínio REGISTRÁVEL: 'mercadolivre.com.br'
+  display_name text NOT NULL,
+  default_category text,               -- sugestão do dicionário BR (sites-br.csv)
+  curated boolean NOT NULL DEFAULT false
+);
+-- domínio desconhecido na intervalização ⇒ INSERT ON CONFLICT DO NOTHING (display_name = domain)
+
+CREATE TABLE tenant_site_categories (  -- regra da ORGANIZAÇÃO
+  tenant_id uuid NOT NULL, site_id uuid NOT NULL REFERENCES site_catalog(id),
+  category_id uuid NOT NULL REFERENCES categories(id),
+  custom_display_name text,
+  PRIMARY KEY (tenant_id, site_id)
+);
+
+CREATE TABLE tenant_site_team_categories (  -- regra da EQUIPE (vence a da organização)
+  tenant_id uuid NOT NULL,
+  team_id uuid NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  site_id uuid NOT NULL REFERENCES site_catalog(id),
+  category_id uuid NOT NULL REFERENCES categories(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id, team_id, site_id)
 );
 ```
 
@@ -782,7 +832,7 @@ Execução (worker, micro-batches):
 1. **Seleção**: a cada 60 s, varre `ingest_cursors WHERE dirty_from IS NOT NULL` (a ingestão faz upsert do cursor com `dirty_from = min(occurred_at do lote)` se menor que o atual). Processa por device com `pg_advisory_xact_lock(hash(device_id))`.
 2. **Janela de reprocessamento**: `R = [date_trunc('hour', dirty_from) − 1 h, now]`. `DELETE FROM activity_intervals WHERE device_id = X AND ended_at > R.start` e **reconstrói** a partir de `raw_events` ordenados por `(occurred_at, seq)` desde `R.start`. Reconstrução idempotente resolve eventos atrasados/fora de ordem (máquina que despeja dias de backlog ⇒ `dirty_from` antigo ⇒ janela cobre o backlog inteiro).
 3. **Máquina de estados** por `(device_id, windows_sid)`, com timestamps corrigidos por `clock_offset_ms`:
-   - `ACTIVE_WINDOW_CHANGED` → fecha intervalo corrente em `t`, abre `active(app)`; resolve `app_id` por `process_name` no `app_catalog` (auto-insere não-curado).
+   - `ACTIVE_WINDOW_CHANGED` → fecha intervalo corrente em `t`, abre `active(app)`; resolve `app_id` por `process_name` no `app_catalog` e `site_id` por `site_domain` no `site_catalog` (auto-insere não-curado nos dois), e carrega `document_name` para o intervalo. Site e documento seguem `app`/`window_title`: só existem em intervalo `active`, e entram na fusão N20 (dois trechos com sites diferentes NÃO são o mesmo intervalo).
    - **`IDLE_START` → fecha o intervalo `active` corrente RETROATIVAMENTE em `data.last_input_at`** e abre `idle` a partir de `last_input_at`. REGRA CRÍTICA: usar o timestamp do evento aqui está ERRADO — sem o fechamento retroativo, todo ciclo de ociosidade ganha ~5 min (o limiar) de "ativo" falso. Se `last_input_at` for anterior ao início do intervalo corrente, fechar no início do intervalo (nunca gerar duração negativa).
    - `IDLE_END` → fecha `idle` em `t`, abre `active` com o último app conhecido (o `ACTIVE_WINDOW_CHANGED` seguinte corrige se mudou).
    - `LOCK` → fecha intervalo corrente (inclusive `idle`: **lock vence idle**), abre `locked`. `UNLOCK` → fecha `locked`, abre `active`.
@@ -796,7 +846,19 @@ Execução (worker, micro-batches):
    - **Lacuna de `seq`** dentro da janela (`seq` não contíguo por device) → marcar `data_incomplete = true` nos intervalos afetados; a resposta de timeline/relatório propaga a flag (tooltip "dados incompletos" no portal).
 4. Ao final: atualiza `processed_until`, zera `dirty_from`, insere em `dirty_days` cada dia local (TZ da org) tocado.
 
-**Agregação diária**: job a cada 15 min consome `dirty_days` e recomputa `daily_device_summaries` + `daily_app_usage` do dia/device (full recompute, `INSERT ... ON CONFLICT DO UPDATE`). Classificação (`seconds_work_related/...`) resolvida na agregação via `tenant_app_categories` — mudança de categoria insere `dirty_days` dos últimos 30 dias do tenant (documentado: histórico anterior mantém a classificação antiga).
+**Agregação diária**: job a cada 15 min consome `dirty_days` e recomputa `daily_device_summaries` + `daily_app_usage` + `daily_site_usage` do dia/device (full recompute, `INSERT ... ON CONFLICT DO UPDATE`). Classificação (`seconds_work_related/...`) resolvida na agregação — mudança de categoria insere `dirty_days` dos últimos 30 dias do tenant (documentado: histórico anterior mantém a classificação antiga).
+
+**Precedência da classificação (quatro degraus, uma linha de SQL):**
+
+```
+1. regra de SITE da EQUIPE        (tenant_site_team_categories)
+2. regra de SITE da ORGANIZAÇÃO   (tenant_site_categories)
+3. regra de APP da EQUIPE         (tenant_app_team_categories)
+4. regra de APP da ORGANIZAÇÃO    (tenant_app_categories)
+5. nenhuma → SEM CLASSIFICAÇÃO    (seconds_unclassified, jamais neutro)
+```
+
+`COALESCE(site_equipe, site_org, app_equipe, app_org)`. **Site vence app porque é a regra MAIS ESPECÍFICA**: sem isso, classificar "mercadolivre.com.br" como improdutivo não mudaria número nenhum enquanto `chrome.exe` estivesse em Navegação — todo o tempo de navegador cairia num balde só, que é exatamente o buraco que a coleta de sites veio fechar. Ausência de regra mais específica é HERANÇA da mais geral, nunca "sem classificação".
 
 ### 7.4 API do Portal (REST, `/api/v1`, JWT)
 
@@ -827,12 +889,14 @@ RBAC MVP: **Owner ⊃ Admin ⊃ Viewer** (3 papéis; enum extensível — Manage
 | `POST /devices/{id}/revoke` | Admin | revoga token (`status=revoked`) + enfileira `UNENROLL` |
 | `GET /device-users?device_id&q` · `PATCH /device-users/{id}` | Viewer · Admin | usuários Windows; editar `display_name` |
 | `GET /reports/jornada?from&to&device_ids` | Viewer | linha por device×dia: primeiro/último evento, ligada/ativa/ociosa/bloqueada + disclaimer fixo (Seção 8.6) |
-| `GET /reports/usage?from&to&group_by=app\|category\|device\|device_user` | Viewer | tabular paginado |
+| `GET /reports/usage?from&to&group_by=app\|site\|category\|device\|device_user` | Viewer | tabular paginado. `group_by=site` sai de `daily_site_usage`: é o RECORTE da navegação que, em `group_by=app`, aparece somado dentro do navegador — as duas visões nunca se somam |
+| `GET /reports/documents?from&to&q&device_ids&tag` | Viewer | arquivos abertos no período (aplicativo, tempo ativo, aberturas, dispositivos). Fonte `activity_intervals` (não há agregado por arquivo). **Audita `view_report` SEMPRE**: nome de arquivo é dado pessoal — "Rescisão Fulano.docx" diz muito mais que "winword.exe" |
 | `GET /reports/fora-do-horario?from&to&device_ids&include_devices` | Viewer | atividade fora do horário de trabalho: tempo ATIVO somado fora da `business_hours` da org, no fuso do tenant, sobre `activity_intervals`. Indicador de EQUILÍBRIO, jamais hora extra ou banco de horas. `status` explica os dois casos sem número (`horario_nao_configurado`, `coleta_restrita_ao_horario`) em vez de devolver zero. Sem `include_devices` a resposta é agregado de equipe e não audita |
 | `POST /exports` · `GET /exports/{id}` | Viewer | CSV assíncrono (worker; máx. 500 k linhas; UTF-8 com BOM, separador `;`); auditado. Kinds: `usage_csv`, `jornada_csv`, `fora_horario_csv` (este exige horário declarado e coleta contínua, senão 409) |
 | `GET/POST /categories` · `PATCH/DELETE /categories/{id}` | Admin | CRUD; dispara reagregação 30 dias |
 | `GET /app-catalog?uncategorized=true&q` · `PUT /app-catalog/{appId}/category` | Viewer · Admin | apps vistos pelo tenant; mapeamento. A listagem devolve `default_category`, a SUGESTÃO do dicionário brasileiro semeado em `app_catalog` (F1.1); quem decide continua sendo o tenant |
 | `PUT /app-catalog/categories/batch` | Admin | aplica N mapeamentos app ⇒ categoria numa ÚNICA transação, com UMA única reagregação de 30 dias e auditoria `update_category` por app (F1.1). Nunca toca `custom_display_name` |
+| `GET /site-catalog?uncategorized&q&sort&team_id` · `PUT /site-catalog/{siteId}/category` · `PUT /site-catalog/categories/batch` | Viewer · Admin | espelho EXATO dos três de `/app-catalog`, para os DOMÍNIOS da navegação: mesmo shape, mesma cobertura em tempo, mesmas categorias (a tabela `categories` é uma só), mesmo escopo de equipe, mesma reagregação de 30 dias. `default_category` é a sugestão do dicionário `sites-br.csv` |
 | `GET/POST /enrollment-keys` · `DELETE /enrollment-keys/{id}` | Admin | segredo exibido UMA única vez no POST |
 | `GET /users` · `POST /users/invitations` · `PATCH /users/{id}` · `DELETE /users/{id}` | Admin (owner só por Owner) | sempre ≥ 1 Owner ativo |
 | `GET/PATCH /organization` | Viewer / Admin | leitura para qualquer papel; edição (Admin+) de transparência, business_hours e metas semanais agregadas (F5) |
@@ -1022,11 +1086,19 @@ Contexto jurídico mínimo para quem implementa: o cliente (controladora) monito
 
 ### 9.1 Minimização — lista de coleta FECHADA
 
-O sistema coleta SOMENTE: identificação de máquina/usuário Windows, eventos de sessão (logon/logoff/lock/unlock), eventos de energia (boot/shutdown/suspend/resume), app+título em foco (sujeito a `window_title_policy`), o **fato** da ociosidade (jamais o input), saúde do agente. Qualquer adição passa por revisão de privacidade. Sem linha de comando/argumentos de processo, sem URLs (só título da aba), sem `APPS_SNAPSHOT` (cortado).
+O sistema coleta SOMENTE: identificação de máquina/usuário Windows, eventos de sessão (logon/logoff/lock/unlock), eventos de energia (boot/shutdown/suspend/resume), app+título em foco (sujeito a `window_title_policy`), **domínio do site em foco no navegador** e **nome do arquivo aberto** (ambos sujeitos às chaves `site_capture`/`document_capture` do tenant e à MESMA `window_title_policy` — sob `APP_ONLY` nenhum dos dois é coletado), o **fato** da ociosidade (jamais o input), saúde do agente. Qualquer adição passa por revisão de privacidade. Sem linha de comando/argumentos de processo, **sem URL completa — só o domínio registrável, nunca caminho, query string, credencial embutida nem subdomínio** (a única exceção é a lista curta de serviços compartilhados, em que um rótulo a mais distingue `docs.google.com` de `google.com`) —, sem conteúdo de arquivo (só o NOME, extraído do título JÁ mascarado), sem `APPS_SNAPSHOT` (cortado).
 
 ### 9.2 Mascaramento de títulos (enforcement no agente — Seção 6.3)
 
-`window_title_policy` com 3 níveis (`FULL` / `MASKED_PATTERNS` / `APP_ONLY`); **default de fábrica: `MASKED_PATTERNS`** com lista padrão (termos de saúde, sindicais, religiosos, financeiros pessoais, padrões de CPF/cartão); **rebaixamento automático para `APP_ONLY` em navegação anônima/privada** (heurística por sufixo de título: "(navegação anônima)" / "(navegação anónima)" / "(Incognito)" Chrome pt-BR / pt-PT / en-US, "InPrivate" Edge em qualquer idioma, "(navegação privativa)" / "(navegação privada)" / "(Private Browsing)" Firefox pt-BR / pt-PT / en-US). Aplicado ANTES de persistir na fila local. `ignored_processes` com defaults (gerenciadores de senha, telas de logon). Servidor JAMAIS loga `window_title`.
+`window_title_policy` com 3 níveis (`FULL` / `MASKED_PATTERNS` / `APP_ONLY`); **default de fábrica: `MASKED_PATTERNS`** com lista padrão (termos de saúde, sindicais, religiosos, financeiros pessoais, padrões de CPF/cartão); **rebaixamento automático para `APP_ONLY` em navegação anônima/privada**. Aplicado ANTES de persistir na fila local. `ignored_processes` com defaults (gerenciadores de senha, telas de logon). Servidor JAMAIS loga `window_title`.
+
+**Detecção de navegação anônima — corrigida em 16/09/2026 depois de medir os navegadores reais.** A regra antiga era "sufixo do título", e ela não funcionava em nenhum navegador atual: o Edge escreve `[InPrivate]` no MEIO do título e o Chrome **não marca mais o título Win32** (a janela anônima se chama exatamente como uma normal). Enquanto isso valeu, título de janela anônima chegava ao servidor sob `FULL`/`MASKED_PATTERNS` — vazamento contra promessa explícita do produto. A regra vigente:
+- comparação por **contém**, não por sufixo, sobre uma lista de marcas (`InPrivate`, `Incognito`, `Modo anônimo`, `Navegação anônima/privativa/privada`, `Private Browsing`, com e sem acento);
+- testada no título Win32 **E nos NOMES ACESSÍVEIS da janela** (UI Automation), que é onde o Chrome marca `(Modo anônimo)`. O agente lê esses nomes para toda janela de navegador cuja política admita título — **inclusive com `site_capture` desligado**, porque essa leitura existe para PROTEGER, não para coletar;
+- reconhecida a janela como anônima, o agente **nem lê a barra de endereço**;
+- falso positivo é aceito de propósito (uma página que FALE sobre navegação anônima perde título e domínio): errar para menos coleta é a direção certa deste teste.
+
+**Site e arquivo seguem a política do título**, sem exceção: `APP_ONLY` (ou processo ignorado, ou janela anônima) → nenhum dos dois; `MASKED_PATTERNS` → o nome do arquivo sai do título JÁ mascarado (candidato com `***` é descartado) e um domínio que case com um padrão sigiloso do tenant é descartado INTEIRO (mascarar "bancobrasil.com.br" para "***brasil.com.br" inventaria chave de catálogo falsa).
 
 ### 9.3 Direitos do titular (DSR) — GATE DE LANÇAMENTO (F4)
 

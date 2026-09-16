@@ -63,7 +63,7 @@ Panorama consolidado da jurisprudência (TST e TRTs, visão geral): o monitorame
 | Ociosidade | `IdleEvent {idleStartTs, idleEndTs}` | Threshold default 5 min sem input; coletamos apenas o **fato** da ausência de input, jamais o input |
 | Versão/saúde do agente | `AgentHeartbeat {agentVersion, lastSeenTs}` | Telemetria operacional |
 
-**NUNCA coletamos (compromisso público, na política de privacidade e no contrato):** teclas digitadas (keylogging) ou qualquer conteúdo de input; screenshots/gravação de tela (MVP); conteúdo de arquivos, e-mails, mensagens ou área de transferência; áudio/microfone/webcam; geolocalização; URLs completas com query string (pós-MVP, se houver coleta de navegação, será **somente domínio**); senhas ou hashes de credenciais do usuário; dados de máquinas/perfis não provisionados pelo tenant.
+**NUNCA coletamos (compromisso público, na política de privacidade e no contrato):** teclas digitadas (keylogging) ou qualquer conteúdo de input; screenshots/gravação de tela (MVP); conteúdo de arquivos, e-mails, mensagens ou área de transferência; áudio/microfone/webcam; geolocalização; **URLs completas com query string** — a coleta de navegação existe desde 16/09/2026 e é **somente o domínio registrável**, descartando caminho, query string, credencial embutida e subdomínio ainda NA MÁQUINA, antes de qualquer fila; **conteúdo de arquivo** — coletamos só o NOME do arquivo aberto, extraído do título de janela já mascarado; senhas ou hashes de credenciais do usuário; dados de máquinas/perfis não provisionados pelo tenant.
 
 #### 3.2 Finalidade (art. 6º, I)
 
@@ -157,7 +157,7 @@ Racional: além do passivo LGPD/trabalhista solidário, um único caso público 
 
 **Implementar apenas pós-MVP e com salvaguardas fortes:**
 - **Screenshots**: opt-in por tenant (assinatura de aditivo contratual), banner/indicador visível no momento da captura, blur configurável (default on), exclusão de apps/sites na blocklist, retenção curta (ex.: 30 dias), acesso restrito e auditado.
-- **Coleta de navegação**: somente domínio (nunca URL completa), com categorização — não conteúdo.
+- ~~**Coleta de navegação**: somente domínio (nunca URL completa), com categorização — não conteúdo.~~ **Entregue em 16/09/2026** exatamente nesses termos, com três salvaguardas que não estavam previstas aqui: chave por tenant (`site_capture`) que a controladora liga e desliga, subordinação à política de títulos (sob `APP_ONLY` não acontece) e não-leitura da barra de endereço em janela anônima — reconhecida por nome acessível, não só por título. Ligar a coleta reexibe o aviso de ciência na frota.
 - **BYOD/máquina pessoal**: não suportar no MVP; se um dia, exigir partição clara trabalho/pessoal — risco trabalhista e LGPD alto.
 
 **Outros riscos de produto a tratar em design:**

@@ -58,4 +58,21 @@ esperam. Tudo em PHP puro, sem serviço de disparo no meio e sem IA no laço de 
 a camada opcional com o Claude só escreve rascunho e relatório. Passo a passo em
 `docs/runbooks/cadencia-automatica.md`; desenho em `crm/README.md`.
 
+A leva de 16/09/2026 fechou o último item "a avaliar" da tabela canônica de decisões: **sites e
+documentos**. O agente passou a reportar o **domínio** do site em foco no navegador (lido da barra
+de endereço por UI Automation — nunca a URL completa, nunca o conteúdo da página) e o **nome do
+arquivo** aberto (extraído do título de janela já mascarado — nunca o caminho, nunca o conteúdo).
+No servidor, isso virou catálogo de sites com dicionário brasileiro próprio, classificação por
+domínio com a mesma curadoria dos aplicativos e uma precedência nova: **regra de site vence regra
+de app**, que é o que faz marcar "mercadolivre.com.br" como improdutivo mudar o número mesmo com o
+navegador classificado como Navegação. No portal entraram a tela de Sites, o relatório de
+Documentos, o recorte `group_by=site` no relatório de Uso e dois interruptores em Configurações ›
+Coleta — ligar qualquer um deles reexibe o aviso de ciência na frota.
+
+No caminho, a mesma leva corrigiu um vazamento que já existia: medidos os navegadores reais, o
+rebaixamento automático para `APP_ONLY` em **navegação anônima** não funcionava em nenhum navegador
+atual (o Edge escreve `[InPrivate]` no meio do título e o Chrome não marca mais o título Win32).
+Agora a detecção olha também o nome acessível da janela, e uma janela anônima reconhecida nem tem a
+barra de endereço lida.
+
 Pendências externas antes do primeiro cliente real: certificado de code signing (comprar com a data do piloto marcada, lead time de 1 a 3 semanas), revisão jurídica do kit LGPD/DPA e decisão da cloud gerenciada de produção. Staging: VPS Hostinger com deploy automático no push para `main`.

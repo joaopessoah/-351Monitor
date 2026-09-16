@@ -18,7 +18,13 @@ public class SiteDomainTests
     [InlineData("globo.com", "globo.com")]
     // esquema, porta, âncora e query somem
     [InlineData("http://exemplo.com.br:8080/rel?cpf=123.456.789-09#topo", "exemplo.com.br")]
-    [InlineData("https://docs.google.com/document/d/1a2b3c/edit", "google.com")]
+    // domínios de serviços compartilhados: um rótulo a mais, e SÓ eles
+    [InlineData("https://docs.google.com/document/d/1a2b3c/edit", "docs.google.com")]
+    [InlineData("https://meet.google.com/abc-defg-hij", "meet.google.com")]
+    [InlineData("https://console.aws.amazon.com/ec2/home", "aws.amazon.com")]
+    [InlineData("https://www.amazon.com.br/dp/B0ABC", "amazon.com.br")]
+    [InlineData("https://g1.globo.com/politica/noticia.ghtml", "g1.globo.com")]
+    [InlineData("https://acme.atlassian.net/browse/PROJ-1", "acme.atlassian.net")]
     // sufixo público de dois rótulos: o registrável tem três
     [InlineData("https://receita.fazenda.gov.br/consulta", "fazenda.gov.br")]
     [InlineData("https://empresa.eco.br", "empresa.eco.br")]

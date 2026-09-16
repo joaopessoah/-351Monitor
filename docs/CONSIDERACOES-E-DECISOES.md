@@ -114,7 +114,8 @@ Princípio do corte (da seção 05): **o MVP é o menor produto pelo qual uma PM
 | SSO (Google/Microsoft OAuth) | | ✅ | SAML (enterprise) |
 | Página de transparência pública por slug (`/transparencia/:slug` — só a política de coleta, sem dados pessoais) + kit LGPD em PDF | ✅ | versão tokenizada com preview "ver como funcionário" | |
 | API pública / webhooks / white-label MSP / app mobile | | | v2+ |
-| Coleta de URLs/domínios de navegação | | | Avaliar (somente domínio, nunca URL completa) |
+| Coleta de URLs/domínios de navegação | ✅ **IMPLEMENTADO em 16/09/2026** — somente o domínio registrável, nunca URL completa, lido da barra de endereço por UI Automation e classificável como qualquer aplicativo (regra de site vence regra de app) | regra por host completo (hoje só domínio) | extensão de navegador, se algum dia a barra de endereço deixar de bastar |
+| Coleta do NOME do arquivo aberto | ✅ **IMPLEMENTADO em 16/09/2026** — extraído do título JÁ mascarado, lista fechada de extensões de documento, nunca caminho e nunca conteúdo | | |
 | **Screenshots** | | | **Decisão de marca: fora — talvez nunca** (se um dia, opt-in contratual + blur + retenção curtíssima) |
 | Keylogging, clipboard, webcam/mic, leitura de conteúdo, modo oculto | | | **NUNCA** (linha vermelha — seção 5) |
 | pg_partman / dimensionamento p/ 10k devices / observabilidade completa (OTel+Grafana) | | quando houver >1 instância | gatilhos objetivos no spec |
@@ -185,6 +186,8 @@ Mitigação em camadas, todas no MVP:
 - Captura de tela contínua/oculta;
 - Burla de janela anônima do navegador;
 - Venda/uso secundário de dados de monitoramento.
+
+> **16/09/2026 — a linha "burla de janela anônima" quase caiu sozinha, sem ninguém pedir.** Ao implementar a coleta de sites, medimos os navegadores reais e descobrimos que o rebaixamento automático para `APP_ONLY` em navegação anônima **não estava funcionando em nenhum navegador atual**: a regra era "sufixo do título", o Edge escreve `[InPrivate]` no MEIO do título e o Chrome parou de marcar a janela anônima no título Win32 (a marca `(Modo anônimo)` só existe no nome acessível do painel). Ou seja: a promessa estava no texto e no código, e mesmo assim título de janela anônima chegava ao servidor. Lição para as próximas linhas vermelhas: **promessa de privacidade que depende de heurística sobre software de terceiros precisa de teste contra o software real, e não só de teste unitário contra a string que imaginamos que ele produz.**
 
 Racional: além do passivo solidário, um único caso público de "software brasileiro usado como spyware" destrói a marca. A postura "não construímos isso nem por dinheiro" é ativo de vendas — alguns prospects vão condicionar a compra a screenshots/keylog; perder essas vendas é parte da estratégia, e o time comercial (você, no início) precisa da política escrita para não corroer a linha negócio a negócio.
 

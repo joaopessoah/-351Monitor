@@ -21,7 +21,8 @@ public static class NoticeTextComposer
     public const string DefaultBody =
         "Esta máquina é monitorada pela sua empresa.\n\n" +
         "São coletados: aplicativo e título da janela em foco (conforme a política da " +
-        "empresa), eventos de sessão (logon/bloqueio), ociosidade e saúde do agente.";
+        "empresa), o domínio dos sites e o nome dos arquivos abertos (quando a empresa ativa " +
+        "essas coletas), eventos de sessão (logon/bloqueio), ociosidade e saúde do agente.";
 
     /// <summary>
     /// Enquadramento FIXO, sempre concatenado (editável só por quem mexe no código do agente):

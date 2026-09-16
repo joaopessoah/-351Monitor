@@ -19,9 +19,9 @@ namespace M351.Agent.Core.Privacy;
 ///
 /// SUBDOMÍNIO, decisão de produto: a unidade de classificação é o domínio registrável, porque é
 /// a unidade que o cliente sabe julgar ("mercadolivre.com.br é improdutivo") e porque uma regra
-/// por host obrigaria a classificar `www.`, `m.` e `produto.` separadamente. O custo conhecido é
-/// não distinguir `docs.google.com` de `google.com`; o dia em que isso for pedido, o catálogo
-/// aceita host completo sem mudança de esquema (site_catalog.domain é texto livre).
+/// por host obrigaria a classificar `www.`, `m.` e `produto.` separadamente. A ÚNICA exceção é a
+/// lista curta de <see cref="ServiceSubdomainDomains"/>, onde serviços de natureza diferente
+/// moram no mesmo domínio e um rótulo a mais evita jogar trabalho e lazer no mesmo balde.
 /// </summary>
 public static class SiteDomain
 {
@@ -66,6 +66,27 @@ public static class SiteDomain
         "co.uk", "org.uk", "gov.uk", "ac.uk", "co.jp", "com.au", "net.au", "org.au", "com.ar",
         "com.mx", "com.co", "com.pt", "com.es", "com.cn", "co.in", "co.za", "co.nz", "com.uy",
         "com.py", "com.pe", "com.ve", "com.tr", "com.sg", "com.hk", "com.tw", "com.my",
+    };
+
+    /// <summary>
+    /// Domínios que hospedam SERVIÇOS DIFERENTES em subdomínios diferentes. Neles, e SÓ neles, um
+    /// rótulo a mais é preservado: é o que separa "docs.google.com" (documento de trabalho) da
+    /// busca do Google, "console.aws.amazon.com" (infraestrutura) da loja da Amazon e
+    /// "g1.globo.com" (notícia) de "globoplay.globo.com" (streaming).
+    ///
+    /// Sem esta lista, reduzir tudo ao domínio registrável jogaria trabalho e lazer no MESMO
+    /// balde para os endereços mais usados de uma PME — e a classificação ficaria errada
+    /// justamente onde mais importa. Com ela, o rótulo extra é a EXCEÇÃO explícita, não a regra:
+    /// para todo o resto continua valendo "só o domínio registrável".
+    ///
+    /// É o mesmo conceito da seção PRIVADA da Public Suffix List, recortado ao que aparece no
+    /// dia a dia brasileiro. Entrar aqui aumenta o que sai da máquina (um rótulo), então a lista
+    /// é curta e cada linha se justifica por serviços de natureza claramente diferente.
+    /// </summary>
+    private static readonly HashSet<string> ServiceSubdomainDomains = new(StringComparer.Ordinal)
+    {
+        "google.com", "amazon.com", "microsoft.com", "live.com", "office.com", "sharepoint.com",
+        "amazonaws.com", "atlassian.net", "zoho.com", "salesforce.com", "globo.com", "uol.com.br",
     };
 
     /// <summary>
@@ -231,6 +252,13 @@ public static class SiteDomain
         var lastTwo = $"{labels[^2]}.{labels[^1]}";
         var take = TwoLabelPublicSuffixes.Contains(lastTwo) ? 3 : 2;
         if (labels.Length <= take) return host;
-        return string.Join('.', labels[^take..]);
+
+        var registrable = string.Join('.', labels[^take..]);
+
+        // Um rótulo a mais SÓ nos domínios de serviços compartilhados (ver o campo).
+        if (ServiceSubdomainDomains.Contains(registrable) && labels.Length > take)
+            return string.Join('.', labels[^(take + 1)..]);
+
+        return registrable;
     }
 }
