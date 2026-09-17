@@ -110,19 +110,58 @@ Por isso as opções em BRL com token (Sectigo Brasil, rapidssl.com.br), apesar 
 fiscal em real, **ficam de fora** enquanto o release for automatizado. Some a isso o risco
 concreto de o token travar na alfândega.
 
-### Recomendação para você (empresa BRASILEIRA, São Paulo, fase de piloto)
+## DECISÃO (17/09/2026): SSL.com OV + eSigner
 
-1. **Melhor opção geral: SSL.com OV + eSigner (~US$ 309/ano).** É cloud (sem token, sem
-   alfândega), a SSL.com publica uma GitHub Action oficial de assinatura, e o release continua
-   sendo um clique. Mais caro que o Certum em ~US$ 190/ano — que é exatamente o preço de não ter
-   trabalho manual em todo release.
-2. **Opção mais barata: Certum Cloud OV, plano de 3 anos (US$ 348 total, ~US$ 116/ano).** Escolha
-   esta se aceitar assinar manualmente por enquanto — nesse caso me peça para adaptar o workflow
-   (entrada para MSI já assinado).
-3. **Azure Trusted Signing está FORA** (não atende o Brasil). Não perca tempo com ela.
-4. **EV: não.** Custa o dobro e não resolve nem SmartScreen nem SAC mais rápido que o OV.
-5. Sectigo Brasil / revendedores em BRL: só se a exigência de nota fiscal em real pesar mais que
-   a automação do release.
+Escolhido. O que pesou: é cloud (sem token, sem alfândega), tem Action oficial de GitHub
+(`SSLcom/esigner-codesign`) e por isso o release continua sendo um clique. Custa ~US$ 190/ano a
+mais que o Certum — exatamente o preço de não ter trabalho manual em todo release.
+
+**Atende empresa brasileira, confirmado na política da própria CA:** a lista de países restritos
+da SSL.com tem quatro nomes (Cuba, Irã, Coreia do Norte, Síria). BR é país aceito, não há
+bloqueio de exportação. O produto é global; o que varia por país é a *forma de comprovar a
+empresa*, resolvida na seção abaixo.
+
+### Como preencher o pedido
+
+Comece pela página do certificado, não pela do eSigner: `ssl.com/products/software-integrity/code-signing/ov/`
+→ **Configure & Buy**. O formulário tem 3 passos:
+
+1. **Certificado:** OV Code Signing — US$ 129/ano (1 ano) ou **US$ 109,65/ano no plano de 3 anos**.
+   NÃO pegue EV (US$ 349/ano): não resolve nada mais rápido (ver seção OV vs EV).
+2. **Key Storage & Delivery:** **eSigner Cloud Signing, Tier 1** — US$ 15/mês na cobrança anual
+   (US$ 180/ano, 240 assinaturas/ano; sobra muito para nós). **NÃO** escolha *YubiKey* (+US$ 249):
+   é o token físico, que não funciona no runner do GitHub. Cloud HSM próprio (a partir de US$ 500
+   mais taxa de atestação de US$ 500–1.500) é overkill para a nossa escala.
+3. **Validation Speed:** **Standard** (incluída). *Expedited* custa **+US$ 599** para adiantar
+   1–3 dias — não vale.
+
+Total do primeiro ano: **~US$ 309** (~US$ 290/ano no plano de 3 anos). Os primeiros **30 dias de
+eSigner são grátis**: dá para provar a assinatura no CI antes de a mensalidade começar.
+
+### O que a SSL.com vai pedir para validar a empresa brasileira
+
+A validação aceita **link para um órgão de governo da jurisdição onde a empresa foi constituída**
+— no nosso caso, o **Comprovante de Inscrição e de Situação Cadastral do CNPJ na Receita
+Federal**. É o caminho principal e não exige nada exótico; costuma bastar mandar o link para
+`support@ssl.com`.
+
+- **D-U-N-S acelera** — a SSL.com diz isso explicitamente. É gratuito; se a empresa ainda não tem,
+  peça AGORA, porque criar ou atualizar cadastro leva dias e é o gargalo típico.
+- Bases de terceiros também servem: OpenCorporates, ZoomInfo, Crunchbase, Bloomberg, D&B.
+- **Empresa com menos de 3 anos: exigem scan de documento com foto do solicitante.** Deixe pronto.
+- **A ligação de confirmação acontece DEPOIS de a validação ser aprovada**, não durante — mas o
+  telefone da empresa ainda precisa estar localizável.
+
+### Alternativas descartadas
+
+- **Certum Cloud OV, 3 anos (US$ 348 total, ~US$ 116/ano)** — o mais barato, e o plano B se o
+  orçamento apertar. Custo escondido: assinatura manual, porque o SimplySign exige app desktop +
+  OTP; nesse cenário o `publicar-release-agente.yml` precisa ganhar uma entrada para MSI já
+  assinado.
+- **Azure Trusted Signing** — não atende o Brasil.
+- **EV, em qualquer CA** — o dobro do preço sem resolver SmartScreen nem SAC mais rápido.
+- **Sectigo Brasil / revendedores em BRL** — só se nota fiscal em real pesar mais que a automação
+  do release, porque todos entregam em token USB.
 
 ## OV vs EV — qual comprar
 
@@ -158,6 +197,7 @@ empurra o custo para o cliente, na forma de lista de exclusão no antivírus.
 | **Hubstaff** | ✅ Sim | Oferece "code-signed MSI installer" como recurso de deploy para TI |
 | **ActivTrak** | ⚠️ Documenta o aviso | O próprio help center ensina o cliente a passar pelo "Windows protected your PC" do SmartScreen — prova de que nem gigante do setor escapa da reputação |
 | **Kickidler** | ❔ Sem evidência pública de assinatura | Em vez disso publica uma página de "Kickidler e antivírus" com instruções de exclusão, e usa print de VirusTotal limpo como argumento |
+| **Monitoo** (BR) | ❔ Sem evidência pública de assinatura | **Distribui o `Monitoo-Installer.MSI` pelo Google Drive**, e a página de instalação não menciona editor nem certificado |
 
 Leituras para nós:
 
@@ -168,6 +208,31 @@ Leituras para nós:
    o aviso vai diminuindo", nunca "acabou o atrito no dia 1".
 3. **O caminho do Kickidler (não assinar e pedir exclusão) é vendável, mas caro na relação**: numa
    ferramenta de monitoramento, pedir para o TI baixar a guarda do antivírus é péssimo argumento.
+4. **O Google Drive da Monitoo é o oposto do que assinar resolve**: baixar de lá carimba o arquivo
+   com Mark of the Web de origem externa e ainda pega o aviso do próprio Drive para arquivo grande
+   não verificado. Quem tem certificado e reputação hospeda no domínio próprio — e isso vira
+   argumento de venda contra eles.
+
+### PENDÊNCIA ABERTA — confirmar assinatura dos concorrentes (decidido em 17/09/2026)
+
+A tabela acima é **indício público**, não prova. A prova é de 10 segundos por instalador:
+
+```powershell
+Get-AuthenticodeSignature "C:\caminho\Instalador.msi" |
+  Format-List Status, StatusMessage, SignerCertificate
+```
+
+`Status: NotSigned` encerra a discussão. `Valid` mostra a razão social e a CA no
+`SignerCertificate` — que é como sabemos, por exemplo, que o Teramind usa DigiCert EV.
+
+Alvos, em ordem de valor comercial: **Monitoo** (Google Drive, link na página de instalação
+deles), **Kickidler**, **ActivTrak**, **Hubstaff**.
+
+> ⚠️ **NÃO baixe isso na máquina corporativa.** São agentes de monitoramento; o EDR da empresa
+> pode barrar o download e abrir um incidente de segurança em nome de quem baixou. Faça numa VM
+> descartável — a mesma que já usamos para testar Smart App Control.
+
+O resultado entra na tabela acima, trocando ❔ por ✅/❌ com a CA emissora.
 
 ## Onde comprar (CAs e revendedores)
 
@@ -267,11 +332,18 @@ inicial do Defender. Re-submeter a cada versão nova relevante.
 
 ## Próximo passo
 
+Fornecedor já decidido (SSL.com OV + eSigner). Falta:
+
 1. Decidir o nome jurídico do "Editor" (= razão social no certificado), porque é ele que aparece
-   no UAC no lugar de "Editor desconhecido".
-2. Escolher entre SSL.com eSigner (release automatizado) e Certum Cloud (mais barato, assinatura
-   manual). Em ambos: **OV**, nunca EV.
-3. Comprar e iniciar a validação da empresa (é o que demora: 1 a 3 semanas).
-4. Quando o cert/HSM estiver pronto, me avisar para eu ligar o gancho no `build-agent-msi.ps1`,
+   no UAC no lugar de "Editor desconhecido". **Isso trava o pedido — decida primeiro.**
+2. Providenciar o **D-U-N-S** (gratuito, leva dias) e separar o comprovante de CNPJ da Receita
+   Federal + documento com foto do solicitante.
+3. Comprar com as escolhas da seção "Como preencher o pedido" (OV, eSigner Tier 1, Standard) e
+   iniciar a validação — é o que demora: 1 a 3 semanas.
+4. Quando o eSigner estiver ativo, me passar usuário, senha, segredo TOTP e *credential ID* para
+   virarem secrets do GitHub; eu ligo a Action `SSLcom/esigner-codesign` no `build-agent-msi.ps1`,
    no job de CI e no `publicar-release-agente.yml`.
-5. Agendar o vencimento (460 dias) no calendário, com alarme 60 dias antes.
+5. Primeiro release assinado com `verify_authenticode` ainda **desligado**; ligar só no seguinte
+   (ver "PASSO OBRIGATÓRIO" acima).
+6. Agendar o vencimento (460 dias) no calendário, com alarme 60 dias antes.
+7. Rodar a checagem de assinatura dos concorrentes (ver "PENDÊNCIA ABERTA" acima).
