@@ -61,6 +61,21 @@ rm /tmp/MonitorAgent-1.1.0.msi
 A saída do passo 3 imprime canal, versão, SHA-256 e a URL do manifesto, guarde no
 ticket de operação.
 
+### Repetir a publicação é seguro (desde 17/09/2026)
+
+Publicar de novo a MESMA versão não é erro — é o que acontece quando o workflow falha
+depois de já ter gravado (limpeza de temporário, rede caindo no fim) e alguém redispara.
+O comando resolve os três casos sozinho:
+
+| Situação | O que acontece |
+|---|---|
+| Versão já publicada, mesmo SHA-256, já é a current | `Nada a fazer`, sai com 0 |
+| Versão já publicada, mesmo SHA-256, NÃO é a current (houve rollback) | volta o `is_current` para ela, auditado, sai com 0 |
+| Versão já publicada com **SHA-256 diferente** | **recusa e sai com 1** — dois binários com o mesmo número deixariam a frota impossível de diagnosticar. Suba `AgentVersionInfo.Current` e publique uma versão nova |
+
+Ou seja: na dúvida sobre se a publicação chegou a acontecer, **redispare o workflow**. Ele
+diz o que encontrou em vez de estourar violação de índice único.
+
 ## Testar o manifesto
 
 `GET /api/v1/agent/update-manifest` é autenticado por DEVICE TOKEN (o mesmo `dt_...`

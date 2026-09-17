@@ -95,6 +95,75 @@ public static class PublishAgentReleaseCommand
         var id = Uuid7.NewUuid7();
 
         await using var connection = await dataSource.OpenConnectionAsync();
+
+        // REPUBLICAR a mesma versão é operação normal, não erro: o workflow de release é disparado
+        // à mão e pode ser repetido depois de uma falha TARDIA (limpeza de temporário, rede caindo
+        // no final) que não desfez a gravação. Sem este trecho, a repetição batia no índice único
+        // ux_agent_releases_channel_version e devolvia um erro de Postgres que não dizia a quem
+        // operava nem o que aconteceu nem o que fazer.
+        var existing = await connection.QuerySingleOrDefaultAsync<ExistingRelease>(
+            new CommandDefinition(
+                """
+                SELECT id AS "Id", sha256 AS "Sha256", is_current AS "IsCurrent"
+                FROM agent_releases WHERE channel = @Channel AND version = @Version
+                """,
+                new { Channel = channel, Version = version }));
+
+        if (existing is not null)
+        {
+            // Conteúdo diferente com a MESMA versão é o caso que nunca pode passar batido: dois
+            // binários distintos com o mesmo número deixam a frota impossível de diagnosticar.
+            if (!string.Equals(existing.Sha256, sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                Console.Error.WriteLine(
+                    $"ERRO: a versão {version} já está publicada no canal '{channel}' com OUTRO conteúdo.");
+                Console.Error.WriteLine($"  SHA-256 publicado : {existing.Sha256}");
+                Console.Error.WriteLine($"  SHA-256 do arquivo: {sha256}");
+                Console.Error.WriteLine(
+                    "  Suba AgentVersionInfo.Current e publique uma versão nova — nunca troque o "
+                    + "binário de uma versão já publicada.");
+                return 1;
+            }
+
+            if (existing.IsCurrent)
+            {
+                Console.WriteLine($"Nada a fazer: {version} já está publicada e é a current do canal '{channel}'.");
+                Console.WriteLine($"  SHA-256 : {sha256}");
+                return 0;
+            }
+
+            // Mesma versão, mesmo conteúdo, mas não é a current (cenário de rollback anterior):
+            // publicar de novo significa exatamente voltar o is_current para ela. Dois UPDATEs
+            // numa transação, como no rollback — o índice parcial único não tolera os dois
+            // estados num statement só.
+            await using (var restore = await connection.BeginTransactionAsync())
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    "UPDATE agent_releases SET is_current = false WHERE channel = @Channel AND is_current",
+                    new { Channel = channel }, transaction: restore));
+
+                await connection.ExecuteAsync(new CommandDefinition(
+                    "UPDATE agent_releases SET is_current = true WHERE id = @Id",
+                    new { Id = existing.Id }, transaction: restore));
+
+                await AuditWriter.AddInTransactionAsync(
+                    connection, restore, AgentReleaseAudit.SystemTenantId, AuditActions.PublishAgentRelease,
+                    targetType: "agent_release", targetId: existing.Id,
+                    detailJson: JsonSerializer.Serialize(new Dictionary<string, object?>
+                    {
+                        ["channel"] = channel,
+                        ["version"] = version,
+                        ["sha256"] = sha256,
+                        ["republicacao"] = true,
+                    }));
+
+                await restore.CommitAsync();
+            }
+
+            Console.WriteLine($"Versão {version} já existia com o mesmo conteúdo; voltou a ser a current do canal '{channel}'.");
+            return 0;
+        }
+
         await using (var tx = await connection.BeginTransactionAsync())
         {
             // desmarca o current vigente do canal e insere o novo já como current — índice
@@ -156,6 +225,9 @@ public static class PublishAgentReleaseCommand
     private static void PrintUsage() => Console.Error.WriteLine(
         "Uso: publish-agent-release --version <v> --file <caminho.msi> --min-version <v> "
         + "[--channel stable] [--server-url https://api.exemplo.com.br]");
+
+    /// <summary>Linha já existente do canal+versão — base da republicação idempotente.</summary>
+    private sealed record ExistingRelease(Guid Id, string Sha256, bool IsCurrent);
 }
 
 /// <summary>
