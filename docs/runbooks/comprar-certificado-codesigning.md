@@ -5,6 +5,25 @@
 > é para você (Joao) adquirir o certificado. **Lead time real: 1 a 3 semanas** por causa
 > da validação da empresa — começar cedo.
 
+## O que a assinatura REALMENTE faz sumir (leia antes de comprar)
+
+Três telas diferentes do Windows são confundidas como "o aviso". Só uma some no dia 1:
+
+| Tela | Texto que o cliente vê | Assinar resolve? |
+|---|---|---|
+| **UAC** (o prompt do duplo clique) | "Editor desconhecido" → vira "Editor verificado: RAZÃO SOCIAL" | ✅ **Sim, imediatamente**, no primeiro MSI assinado |
+| **SmartScreen** | "O Windows protegeu o seu PC — aplicativo não reconhecido" | ⚠️ **Não automaticamente.** Depende de REPUTAÇÃO, que se acumula com downloads/instalações ao longo do tempo |
+| **Smart App Control** | "O Controlo Inteligente de Aplicações bloqueou parte desta aplicação" | ⚠️ **Não automaticamente**, mesma história de reputação — mas sem assinatura é bloqueio garantido |
+
+Ou seja: **"Editor desconhecido" some; "aplicativo não reconhecido" não some sozinho.** O que a
+assinatura muda no SmartScreen/SAC é que a reputação passa a ser acumulada **na identidade do
+certificado** (todo binário que você assinar herda o histórico) em vez de por hash de arquivo —
+sem certificado, cada build novo recomeça do zero e nunca sai do aviso.
+
+**EV não compra atalho.** A reputação instantânea que o EV dava foi descontinuada pela Microsoft;
+a própria DigiCert publica que o EV não garante mais ausência de aviso. Por isso a recomendação
+abaixo é OV: o EV custa o dobro e chega no mesmo lugar.
+
 ## Por que precisamos
 
 Sem assinatura Authenticode, o Windows SmartScreen/Defender mostra "Editor desconhecido" e
@@ -54,31 +73,62 @@ Para desenvolvimento e teste interno, use máquina com SAC desligado. Em VM desc
 o SAC não custa nada, porque a VM se recria. Nunca queime o interruptor de uma máquina real: ele
 não tem volta.
 
-## Opções por custo (preços de 2026 — confirmar no momento da compra)
+## Validade máxima agora é 460 dias (CA/B Forum, ballot CSC-31)
 
-| Opção | Custo | Modelo | Observações |
-|---|---|---|---|
-| ~~**Azure Trusted Signing**~~ | ~~US$ 9,99/mês~~ | — | ❌ **INDISPONÍVEL NO BRASIL** (cobre só org EUA/Canadá e org UE/UK; pedidos de validação de empresa brasileira foram recusados). Mais barato no papel, mas fora de alcance daqui. |
-| **Certum Cloud Code Signing** | **~US$ 108/ano** (~€100) | Anual, cloud (sem token físico) | Mais barato em modelo anual; CA reconhecida. |
-| **Sectigo OV** via revendedor (SSL2BUY, SignMyCode, CheapSSLShop) | **~US$ 215–226/ano** (~€200) | Anual, token HSM | Padrão de mercado; mais barato que comprar da CA direto. |
-| **DigiCert direto** | **~€71/mês (~€850/ano)** | Anual | Premium — caro demais para a sua fase, sem vantagem funcional sobre os acima. |
+Desde **01/03/2026** nenhum certificado público de code signing pode ser emitido com validade
+maior que **460 dias** (~15 meses). O teto anterior era 39 meses.
 
-### Recomendação para você (empresa BRASILEIRA, fase de dev, custo sensível)
+O que isso muda na prática: **plano plurianual não é mais "compra e esquece"**. Um plano de 3 anos
+continua valendo a pena pelo desconto, mas significa "assinatura de 3 anos com **reemissão a cada
+~15 meses**" — e cada reemissão refaz a validação da empresa. Consequências para nós:
 
-1. **Agora:** não compre. Siga com MSI não-assinado.
-2. **Azure Trusted Signing está FORA** (não atende o Brasil). Não perca tempo com ela.
-3. **No piloto, a opção mais barata é Certum Cloud Code Signing (~US$ 108/ano)** — cloud (sem
-   token físico), valida empresa brasileira por CNPJ, sem requisito de idade da organização.
-   Comprável via revendedores (ex.: SSLmentor) que faturam internacionalmente.
-4. **Alternativa nacional: Sectigo OV via Sectigo Brasil** (sectigo.com.br) — valida pelo CNPJ
-   na Receita Federal, **faturável em R$**, ~US$ 220/ano. Bom se preferir suporte/nota em pt-BR.
-5. DigiCert (~€71/mês) continua caro demais, sem vantagem funcional.
+- coloque o vencimento no calendário **com 60 dias de antecedência**; certificado vencido não
+  invalida o que já foi assinado (por causa do timestamp RFC 3161 que o nosso `signtool` já usa),
+  mas trava o release seguinte;
+- se a razão social mudar entre reemissões, o `expected_signer_cn` do `install.json` tem de mudar
+  no mesmo release (ver seção adiante).
 
-## OV vs EV — qual comprar (se for de certificado tradicional, não Azure)
+## Opções por custo (cotações de 17/09/2026 — confirmar no momento da compra)
+
+| Opção | Custo | Chave | Assina no nosso CI? | Observações |
+|---|---|---|---|---|
+| ~~**Azure Trusted Signing**~~ | ~~US$ 9,99/mês~~ | Cloud | Sim | ❌ **INDISPONÍVEL NO BRASIL** — a lista de países suportados (GA de abril/2026) não inclui o Brasil. De longe o mais barato; vale re-checar daqui a uns 6 meses. |
+| **SSL.com OV + eSigner** | **~US$ 309/ano** (cert ~US$ 129 + eSigner tier 1 ~US$ 180/ano, 20 assinaturas/mês; 30 dias grátis) | Cloud HSM | ✅ **Sim, com Action oficial** (`SSLcom/esigner-codesign`) | Mais caro que o Certum, mas é o único que pluga direto no `publicar-release-agente.yml` sem gambiarra. |
+| **Certum Cloud Code Signing (OV)** | **US$ 177/ano (1 ano), US$ 132/ano (2 anos), US$ 116/ano (3 anos)** | Cloud (SimplySign, sem token) | ⚠️ Difícil (exige SimplySign Desktop + OTP no runner) | **O mais barato.** Bom se a assinatura for manual, na sua máquina. |
+| **Sectigo Brasil (direto)** | **R$ 3.026/ano OV, R$ 3.585/ano EV** | Token USB FIPS | ❌ Não | Nota fiscal e suporte em pt-BR, validação pelo CNPJ. Caro, e o token não entra no runner do GitHub. |
+| **Revendedor BR (rapidssl.com.br)** | **R$ 1.419 OV ECC / R$ 1.999 OV RSA / R$ 2.189 EV ECC** | Token USB enviado pelo correio | ❌ Não | Mais barato que a Sectigo Brasil, mas token importado = risco de alfândega + assinatura manual. |
+| **DigiCert direto** | ~€850/ano | Cloud (KeyLocker) | Sim | Premium — caro demais para a nossa fase, sem vantagem funcional. |
+
+### O critério que decide: o token USB NÃO funciona no nosso release
+
+O `publicar-release-agente.yml` constrói o MSI num runner **`windows-latest` hospedado pelo
+GitHub** — máquina efêmera, na nuvem, sem porta USB nossa. Qualquer opção com token físico
+significa **quebrar o release de um clique**: baixar o MSI como artifact, assinar na sua máquina
+com o token plugado e reenviar por um caminho novo que ainda não existe.
+
+Por isso as opções em BRL com token (Sectigo Brasil, rapidssl.com.br), apesar de darem nota
+fiscal em real, **ficam de fora** enquanto o release for automatizado. Some a isso o risco
+concreto de o token travar na alfândega.
+
+### Recomendação para você (empresa BRASILEIRA, São Paulo, fase de piloto)
+
+1. **Melhor opção geral: SSL.com OV + eSigner (~US$ 309/ano).** É cloud (sem token, sem
+   alfândega), a SSL.com publica uma GitHub Action oficial de assinatura, e o release continua
+   sendo um clique. Mais caro que o Certum em ~US$ 190/ano — que é exatamente o preço de não ter
+   trabalho manual em todo release.
+2. **Opção mais barata: Certum Cloud OV, plano de 3 anos (US$ 348 total, ~US$ 116/ano).** Escolha
+   esta se aceitar assinar manualmente por enquanto — nesse caso me peça para adaptar o workflow
+   (entrada para MSI já assinado).
+3. **Azure Trusted Signing está FORA** (não atende o Brasil). Não perca tempo com ela.
+4. **EV: não.** Custa o dobro e não resolve nem SmartScreen nem SAC mais rápido que o OV.
+5. Sectigo Brasil / revendedores em BRL: só se a exigência de nota fiscal em real pesar mais que
+   a automação do release.
+
+## OV vs EV — qual comprar
 
 | | **OV (Organization Validation)** | **EV (Extended Validation)** |
 |---|---|---|
-| Custo aproximado | ~US$ 200–400/ano | ~US$ 400–700/ano |
+| Custo aproximado | ~US$ 116–310/ano | ~US$ 226–900/ano |
 | Reputação SmartScreen | Ganha com o tempo/volume de instalações | Ganha com o tempo também. **A vantagem de reputação imediata do EV ACABOU**, a própria DigiCert publica que EV não garante mais ausência de aviso |
 | Armazenamento da chave | HSM/token FIPS (obrigatório desde jun/2023) | HSM/token FIPS (sempre foi) |
 | Validação | Identidade da empresa (CNPJ etc.) | Identidade + verificação reforçada |
@@ -97,13 +147,37 @@ O que de fato acelera a reputação, e vale mais do que a diferença entre OV e 
 2. submeter cada versão relevante ao Microsoft Security Intelligence (seção adiante);
 3. volume de instalações limpas ao longo do tempo, que é justamente o que não se compra.
 
+## O que os concorrentes fazem (pesquisa de 17/09/2026)
+
+Assinar é o padrão entre os concorrentes que vendem para TI corporativo — e quem não assina
+empurra o custo para o cliente, na forma de lista de exclusão no antivírus.
+
+| Concorrente | Assina? | Evidência |
+|---|---|---|
+| **Teramind** | ✅ Sim, **EV** | Base de conhecimento própria: agente e drivers assinados; certificados emitidos pela DigiCert EV Code Signing CA (driver em modo kernel exige EV) |
+| **Hubstaff** | ✅ Sim | Oferece "code-signed MSI installer" como recurso de deploy para TI |
+| **ActivTrak** | ⚠️ Documenta o aviso | O próprio help center ensina o cliente a passar pelo "Windows protected your PC" do SmartScreen — prova de que nem gigante do setor escapa da reputação |
+| **Kickidler** | ❔ Sem evidência pública de assinatura | Em vez disso publica uma página de "Kickidler e antivírus" com instruções de exclusão, e usa print de VirusTotal limpo como argumento |
+
+Leituras para nós:
+
+1. **Assinar é preço de entrada** para conversa com TI corporativo — é isso que o Teramind e o
+   Hubstaff colocam no material de vendas.
+2. **O ActivTrak confirma a parte chata**: mesmo assinado e com anos de mercado, ainda se
+   documenta o aviso do SmartScreen. Nossa expectativa tem de ser "some o 'Editor desconhecido' e
+   o aviso vai diminuindo", nunca "acabou o atrito no dia 1".
+3. **O caminho do Kickidler (não assinar e pedir exclusão) é vendável, mas caro na relação**: numa
+   ferramenta de monitoramento, pedir para o TI baixar a guarda do antivírus é péssimo argumento.
+
 ## Onde comprar (CAs e revendedores)
 
-- **DigiCert** (direto) — premium, suporte bom, integra com KeyLocker (assinatura na nuvem).
-- **Sectigo** (via revendedores: SSL.com, The SSL Store, Certera, GoGetSSL) — mais barato.
-- **SSL.com** — costuma ter cloud signing (eSigner) que evita o token físico.
-- No Brasil há revendedores que faturam em BRL; a CA em si é internacional (não confundir com
-  certificado ICP-Brasil/e-CNPJ — Authenticode é outro produto, padrão global da CA/B Forum).
+- **SSL.com** — cloud signing (eSigner) com Action oficial de GitHub; a opção recomendada aqui.
+- **Certum** (via revendedores como SSLmentor) — cloud signing SimplySign, o mais barato.
+- **Sectigo Brasil** (sectigo.com.br) e revendedores BR (rapidssl.com.br, meussl.com.br) — faturam
+  em R$, mas entregam em token USB.
+- **DigiCert** (direto) — premium, integra com KeyLocker (assinatura na nuvem).
+- Não confundir com certificado ICP-Brasil/e-CNPJ: Authenticode é outro produto, padrão global da
+  CA/B Forum. e-CNPJ **não** assina software para o Windows.
 
 ## O que a CA vai exigir da empresa (prepare antes)
 
@@ -114,6 +188,7 @@ O que de fato acelera a reputação, e vale mais do que a diferença entre OV e 
 - **Verificação por telefone**: a CA liga para um número público da empresa (listado em diretório
   oficial) para confirmar o pedido — garanta que o telefone da empresa esteja localizável.
 - E-mail corporativo no domínio da empresa.
+- Documento de identidade com foto do representante legal, e procuração se quem pedir não for ele.
 
 ## Armazenamento da chave (decisão técnica importante)
 
@@ -121,14 +196,14 @@ Desde jun/2023 a CA/B Forum exige que a chave privada de code signing fique em *
 140-2** (token USB ou HSM na nuvem) — **não existe mais .pfx baixável** para OV/EV novos. Opções:
 
 1. **Token USB físico** (vem da CA): assina na máquina onde o token está plugado. Simples, mas
-   **não automatiza no CI** (o token tem que estar presente). Bom para começar assinando manualmente.
-2. **Cloud signing / HSM gerenciado** (DigiCert KeyLocker, SSL.com eSigner, Azure Trusted Signing,
+   **não automatiza no CI** (o token tem que estar presente) — e o nosso CI roda em runner
+   hospedado. Só serve se a assinatura for manual.
+2. **Cloud signing / HSM gerenciado** (SSL.com eSigner, DigiCert KeyLocker, Azure Trusted Signing,
    SignPath): a chave vive num HSM na nuvem; o build assina via API. **Permite assinar no CI**
-   (o job `agent-msi` do GitHub Actions). É o caminho para automatizar.
+   (jobs `agent-msi` do CI e `msi` do `publicar-release-agente.yml`). É o caminho para automatizar.
 
-**Recomendação:** se o objetivo é assinar no CI, escolher uma CA com **cloud signing** (ex.:
-Azure Trusted Signing é barato e integra com `signtool`/`azuresigntool`). Se for assinar
-manualmente no começo, o token USB resolve.
+**Recomendação:** cloud signing. O token só entra em cena se a compra for em BRL com nota fiscal
+brasileira, e aí o release deixa de ser de um clique.
 
 ## Como ligar no nosso build (quando o cert chegar)
 
@@ -136,9 +211,9 @@ O `build-agent-msi.ps1` já tem o gancho condicional. Ajuste conforme a opção:
 - **Token/pfx local:** definir `SIGN_THUMBPRINT` (thumbprint do cert no store) ou `SIGN_PFX` — o
   script chama `signtool sign /sha1 <thumb> /tr <timestamp-RFC3161> /td sha256 /fd sha256` nos
   2 exes e no MSI.
-- **Cloud signing:** trocar a chamada `signtool` por `azuresigntool` (ou o CLI do provedor) com as
-  credenciais do HSM em secrets do GitHub Actions. Me peça que eu adapto o gancho quando você
-  souber qual provedor.
+- **Cloud signing:** trocar a chamada `signtool` pelo CLI/Action do provedor (no SSL.com, a Action
+  `SSLcom/esigner-codesign`; no Azure, `azuresigntool`) com as credenciais do HSM em secrets do
+  GitHub Actions. Me peça que eu adapto o gancho quando você souber qual provedor.
 
 ## PASSO OBRIGATÓRIO no release pós-compra: ligar a verificação no agente
 
@@ -180,8 +255,9 @@ Regras e cuidados:
   cadeia incompleta ou assinado por outro titular é **descartado sem instalar** (mesma disciplina
   do SHA-256 divergente), com o motivo exato no log do serviço. O update é retentado no ciclo
   seguinte (6 h), então um erro de configuração aqui atrasa updates — não derruba o agente.
-- Renovação do certificado: se a razão social no `CN=` mudar, atualize `expected_signer_cn` no
-  mesmo release em que o certificado novo passa a assinar.
+- Renovação do certificado: com o teto de 460 dias, isso acontece a cada ~15 meses. Se a razão
+  social no `CN=` mudar, atualize `expected_signer_cn` no mesmo release em que o certificado novo
+  passa a assinar.
 
 ## Depois de assinar: submeter ao Microsoft Defender
 
@@ -191,8 +267,11 @@ inicial do Defender. Re-submeter a cada versão nova relevante.
 
 ## Próximo passo
 
-1. Decidir o nome jurídico do "Editor" (= razão social no certificado).
-2. Escolher OV + (token ou cloud signing).
-3. Comprar e iniciar a validação da empresa (é o que demora).
-4. Quando o cert/HSM estiver pronto, me avisar para eu ligar o gancho no `build-agent-msi.ps1`
-   e no job de CI.
+1. Decidir o nome jurídico do "Editor" (= razão social no certificado), porque é ele que aparece
+   no UAC no lugar de "Editor desconhecido".
+2. Escolher entre SSL.com eSigner (release automatizado) e Certum Cloud (mais barato, assinatura
+   manual). Em ambos: **OV**, nunca EV.
+3. Comprar e iniciar a validação da empresa (é o que demora: 1 a 3 semanas).
+4. Quando o cert/HSM estiver pronto, me avisar para eu ligar o gancho no `build-agent-msi.ps1`,
+   no job de CI e no `publicar-release-agente.yml`.
+5. Agendar o vencimento (460 dias) no calendário, com alarme 60 dias antes.

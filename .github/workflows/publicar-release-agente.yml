@@ -152,35 +152,56 @@ jobs:
           USER="${STAGING_SSH_USER:-deploy}"
           SSH_OPTS="-i $HOME/.ssh/staging_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
 
-          scp $SSH_OPTS "$MSI" "${USER}@${STAGING_SSH_HOST}:/tmp/${MSI}"
+          if ! scp $SSH_OPTS "$MSI" "${USER}@${STAGING_SSH_HOST}:/tmp/${MSI}"; then
+            echo "::error::scp do MSI para a VPS falhou (host/chave/disco). Veja a saída acima."; exit 1
+          fi
 
           # Valores viajam como atribuições de ambiente (o ssh não preserva argumentos
           # posicionais vazios — mesma convenção do deploy-staging.sh e do reseed).
+          # set +e em volta do ssh: sem isso o `set -e` mata o job antes de conseguirmos
+          # transformar o código de saída numa anotação legível no Actions.
+          set +e
           ssh $SSH_OPTS "${USER}@${STAGING_SSH_HOST}" \
             "M351_DIR='/opt/351monitor' M351_MSI='${MSI}' M351_V='${VERSAO}' M351_MIN='${MIN_VERSION}' bash -s" <<'REMOTE'
           set -euo pipefail
+          # Qualquer comando que falhe diz QUAL foi, em vez de sumir num exit 1 mudo.
+          trap 'echo "::error::[release] falhou na linha $LINENO: $BASH_COMMAND"' ERR
           cd "$M351_DIR"
           ENV=infra/.env
           COMPOSE="docker compose -f infra/docker-compose.staging.yml --env-file $ENV"
-          DOMAIN="$(grep -E '^STAGING_DOMAIN=' "$ENV" | cut -d= -f2-)"
-          if [ -z "$DOMAIN" ]; then echo "STAGING_DOMAIN ausente em $ENV"; exit 1; fi
+          # `|| true`: com pipefail, um grep sem match derrubaria o script antes da mensagem abaixo.
+          DOMAIN="$(grep -E '^STAGING_DOMAIN=' "$ENV" | cut -d= -f2- || true)"
+          if [ -z "$DOMAIN" ]; then echo "::error::STAGING_DOMAIN ausente em $ENV"; exit 1; fi
 
-          CID="$($COMPOSE ps -q api)"
-          if [ -z "$CID" ]; then echo "container da api não está de pé"; exit 1; fi
+          CID="$($COMPOSE ps -q api || true)"
+          if [ -z "$CID" ]; then echo "::error::container da api não está de pé na VPS"; exit 1; fi
+
+          echo "[release] espaço em disco antes de copiar:"
+          df -h / /tmp | tail -n +1
 
           echo "[release] copiando $M351_MSI para dentro do container da api"
-          docker cp "/tmp/$M351_MSI" "$CID:/tmp/$M351_MSI"
+          if ! docker cp "/tmp/$M351_MSI" "$CID:/tmp/$M351_MSI"; then
+            echo "::error::docker cp do MSI para o container falhou (provável falta de disco)"; exit 1
+          fi
 
           echo "[release] publish-agent-release (SHA-256 + agent_releases + is_current)"
-          $COMPOSE exec -T api dotnet M351.Api.dll publish-agent-release \
+          if ! $COMPOSE exec -T api dotnet M351.Api.dll publish-agent-release \
             --version "$M351_V" \
             --file "/tmp/$M351_MSI" \
             --min-version "$M351_MIN" \
-            --server-url "https://${DOMAIN}" < /dev/null
+            --server-url "https://${DOMAIN}" < /dev/null; then
+            echo "::error::publish-agent-release recusou a publicação (versão duplicada? arquivo ilegível? volume cheio?). O motivo exato está na saída do CLI acima."
+            docker exec "$CID" rm -f "/tmp/$M351_MSI" >/dev/null 2>&1 || true
+            rm -f "/tmp/$M351_MSI" || true
+            exit 1
+          fi
 
+          # Limpeza NUNCA reprova o release: a publicação já está commitada no banco, e o MSI
+          # em /tmp é lixo de 85 MB, não parte do resultado. (O `docker cp` grava como root e o
+          # container roda como `app`, então o rm de dentro pode legitimamente dar EPERM.)
           echo "[release] limpando temporários"
-          docker exec "$CID" rm -f "/tmp/$M351_MSI"
-          rm -f "/tmp/$M351_MSI"
+          docker exec "$CID" rm -f "/tmp/$M351_MSI" || echo "[release] aviso: não removi /tmp/$M351_MSI de dentro do container"
+          rm -f "/tmp/$M351_MSI" || echo "[release] aviso: não removi /tmp/$M351_MSI da VPS"
 
           echo "[release] arquivos no volume de releases:"
           docker exec "$CID" ls -l /var/lib/m351/releases
@@ -194,5 +215,11 @@ jobs:
             echo "[release] AVISO: esperado 401 (rota exige device token). Confira o rollout no portal."
           fi
           REMOTE
+          RC=$?
+          set -e
+          if [ "$RC" -ne 0 ]; then
+            echo "::error::A publicação na VPS falhou (ssh saiu com $RC). A linha exata está na saída acima, marcada com [release]."
+            exit "$RC"
+          fi
 
           echo "::notice::Release $VERSAO publicado. Acompanhe em Dispositivos › Versões do agente na frota."
