@@ -1,0 +1,660 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitoramento Home Office e Equipes Remotas | +351 Monitor</title>
+<meta name="description" content="Monitore a produtividade de equipes em home office e trabalho remoto com dados de atividade, ociosidade, aplicativos e jornada. Sem captura de tela ou keylogger.">
+<link rel="canonical" href="https://www.mais351monitor.com.br/monitoramento-home-office.html">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="pt_BR">
+<meta property="og:site_name" content="+351 Monitor">
+<meta property="og:title" content="Monitoramento Home Office e Equipes Remotas | +351 Monitor">
+<meta property="og:description" content="Monitore a produtividade de equipes em home office e trabalho remoto com dados de atividade, ociosidade, aplicativos e jornada. Sem captura de tela ou keylogger.">
+<meta property="og:url" content="https://www.mais351monitor.com.br/monitoramento-home-office.html">
+<meta property="og:image" content="https://www.mais351monitor.com.br/assets/img/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+<link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+<meta name="theme-color" content="#05070D">
+<link rel="preload" href="assets/fonts/space-grotesk-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/open-sans-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/css/home.css?v=20260901-2">
+<noscript><style>.reveal{opacity:1 !important;transform:none !important}</style></noscript>
+<!-- Ajustes só desta página. Tudo o mais vem do home.css, para a identidade ser a mesma da home. -->
+<style>
+  .lp-hero h1 { font-size: clamp(2.2rem, 3.9vw, 3.05rem); }
+  .lp-hero .lead-sub { color: var(--ink-3); font-size: 1rem; max-width: 36em; margin: 0 0 12px; }
+  .lp-hero .lead-no { color: var(--ink); font: 600 0.95rem var(--font-display); letter-spacing: -0.01em; margin: 0 0 30px; }
+  .lp-hero .assure { margin: clamp(44px, 5.5vw, 60px) auto 0; max-width: none; }
+  .lp-text { max-width: 760px; }
+  .lp-text p { color: var(--ink-2); }
+  .monitors.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .qcards .qcard h3 { margin: 0; line-height: 1.3; }
+  .qcards .qcard:last-child:nth-child(3n+1) { grid-column: 1 / -1; }
+  .lp-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: clamp(32px, 5vw, 64px);
+    align-items: center;
+  }
+  .lp-panel {
+    border: 1px solid #1A2740;
+    border-radius: 22px;
+    padding: clamp(28px, 4vw, 44px);
+    background:
+      radial-gradient(520px 260px at 90% -20%, rgba(182, 255, 60, 0.08), transparent 60%),
+      linear-gradient(180deg, #0A101B, #070B13);
+  }
+  .lp-panel h3 { font-size: 1.06rem; margin-bottom: 6px; }
+  .lp-panel p:not(.eyebrow) { color: var(--ink-2); font-size: 0.98rem; margin: 0; }
+  .lp-panel .eyebrow { margin-bottom: 14px; }
+  .lp-panel .checks { margin: 0; }
+  .lp-panel p.lp-links { margin-top: 22px; }
+  .lp-links { display: flex; flex-wrap: wrap; gap: 18px 34px; margin: 30px 0 0; }
+  .lp-list { margin: 0 0 1.2em; padding-left: 1.2em; color: var(--ink-2); }
+  .lp-list li { margin-bottom: 0.4em; }
+  .lp-list li::marker { color: var(--green); }
+  .lp-quote { color: var(--ink); font: 500 clamp(1.1rem, 1.9vw, 1.32rem)/1.45 var(--font-display); letter-spacing: -0.012em; margin: 26px 0 0; padding-left: 18px; border-left: 2px solid var(--green); }
+  .spy .compare-no ul { columns: 2; column-gap: 18px; }
+  .spy .compare-no li { break-inside: avoid; }
+  .mcard-note { margin: 22px 0 0; color: var(--ink-3); font-size: 0.95rem; }
+  .faq-item p a { border-bottom: 1px solid rgba(182, 255, 60, 0.4); }
+  .mission p.mission-sub { margin: 14px 0 0; color: var(--ink-2); font: 400 1rem/1.7 var(--font-body); letter-spacing: 0; text-align: left; }
+  .mission .mission-lead { margin: 0; color: var(--ink); font: 600 clamp(1.3rem, 2.4vw, 1.7rem)/1.3 var(--font-display); letter-spacing: -0.02em; }
+  .final-panel .tagline { margin-top: 30px; }
+  @media (max-width: 1080px) {
+    .monitors.cols-3 { grid-template-columns: 1fr 1fr; }
+    .lp-split { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 640px) {
+    .monitors.cols-3 { grid-template-columns: 1fr; }
+    .spy .compare-no ul { columns: 1; }
+  }
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "@id": "https://www.mais351monitor.com.br/monitoramento-home-office.html#webpage",
+  "url": "https://www.mais351monitor.com.br/monitoramento-home-office.html",
+  "name": "Monitoramento Home Office e Equipes Remotas | +351 Monitor",
+  "description": "Monitore a produtividade de equipes em home office e trabalho remoto com dados de atividade, ociosidade, aplicativos e jornada. Sem captura de tela ou keylogger.",
+  "inLanguage": "pt-BR",
+  "isPartOf": { "@type": "WebSite", "name": "+351 Monitor", "url": "https://www.mais351monitor.com.br/" },
+  "publisher": { "@type": "Organization", "name": "+351 Monitor", "url": "https://www.mais351monitor.com.br/" },
+  "primaryImageOfPage": "https://www.mais351monitor.com.br/assets/img/painel-linha-do-tempo.webp",
+  "breadcrumb": {
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Início", "item": "https://www.mais351monitor.com.br/" },
+      { "@type": "ListItem", "position": 2, "name": "Monitoramento home office", "item": "https://www.mais351monitor.com.br/monitoramento-home-office.html" }
+    ]
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Como monitorar produtividade no home office?",
+      "acceptedAnswer": { "@type": "Answer", "text": "A produtividade no trabalho remoto pode ser analisada por meio de diferentes indicadores, como atividade no dispositivo, utilização de sistemas, jornada e padrões de ociosidade. Nenhuma métrica isolada deve ser tratada automaticamente como prova de produtividade ou improdutividade." }
+    },
+    {
+      "@type": "Question",
+      "name": "É possível monitorar funcionários que trabalham remotamente?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Tecnicamente, a +351 Monitor permite acompanhar os indicadores dos dispositivos corporativos em trabalho remoto. A forma de implementação deve considerar transparência, políticas internas e as obrigações aplicáveis ao tratamento de dados." }
+    },
+    {
+      "@type": "Question",
+      "name": "A +351 Monitor tira prints da tela no home office?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Não. A plataforma não realiza captura nem gravação de tela." }
+    },
+    {
+      "@type": "Question",
+      "name": "A +351 Monitor usa keylogger?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Não. A plataforma não registra teclas digitadas." }
+    },
+    {
+      "@type": "Question",
+      "name": "A plataforma lê mensagens, e-mails ou documentos?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Não. A +351 Monitor não acessa o conteúdo de mensagens, e-mails ou documentos." }
+    },
+    {
+      "@type": "Question",
+      "name": "É possível acompanhar aplicativos utilizados no home office?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Sim. A plataforma registra informações relacionadas aos aplicativos utilizados e ao tempo de utilização." }
+    },
+    {
+      "@type": "Question",
+      "name": "O software monitora a localização do funcionário?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Não. A +351 Monitor não é um sistema de localização. A solução acompanha indicadores relacionados ao dispositivo corporativo e à sua utilização." }
+    },
+    {
+      "@type": "Question",
+      "name": "Ociosidade significa que o funcionário não estava trabalhando?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Não. Ociosidade indica ausência de interação com teclado e mouse durante determinado período. Reuniões, chamadas, leitura ou atividades realizadas fora do computador podem gerar períodos de ociosidade." }
+    },
+    {
+      "@type": "Question",
+      "name": "Quem define quais aplicativos são produtivos?",
+      "acceptedAnswer": { "@type": "Answer", "text": "A empresa cliente define a classificação conforme sua realidade, área e função." }
+    },
+    {
+      "@type": "Question",
+      "name": "Monitoramento no home office é permitido pela LGPD?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Não existe uma resposta única para todos os casos. A análise depende da finalidade do tratamento, da necessidade dos dados, da transparência com os colaboradores, da segurança da informação, do contexto da relação de trabalho e dos demais requisitos aplicáveis. O tema é aprofundado no artigo É legal monitorar o computador dos funcionários?" }
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
+
+<header class="nav" id="topo">
+  <div class="container nav-inner">
+    <a class="brand" href="/" aria-label="+351 Monitor, página inicial">
+      <svg class="brand-mark" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <rect x="3" y="7" width="58" height="42" rx="7" stroke="currentColor" stroke-width="3.6"/>
+        <path class="brand-pulse" d="M11 30h7l5.5-11L31 41l5-11 3.5 6H53" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M23 57h18" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/>
+        <path d="M32 49v8" stroke="currentColor" stroke-width="3.6"/>
+      </svg>
+      <span class="brand-word"><em>+</em>351 <span>Monitor</span></span>
+    </a>
+
+    <nav class="nav-links" aria-label="Seções da página">
+      <a href="#o-que-mostra">Indicadores</a>
+      <a href="#como-funciona">Como funciona</a>
+      <a href="#lgpd-home-office">LGPD</a>
+      <a href="#faq">Perguntas</a>
+      <a href="/conteudos/">Conteúdos</a>
+    </nav>
+
+    <div class="nav-cta">
+      <a class="btn btn-primary btn-sm" href="https://wa.me/5511925690601?text=Ol%C3%A1!%20Quero%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20do%20%2B351%20Monitor." target="_blank" rel="noopener">Agendar demonstração</a>
+    </div>
+
+    <button class="nav-burger" aria-expanded="false" aria-controls="menu-mobile" aria-label="Abrir menu">
+      <span></span><span></span>
+    </button>
+  </div>
+
+  <div class="nav-mobile" id="menu-mobile" hidden>
+    <a href="#o-que-mostra">Indicadores</a>
+    <a href="#como-funciona">Como funciona</a>
+    <a href="#lgpd-home-office">LGPD</a>
+    <a href="#faq">Perguntas</a>
+    <a href="/conteudos/">Conteúdos</a>
+    <a class="btn btn-primary" href="https://wa.me/5511925690601?text=Ol%C3%A1!%20Quero%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20do%20%2B351%20Monitor." target="_blank" rel="noopener">Agendar demonstração</a>
+  </div>
+</header>
+
+<main id="conteudo">
+
+  <!-- ============ 1. HERO ============ -->
+  <section class="hero lp-hero" id="inicio">
+    <div class="container hero-grid">
+      <div class="hero-copy">
+        <p class="eyebrow">Monitoramento de equipes remotas</p>
+        <h1>Monitoramento de produtividade no home office <span class="hl">com dados, não vigilância</span></h1>
+        <p class="lead">Sua equipe pode trabalhar de qualquer lugar. A gestão não precisa trabalhar no escuro.</p>
+        <p class="lead-sub">A +351 Monitor transforma a utilização dos dispositivos corporativos em indicadores de atividade, ociosidade, aplicativos e jornada para ajudar gestores a entender melhor a operação remota.</p>
+        <p class="lead-no">Sem captura de tela. Sem keylogger. Sem leitura de mensagens, e-mails ou documentos.</p>
+
+        <div class="cta-row">
+          <a class="btn btn-primary" href="https://wa.me/5511925690601?text=Ol%C3%A1!%20Quero%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20do%20%2B351%20Monitor." target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 9.6h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            Agendar demonstração
+          </a>
+          <a class="btn btn-ghost" href="#como-funciona">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.6" stroke="currentColor" stroke-width="1.7"/><path d="M10.2 8.9l5 3.1-5 3.1z" fill="currentColor"/></svg>
+            Ver como funciona
+          </a>
+        </div>
+      </div>
+
+      <figure class="shot shot-hero reveal">
+        <img src="assets/img/painel-linha-do-tempo.webp"
+             alt="Painel da +351 Monitor na tela Linha do Tempo: faixas de atividade e ociosidade hora a hora, uma linha por pessoa da equipe."
+             width="1440" height="1105" decoding="async" fetchpriority="high">
+      </figure>
+    </div>
+
+    <ul class="container assure" role="list" aria-label="Diferenciais">
+      <li>Home office</li>
+      <li>Equipes híbridas</li>
+      <li>Privacidade por princípio</li>
+    </ul>
+  </section>
+
+  <!-- ============ 2. VISIBILIDADE NO TRABALHO REMOTO ============ -->
+  <section class="section" id="visibilidade">
+    <div class="container lp-split">
+      <div class="lp-text">
+        <p class="eyebrow reveal">Gestão de equipes remotas</p>
+        <h2 class="reveal">Trabalho remoto não precisa significar falta de visibilidade</h2>
+        <p class="reveal">No escritório, parte do entendimento sobre a operação vem da convivência: o gestor percebe onde a equipe está concentrada, quais demandas se acumulam e como o dia se organiza. Quando o trabalho passa para casa, essa leitura informal desaparece, e muitas perguntas ficam sem resposta.</p>
+        <p class="reveal">Com a equipe distribuída, fica mais difícil entender:</p>
+        <ul class="lp-list reveal">
+          <li>como o tempo de trabalho está sendo distribuído;</li>
+          <li>quais sistemas concentram mais horas;</li>
+          <li>que padrões de atividade se repetem ao longo da semana;</li>
+          <li>onde aparecem períodos de ociosidade;</li>
+          <li>como a jornada se comporta do início ao fim do dia.</li>
+        </ul>
+        <p class="reveal">A resposta não é aumentar a cobrança nem pedir relatórios manuais. Um bom controle de produtividade no home office começa por dados consistentes sobre a operação, que ajudam a decidir melhor sobre processos, carga e capacidade.</p>
+      </div>
+
+      <div class="mission reveal">
+        <p class="eyebrow">Para a gestão</p>
+        <p>Mais distância física não precisa significar <span class="hl">menos informação</span> para a gestão.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3. O QUE A PLATAFORMA MOSTRA ============ -->
+  <section class="section" id="o-que-mostra">
+    <div class="container">
+      <p class="eyebrow reveal">Indicadores do trabalho remoto</p>
+      <h2 class="reveal">O que a +351 Monitor mostra sobre a operação em home office</h2>
+      <p class="section-lead reveal">Os mesmos indicadores para quem está em casa ou no escritório, lidos a partir do dispositivo corporativo. É assim que o acompanhamento de produtividade no trabalho remoto ganha uma base comum de comparação.</p>
+
+      <div class="monitors cols-3 reveal-group">
+        <article class="mcard reveal">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.4" stroke="currentColor" stroke-width="1.7"/><path d="M12 7.6V12l3 1.9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h3>Tempo ativo</h3>
+          <p>Mostra períodos em que houve atividade no dispositivo corporativo durante a jornada.</p>
+        </article>
+        <article class="mcard reveal">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.4" stroke="currentColor" stroke-width="1.7"/><path d="M10 9v6M14 9v6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <h3>Ociosidade</h3>
+          <p>Identifica períodos sem interação com teclado e mouse. Deve ser lida sempre no contexto da função e da atividade, e não como sinônimo de improdutividade.</p>
+        </article>
+        <article class="mcard reveal">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="13.4" y="4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="4" y="13.4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="13.4" y="13.4" width="6.6" height="6.6" rx="1.6" stroke="currentColor" stroke-width="1.7"/></svg>
+          <h3>Aplicativos utilizados</h3>
+          <p>Permite visualizar quais ferramentas e sistemas concentram o tempo de utilização.</p>
+        </article>
+        <article class="mcard reveal">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.5 12h5l2.2-4.6 2.6 9.2 2.2-4.6h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h3>Jornada</h3>
+          <p>Permite analisar padrões de utilização do dispositivo ao longo do expediente.</p>
+        </article>
+        <article class="mcard reveal">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="8.5" r="3.2" stroke="currentColor" stroke-width="1.7"/><path d="M3.6 19.2c.6-3.1 2.8-5 5.4-5s4.8 1.9 5.4 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="16.6" cy="9.4" r="2.6" stroke="currentColor" stroke-width="1.7"/><path d="M16.4 14.4c2.2.1 3.6 1.7 4 4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <h3>Equipes e colaboradores</h3>
+          <p>Indicadores consolidados por equipe e, conforme os perfis de acesso definidos pela empresa, dados individuais.</p>
+        </article>
+        <article class="mcard reveal">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 19.5h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><rect x="5.5" y="11" width="3" height="6" rx="1" stroke="currentColor" stroke-width="1.7"/><rect x="10.5" y="7.5" width="3" height="9.5" rx="1" stroke="currentColor" stroke-width="1.7"/><rect x="15.5" y="4.5" width="3" height="12.5" rx="1" stroke="currentColor" stroke-width="1.7"/></svg>
+          <h3>Indicadores de produtividade</h3>
+          <p>A empresa classifica os aplicativos conforme a própria realidade, e a plataforma transforma os dados em indicadores de gestão.</p>
+        </article>
+      </div>
+
+      <figure class="shot shot-timeline reveal">
+        <img src="assets/img/painel-visao-geral.webp"
+             alt="Painel da +351 Monitor na tela Visão Geral: composição do tempo por dia, aplicativos que concentram as horas e comparação entre equipes."
+             width="1440" height="998" loading="lazy" decoding="async">
+        <figcaption>Visão Geral: composição do tempo, aplicativos que concentram as horas e equipes lado a lado.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============ 4. ACOMPANHA / NÃO ACOMPANHA ============ -->
+  <section class="section spy" id="sem-tela">
+    <div class="container">
+      <p class="eyebrow center reveal">Limites claros</p>
+      <h2 class="center reveal">Monitorar o trabalho remoto não significa <span class="hl">acompanhar a tela do colaborador</span></h2>
+
+      <div class="compare reveal">
+        <div class="compare-col compare-yes">
+          <h3>A +351 Monitor acompanha</h3>
+          <ul role="list">
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Atividade e ociosidade</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Aplicativos utilizados</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Tempo associado à utilização dos aplicativos</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Jornada da estação de trabalho</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Composição do tempo</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Indicadores de produtividade</li>
+          </ul>
+        </div>
+
+        <div class="compare-badge" aria-hidden="true">
+          <svg viewBox="0 0 120 120" fill="none">
+            <circle cx="60" cy="60" r="56" stroke="#B6FF3C" stroke-width="2.5" stroke-dasharray="176 176" stroke-dashoffset="-176" stroke-linecap="round" transform="rotate(-90 60 60)" opacity=".9"/>
+            <circle cx="60" cy="60" r="56" stroke="#FF7A7A" stroke-width="2.5" stroke-dasharray="176 176" stroke-dashoffset="0" stroke-linecap="round" transform="rotate(-90 60 60)" opacity=".75"/>
+            <rect x="34" y="38" width="52" height="36" rx="6" stroke="#F2F6FC" stroke-width="3"/>
+            <path d="M41 56h8l4-8 7 16 4-8 3 4h12" stroke="#B6FF3C" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M52 82h16" stroke="#F2F6FC" stroke-width="3" stroke-linecap="round"/>
+            <path d="M60 74v8" stroke="#F2F6FC" stroke-width="3"/>
+          </svg>
+        </div>
+
+        <div class="compare-col compare-no">
+          <h3>A +351 Monitor <em>não</em> acompanha</h3>
+          <ul role="list">
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m9 9 6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Prints da tela</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m9 9 6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Gravação da tela</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m9 9 6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Teclas digitadas</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m9 9 6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Webcam</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m9 9 6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Microfone</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m9 9 6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Conteúdo de mensagens</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m9 9 6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Conteúdo de e-mails</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m9 9 6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Conteúdo de documentos</li>
+            <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m9 9 6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Conteúdo de arquivos pessoais</li>
+          </ul>
+        </div>
+      </div>
+
+      <p class="belt reveal">Você não precisa assistir ao trabalho acontecendo para entender <span>como a operação está funcionando</span>.</p>
+    </div>
+  </section>
+
+  <!-- ============ 5. REMOTAS, HÍBRIDAS OU DISTRIBUÍDAS ============ -->
+  <section class="section" id="modelos">
+    <div class="container">
+      <p class="eyebrow reveal">Modelos de trabalho</p>
+      <h2 class="reveal">Para equipes remotas, híbridas ou distribuídas</h2>
+
+      <div class="monitors cols-3 reveal-group">
+        <article class="mcard reveal">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 11.2 12 4.5l8 6.7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.2 9.6v9.9h11.6V9.6" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><rect x="9" y="12" width="6" height="4" rx="0.8" stroke="currentColor" stroke-width="1.5"/></svg>
+          <h3>Home office</h3>
+          <p>Para equipes que trabalham integralmente de forma remota e precisam de uma leitura objetiva da operação, sem depender de reuniões de status para saber como o tempo está sendo usado.</p>
+        </article>
+        <article class="mcard reveal">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="m8 8-4 4 4 4M16 8l4 4-4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h3>Modelo híbrido</h3>
+          <p>Para equipes que alternam entre escritório e trabalho remoto. Os indicadores seguem a mesma lógica nos dois formatos, o que permite comparar períodos sem mudar o critério.</p>
+        </article>
+        <article class="mcard reveal">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="6" cy="7" r="2.4" stroke="currentColor" stroke-width="1.7"/><circle cx="18" cy="7" r="2.4" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="17.5" r="2.4" stroke="currentColor" stroke-width="1.7"/><path d="M8.2 8.4 10.6 15.4M15.8 8.4l-2.4 7M8.4 7h7.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <h3>Equipes distribuídas</h3>
+          <p>Para operações com profissionais em diferentes localidades que precisam de uma visão única da equipe, consolidada no mesmo painel.</p>
+        </article>
+      </div>
+
+      <p class="mcard-note reveal">No monitoramento de funcionários remotos, a +351 Monitor acompanha os indicadores do dispositivo corporativo, e não a localização da pessoa. Não há rastreamento por GPS, de endereço ou de deslocamento.</p>
+    </div>
+  </section>
+
+  <!-- ============ 6. COMO FUNCIONA ============ -->
+  <section class="section" id="como-funciona">
+    <div class="container">
+      <p class="eyebrow reveal">Como funciona</p>
+      <h2 class="reveal">Como funciona o monitoramento no home office</h2>
+      <p class="section-lead reveal">Um software para monitoramento de home office precisa ser simples de implantar e claro sobre o que coleta. Na +351 Monitor, o caminho tem quatro etapas.</p>
+
+      <div class="steps reveal-group">
+        <article class="step reveal">
+          <span class="step-num" aria-hidden="true">01</span>
+          <h3>Instale</h3>
+          <p>Um agente leve é instalado no dispositivo corporativo, pelo mesmo processo de implantação já utilizado pela +351 Monitor.</p>
+        </article>
+        <article class="step reveal">
+          <span class="step-num" aria-hidden="true">02</span>
+          <h3>Meça</h3>
+          <p>Os dados de utilização do dispositivo são transformados em registros estruturados automaticamente.</p>
+        </article>
+        <article class="step reveal">
+          <span class="step-num" aria-hidden="true">03</span>
+          <h3>Analise</h3>
+          <p>Gestores autorizados acompanham atividade, ociosidade, aplicativos, jornada e indicadores de produtividade.</p>
+        </article>
+        <article class="step reveal">
+          <span class="step-num" aria-hidden="true">04</span>
+          <h3>Decida</h3>
+          <p>Os dados ajudam a identificar padrões, revisar processos, analisar a utilização da capacidade e apoiar decisões de gestão.</p>
+        </article>
+      </div>
+
+      <p class="tagline reveal">A plataforma <span>mede.</span> A empresa <span>interpreta.</span> A decisão continua sendo <span>humana.</span></p>
+    </div>
+  </section>
+
+  <!-- ============ 7. MEDIR SEM DEPENDER DE PERCEPÇÃO ============ -->
+  <section class="section" id="como-medir">
+    <div class="container lp-split">
+      <div class="lp-text">
+        <p class="eyebrow reveal">Produtividade no home office</p>
+        <h2 class="reveal">Como medir produtividade no home office sem depender de percepção</h2>
+        <p class="reveal">No trabalho remoto, é comum recorrer ao que está à mão: a bolinha verde de "disponível" na ferramenta de comunicação, o horário do primeiro login ou o tempo de conexão à VPN. Esses sinais dizem que alguém está conectado. Sozinhos, não dizem muito sobre como o trabalho está acontecendo.</p>
+        <p class="reveal">Uma leitura mais útil combina vários indicadores e compara cada equipe com o próprio histórico. Nenhum deles, isoladamente, comprova produtividade ou improdutividade. O valor está no conjunto e no contexto.</p>
+        <p class="lp-links reveal"><a class="link-arrow" href="/como-medimos.html">Entenda como a +351 Monitor mede produtividade <span aria-hidden="true">→</span></a></p>
+      </div>
+
+      <aside class="lp-panel reveal" aria-label="Indicadores combinados">
+        <p class="eyebrow">O que entra na leitura</p>
+        <ul class="checks" role="list">
+          <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Tempo ativo no dispositivo</li>
+          <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Padrões da jornada ao longo do dia</li>
+          <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Utilização de ferramentas e sistemas</li>
+          <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Ociosidade, sempre com contexto</li>
+          <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Composição do tempo</li>
+          <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m8.4 12.2 2.4 2.4 4.8-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Classificação de aplicativos feita pela empresa</li>
+        </ul>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============ 8. QUEM DECIDE O QUE É PRODUTIVO ============ -->
+  <section class="section manage" id="quem-decide">
+    <div class="container manage-grid">
+      <figure class="shot shot-manage reveal">
+        <img src="assets/img/painel-colaboradores.webp"
+             alt="Painel da +351 Monitor na tela Colaboradores: uma linha por pessoa com horas ligadas, horas ativas, índice de produtividade, ociosidade e tempo sem classificação."
+             width="1440" height="1022" loading="lazy" decoding="async">
+      </figure>
+
+      <div class="manage-copy">
+        <p class="eyebrow reveal">Classificação de aplicativos</p>
+        <h2 class="reveal">Quem decide o que é produtivo no trabalho remoto?</h2>
+        <p class="reveal">A +351 Monitor não define de forma autônoma se determinado aplicativo ou atividade é produtivo.</p>
+        <p class="reveal">A própria empresa configura a classificação dos aplicativos conforme área, função e realidade operacional. Um mesmo aplicativo pode ter finalidades completamente diferentes em áreas distintas.</p>
+        <ul class="class-legend reveal" role="list">
+          <li><i class="p" aria-hidden="true"></i>Produtivo</li>
+          <li><i class="n" aria-hidden="true"></i>Neutro</li>
+          <li><i class="d" aria-hidden="true"></i>Improdutivo</li>
+          <li><i class="u" aria-hidden="true"></i>Sem classificação</li>
+          <li class="sep"><i class="o" aria-hidden="true"></i>Ocioso, estado do dispositivo</li>
+        </ul>
+        <p class="lp-quote reveal">Ocioso é um estado do dispositivo, e não uma conclusão automática sobre o trabalho do colaborador.</p>
+        <p class="manage-note reveal"><small>Reuniões, ligações, leitura, atividades fora do computador e outras situações podem gerar períodos sem interação com teclado ou mouse.</small></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 9. PRIVACIDADE E LGPD ============ -->
+  <section class="section" id="lgpd-home-office">
+    <div class="container lp-split">
+      <div class="lp-text">
+        <p class="eyebrow reveal">Privacidade e LGPD</p>
+        <h2 class="reveal">Home office, privacidade e LGPD</h2>
+        <p class="reveal">No monitoramento de computador corporativo no home office, o equipamento está dentro da casa do colaborador. Isso torna ainda mais importante que o monitoramento seja proporcional e bem comunicado. Sua adequação não se resolve com uma resposta pronta: depende de como o tratamento dos dados é estruturado em cada caso concreto.</p>
+        <p class="reveal">Entre os elementos que costumam ser considerados nessa análise estão:</p>
+        <ul class="lp-list reveal">
+          <li>finalidade e necessidade do tratamento;</li>
+          <li>transparência com os colaboradores;</li>
+          <li>proporcionalidade entre o que é coletado e o objetivo;</li>
+          <li>segurança e governança dos dados;</li>
+          <li>políticas internas da empresa;</li>
+          <li>contexto da relação de trabalho.</li>
+        </ul>
+        <p class="reveal">A +351 Monitor foi desenvolvida com uma abordagem de minimização, sem recursos invasivos como captura de tela ou keylogger. A empresa cliente continua responsável por definir suas políticas e a forma de uso dos dados.</p>
+        <p class="lp-links reveal"><a class="link-arrow" href="/privacidade.html">Conheça nossa abordagem de privacidade <span aria-hidden="true">→</span></a></p>
+      </div>
+
+      <aside class="lp-panel reveal" aria-label="Leitura recomendada">
+        <p class="eyebrow">Leitura recomendada</p>
+        <h3>É legal monitorar o computador dos funcionários?</h3>
+        <p>O que a CLT e a LGPD dizem sobre o monitoramento de equipamentos corporativos e quais cuidados ajudam a manter a prática transparente.</p>
+        <p class="lp-links"><a class="link-arrow" href="/conteudos/e-legal-monitorar-o-computador-dos-funcionarios.html">É legal monitorar o computador dos funcionários? <span aria-hidden="true">→</span></a></p>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============ 10. PERGUNTAS QUE OS DADOS RESPONDEM ============ -->
+  <section class="section" id="perguntas-remoto">
+    <div class="container">
+      <p class="eyebrow reveal">Produtividade de equipes remotas</p>
+      <h2 class="reveal">Que perguntas uma empresa pode responder com dados sobre o trabalho remoto?</h2>
+
+      <div class="qcards reveal-group">
+        <article class="qcard reveal"><span class="qmark" aria-hidden="true">?</span><h3>Como o tempo da equipe está sendo distribuído?</h3></article>
+        <article class="qcard reveal"><span class="qmark" aria-hidden="true">?</span><h3>Quais sistemas concentram mais horas de utilização?</h3></article>
+        <article class="qcard reveal"><span class="qmark" aria-hidden="true">?</span><h3>Existem padrões diferentes entre trabalho remoto e presencial?</h3></article>
+        <article class="qcard reveal"><span class="qmark" aria-hidden="true">?</span><h3>Como a jornada se distribui ao longo do dia?</h3></article>
+        <article class="qcard reveal"><span class="qmark" aria-hidden="true">?</span><h3>Existem períodos recorrentes de baixa atividade que merecem investigação?</h3></article>
+        <article class="qcard reveal"><span class="qmark" aria-hidden="true">?</span><h3>Alguma equipe apresenta comportamento operacional muito diferente das demais?</h3></article>
+        <article class="qcard reveal"><span class="qmark" aria-hidden="true">?</span><h3>A capacidade atual está sendo bem utilizada?</h3></article>
+      </div>
+
+      <p class="tagline reveal">Dados não substituem gestão. <span>Eles tornam a gestão mais bem informada.</span></p>
+    </div>
+  </section>
+
+  <!-- ============ 11. GESTÃO, NÃO MICROGERENCIAMENTO ============ -->
+  <section class="section" id="gestao">
+    <div class="container">
+      <p class="eyebrow reveal">Nosso posicionamento</p>
+      <h2 class="reveal">Monitoramento para gestão, não para microgerenciamento</h2>
+      <div class="lp-text">
+        <p class="reveal">A +351 Monitor não foi pensada para acompanhar cada minuto de uma pessoa. Microgerenciamento à distância desgasta a confiança da equipe e raramente melhora o resultado.</p>
+        <p class="reveal">O propósito da plataforma é outro: ajudar a empresa a identificar padrões, enxergar desperdícios, entender como a capacidade está sendo utilizada e apoiar decisões sobre processos e equipes.</p>
+      </div>
+
+      <div class="mission reveal">
+        <p class="mission-lead">Produtividade não deveria ser uma percepção. <span class="hl">Mas também não deveria ser reduzida a uma única métrica.</span></p>
+        <p class="mission-sub">A plataforma oferece informações. A interpretação depende do contexto de cada operação.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 12. FAQ ============ -->
+  <section class="section" id="faq">
+    <div class="container">
+      <p class="eyebrow reveal">Perguntas frequentes</p>
+      <h2 class="reveal">Perguntas frequentes sobre monitoramento no home office</h2>
+
+      <div class="faq-list reveal">
+        <details class="faq-item" name="faq">
+          <summary>Como monitorar produtividade no home office?</summary>
+          <p>A produtividade no trabalho remoto pode ser analisada por meio de diferentes indicadores, como atividade no dispositivo, utilização de sistemas, jornada e padrões de ociosidade. Nenhuma métrica isolada deve ser tratada automaticamente como prova de produtividade ou improdutividade.</p>
+        </details>
+        <details class="faq-item" name="faq">
+          <summary>É possível monitorar funcionários que trabalham remotamente?</summary>
+          <p>Tecnicamente, a +351 Monitor permite acompanhar os indicadores dos dispositivos corporativos em trabalho remoto. A forma de implementação deve considerar transparência, políticas internas e as obrigações aplicáveis ao tratamento de dados.</p>
+        </details>
+        <details class="faq-item" name="faq">
+          <summary>A +351 Monitor tira prints da tela no home office?</summary>
+          <p>Não. A plataforma não realiza captura nem gravação de tela.</p>
+        </details>
+        <details class="faq-item" name="faq">
+          <summary>A +351 Monitor usa keylogger?</summary>
+          <p>Não. A plataforma não registra teclas digitadas.</p>
+        </details>
+        <details class="faq-item" name="faq">
+          <summary>A plataforma lê mensagens, e-mails ou documentos?</summary>
+          <p>Não. A +351 Monitor não acessa o conteúdo de mensagens, e-mails ou documentos.</p>
+        </details>
+        <details class="faq-item" name="faq">
+          <summary>É possível acompanhar aplicativos utilizados no home office?</summary>
+          <p>Sim. A plataforma registra informações relacionadas aos aplicativos utilizados e ao tempo de utilização.</p>
+        </details>
+        <details class="faq-item" name="faq">
+          <summary>O software monitora a localização do funcionário?</summary>
+          <p>Não. A +351 Monitor não é um sistema de localização. A solução acompanha indicadores relacionados ao dispositivo corporativo e à sua utilização.</p>
+        </details>
+        <details class="faq-item" name="faq">
+          <summary>Ociosidade significa que o funcionário não estava trabalhando?</summary>
+          <p>Não. Ociosidade indica ausência de interação com teclado e mouse durante determinado período. Reuniões, chamadas, leitura ou atividades realizadas fora do computador podem gerar períodos de ociosidade.</p>
+        </details>
+        <details class="faq-item" name="faq">
+          <summary>Quem define quais aplicativos são produtivos?</summary>
+          <p>A empresa cliente define a classificação conforme sua realidade, área e função.</p>
+        </details>
+        <details class="faq-item" name="faq">
+          <summary>Monitoramento no home office é permitido pela LGPD?</summary>
+          <p>Não existe uma resposta única para todos os casos. A análise depende da finalidade do tratamento, da necessidade dos dados, da transparência com os colaboradores, da segurança da informação, do contexto da relação de trabalho e dos demais requisitos aplicáveis. O tema é aprofundado no artigo <a href="/conteudos/e-legal-monitorar-o-computador-dos-funcionarios.html">É legal monitorar o computador dos funcionários?</a></p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 13. CTA FINAL ============ -->
+  <section class="section final">
+    <div class="container">
+      <div class="final-panel reveal">
+        <h2>Sua equipe pode trabalhar de qualquer lugar. <span class="hl">Seus dados de gestão também podem estar disponíveis.</span></h2>
+        <p>Veja como a +351 Monitor transforma a utilização dos dispositivos corporativos em informações para uma gestão mais eficiente do trabalho remoto.</p>
+        <div class="cta-row cta-row-center">
+          <a class="btn btn-primary btn-lg" href="https://wa.me/5511925690601?text=Ol%C3%A1!%20Quero%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20do%20%2B351%20Monitor." target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 9.6h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            Agendar uma demonstração
+          </a>
+          <a class="btn btn-ghost btn-lg" href="/software-monitoramento-funcionarios.html">Conhecer o software de monitoramento de funcionários</a>
+        </div>
+        <p class="tagline"><span>Meça.</span> <span>Entenda.</span> <span>Decida.</span></p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="container footer-grid">
+    <div class="footer-brand">
+      <a class="brand" href="/" aria-label="+351 Monitor, página inicial">
+        <svg class="brand-mark" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+          <rect x="3" y="7" width="58" height="42" rx="7" stroke="currentColor" stroke-width="3.6"/>
+          <path class="brand-pulse" d="M11 30h7l5.5-11L31 41l5-11 3.5 6H53" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M23 57h18" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/>
+          <path d="M32 49v8" stroke="currentColor" stroke-width="3.6"/>
+        </svg>
+        <span class="brand-word"><em>+</em>351 <span>Monitor</span></span>
+      </a>
+      <p class="footer-tag">Software de monitoramento de produtividade</p>
+    </div>
+
+    <nav class="footer-col" aria-label="Páginas">
+      <h4>Navegação</h4>
+      <a href="/">Página inicial</a>
+      <a href="/#calculadora">Calculadora</a>
+      <a href="/#seguranca-lgpd">Segurança e LGPD</a>
+      <a href="/#quem-somos">Quem Somos</a>
+      <a href="/conteudos/">Conteúdos</a>
+      <a href="/como-medimos.html">Como medimos</a>
+      <a href="/privacidade.html">Política de Privacidade</a>
+      <a href="/termos.html">Termos de Uso</a>
+    </nav>
+
+    <nav class="footer-col" aria-label="Contato comercial">
+      <h4>Contato comercial</h4>
+      <a href="mailto:contato@mais351monitor.com.br">contato@mais351monitor.com.br</a>
+      <a href="https://wa.me/5511925690601" target="_blank" rel="noopener">WhatsApp: +55 11 92569-0601</a>
+    </nav>
+
+    <nav class="footer-col" aria-label="Redes sociais">
+      <h4>Redes</h4>
+      <a href="https://www.linkedin.com/company/351-monitor/" target="_blank" rel="noopener">LinkedIn</a>
+      <a href="https://www.instagram.com/351monitor/" target="_blank" rel="noopener">Instagram</a>
+    </nav>
+  </div>
+
+  <div class="container footer-legal">
+    <p>© <span id="ano">2026</span> +351 Monitor. Todos os direitos reservados.</p>
+  </div>
+</footer>
+
+<script src="assets/js/track.js?v=20260825" defer></script>
+<script src="assets/js/home.js?v=20260815" defer></script>
+</body>
+</html>
