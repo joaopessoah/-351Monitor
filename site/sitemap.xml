@@ -1,33 +1,44 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+
   <url>
     <loc>https://www.mais351monitor.com.br/</loc>
-    <lastmod>2026-08-15</lastmod>
-    <priority>1.0</priority>
+    <lastmod>2026-09-23</lastmod>
   </url>
+
   <url>
     <loc>https://www.mais351monitor.com.br/conteudos/</loc>
     <lastmod>2026-08-15</lastmod>
-    <priority>0.7</priority>
   </url>
+
   <url>
     <loc>https://www.mais351monitor.com.br/conteudos/e-legal-monitorar-o-computador-dos-funcionarios.html</loc>
     <lastmod>2026-08-15</lastmod>
-    <priority>0.6</priority>
   </url>
+
   <url>
     <loc>https://www.mais351monitor.com.br/conteudos/5-sinais-de-que-sua-empresa-esta-perdendo-produtividade.html</loc>
     <lastmod>2026-08-15</lastmod>
-    <priority>0.6</priority>
   </url>
+
   <url>
     <loc>https://www.mais351monitor.com.br/conteudos/quanto-a-baixa-produtividade-esta-custando-para-sua-empresa.html</loc>
     <lastmod>2026-08-15</lastmod>
-    <priority>0.6</priority>
   </url>
+
+  <url>
+    <loc>https://www.mais351monitor.com.br/como-medimos.html</loc>
+    <lastmod>2026-09-23</lastmod>
+  </url>
+
   <url>
     <loc>https://www.mais351monitor.com.br/privacidade.html</loc>
     <lastmod>2026-08-05</lastmod>
-    <priority>0.5</priority>
   </url>
+
+  <url>
+    <loc>https://www.mais351monitor.com.br/termos.html</loc>
+    <lastmod>2026-08-05</lastmod>
+  </url>
+
 </urlset>
